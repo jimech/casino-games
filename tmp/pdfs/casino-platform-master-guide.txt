@@ -1,0 +1,873 @@
+
+
+===== PAGE 1 =====
+Casino Platform Master Implementation Guide
+1. Overview
+This project is a portfolio-grade multi-game casino platform with a single shared wallet, a
+modern casino-style UI, AI-driven personalization, strong security, and an admin/audit console.
+The goal is to demonstrate full-stack product engineering across wallet architecture, game
+engines, realtime systems, AI features, and compliance-oriented UX. The platform should feel
+real, polished, and modular, while remaining a simulated or virtual-currency product for portfolio
+purposes.
+2. Product Goals
+The platform should support multiple casino games through one wallet and one transaction
+ledger. It should include a polished lobby, game detail pages, game play screens, wallet pages,
+bonuses, VIP progression, support, and admin tooling. It should also include AI features that
+improve discovery, personalization, fraud/risk awareness, and player experience without
+controlling game fairness or wallet math.
+3. Non-Goals
+This implementation is not intended to be a real-money gambling product. It should not depend
+on licensed payment rails, regulated casino operators, or production custody of funds. Game
+outcomes, wallet balance changes, and settlement rules must remain deterministic and
+auditable, with AI used only for recommendations, risk scoring, content ordering, and support
+automation.
+4. System Architecture
+Use a modular architecture with clear domain boundaries:
+● Frontend: Next.js or React with TypeScript.
+● Backend: NestJS with TypeScript.
+● Database: PostgreSQL.
+● Cache and pub/sub: Redis.
+● Realtime transport: WebSocket.
+● ORM: Prisma.
+● Optional async eventing: Kafka later if needed.
+Core services should include:
+● Auth service.
+● Wallet service.
+● Game engine service.
+● AI personalization service.
+● Fraud/risk service.
+● Compliance service.
+● Admin/audit service.
+● Notification service.
+5. Domain Model
+Core entities
+● User.
+● Wallet.
+● WalletLedgerEntry.
+
+===== PAGE 2 =====
+● BetSession.
+● GameRound.
+● GameProvider.
+● BonusCampaign.
+● VIPTier.
+● RiskEvent.
+● AuditEvent.
+● AdminUser.
+Wallet rules
+● Each user has one wallet.
+● Wallet balance is the source of truth.
+● Bets reduce available balance and increase locked balance.
+● Wins move funds back to available balance.
+● Refunds release locked funds.
+● Every financial mutation creates an immutable ledger entry.
+● Every mutation must be idempotent and transaction-safe.
+6. Wallet and Ledger Design
+The wallet service should support these operations:
+● creditBalance.
+● debitBalance.
+● lockFunds.
+● releaseFunds.
+● settleWin.
+● refundBet.
+● applyBonus.
+● reverseTransaction for failure recovery.
+Ledger entries should record:
+● transaction id,
+● user id,
+● type,
+● amount,
+● balance before,
+● balance after,
+● game id,
+● bet id,
+● idempotency key,
+● metadata,
+● timestamps,
+● status.
+Use database transactions and row locking for balance mutations. The wallet service must
+prevent double spend, retry duplication, and stale settlement updates. Separate the command
+
+===== PAGE 3 =====
+side from the query side if the platform grows, but the initial version can keep a single
+authoritative ledger with clean service boundaries.
+7. Game Engine Design
+The game engine should be modular and support multiple round-based games with shared
+settlement flow.
+Slots
+Implement reel state, paylines, payout table, bonus rounds, free spins, and spin resolution.
+Provide visible RTP metadata, theme variants, and a clear state machine for idle, spinning,
+resolving, and complete.
+Blackjack
+Implement deck handling, player actions, dealer logic, hand scoring, and round settlement.
+Support hit, stand, double, and split. Game state should be deterministic and reconstructable
+from stored round events.
+Roulette
+Implement European roulette with number, color, odd/even, and high/low bets. The wheel result
+should resolve through the game engine and then settle through the wallet service.
+Poker
+Implement Texas Hold’em round flow with hand ranking, pot tracking, community cards, and
+dealer or table simulation. Store round snapshots and settlement events separately.
+Crash
+Implement a multiplier curve, auto-cashout, manual cashout, and crash resolution. Track the
+multiplier progress as a real-time game state, but never let AI interfere with the multiplier
+outcome.
+8. AI Personalization Layer
+The AI layer should sit above the game system and wallet, not inside them. It may personalize
+the interface, recommend content, and flag risk signals, but it must not alter RNG, settlement
+math, or fairness logic.
+AI capabilities
+● Game recommendation ranking.
+● Lobby ordering based on play history.
+● Bonus targeting and timing.
+● Personalized onboarding.
+● Churn prediction.
+● Risk scoring for support and compliance.
+● Search and help assistant.
+● Content generation for banners or promo copy.
+AI inputs
+● Game preferences.
+● Session duration.
+● Bet frequency.
+● Deposit and withdrawal patterns.
+● Bonus usage.
+● Device context.
+
+===== PAGE 4 =====
+● Time of day.
+● Game category preferences.
+AI outputs
+● Recommended games.
+● Suggested bonus offers.
+● Risk score.
+● Churn score.
+● Next-best action.
+● Responsible-play intervention suggestions.
+9. Security Design
+Security should be a first-class part of the architecture.
+Required controls
+● JWT or session auth.
+● Role-based access control.
+● MFA for sensitive actions.
+● TLS everywhere.
+● Password hashing with a strong algorithm.
+● CSRF protection where needed.
+● Secure cookies.
+● Rate limiting.
+● Device/session tracking.
+● IP and geo checks.
+● Audit logs for privileged actions.
+Fraud detection
+Add a fraud/risk service that monitors:
+● rapid deposit velocity,
+● unusual withdrawal timing,
+● bonus abuse patterns,
+● repeated failed login attempts,
+● account takeover signals,
+● unusual device changes,
+● collusion indicators,
+● suspicious gameplay patterns.
+The system should generate risk events and allow manual review, soft friction, or hard blocks
+depending on severity.
+10. Compliance and Responsible Play
+Even for a portfolio build, the UI should include realistic compliance surfaces.
+UI and flow
+● Age gate.
+● Consent checkbox.
+● Geolocation notice.
+
+===== PAGE 5 =====
+● Session timeout.
+● Responsible-play messaging.
+● Self-exclusion style UI.
+● Limit setting UI.
+● Risk notices in the account area.
+Risk monitoring
+Track:
+● deposit frequency,
+● session length,
+● chase behavior,
+● bet escalation,
+● bonus abuse,
+● limit changes,
+● withdrawal patterns.
+These signals should feed the AI/risk layer, which can then suggest interventions or flag
+accounts for review.
+11. Frontend and Design System
+The design should feel premium, modern, and casino-like, with a dark theme and vivid accent
+colors.
+Pages
+● Landing page.
+● Lobby.
+● Game detail page.
+● Game table screens.
+● Wallet page.
+● Transaction history.
+● Bonuses.
+● VIP club.
+● Support.
+● Admin dashboard.
+● Risk/compliance console.
+Component library
+● Top navigation.
+● Bottom navigation.
+● Game cards.
+● Wallet cards.
+● Bonus cards.
+● VIP tier cards.
+● Modal dialogs.
+● Tabs.
+● Filters.
+
+===== PAGE 6 =====
+● Search bar.
+● Form inputs.
+● Action buttons.
+● Status badges.
+● Toasts.
+● Tables.
+● Charts.
+UX rules
+● Mobile-first responsive layout.
+● Smooth transitions.
+● Clear wallet visibility.
+● Clear balance lock state.
+● Polished empty states.
+● Clear error states.
+● Hover and press feedback.
+● Strong contrast for text and actions.
+12. Realtime Events
+Use WebSockets for live balance updates, game state changes, and admin monitoring.
+Event types
+● wallet.balance.updated
+● wallet.funds.locked
+● wallet.funds.released
+● game.round.started
+● game.round.resolved
+● bonus.claimed
+● risk.flagged
+● user.session.expired
+● admin.audit.created
+The client should subscribe to balance and round events so the UI updates immediately after
+settlement or a refund.
+13. Database Design
+Suggested tables
+● users
+● wallets
+● wallet_ledger_entries
+● bet_sessions
+● game_rounds
+● game_round_events
+● bonus_campaigns
+● bonus_claims
+● vip_tiers
+
+===== PAGE 7 =====
+● risk_events
+● audit_events
+● admin_users
+● feature_flags
+● notifications
+Key constraints
+● One wallet per user.
+● One immutable ledger entry per financial mutation.
+● Unique idempotency key per wallet operation.
+● Indexed session and ledger lookups.
+● Foreign keys for auditability.
+14. API Design
+Wallet APIs
+● POST /wallet/credit
+● POST /wallet/debit
+● POST /wallet/lock
+● POST /wallet/release
+● POST /wallet/settle
+● GET /wallet/:userId
+● GET /wallet/:userId/ledger
+Game APIs
+● GET /games
+● GET /games/:id
+● POST /games/:id/bet
+● POST /games/:id/resolve
+● POST /games/:id/refund
+AI APIs
+● GET /ai/recommendations
+● GET /ai/risk/:userId
+● POST /ai/feedback
+● POST /ai/bonus-targeting
+Admin APIs
+● GET /admin/users
+● GET /admin/ledger
+● GET /admin/risk-events
+● GET /admin/audit
+● POST /admin/flags
+15. Admin and Audit Console
+The admin dashboard should allow:
+● user search,
+● ledger inspection,
+
+===== PAGE 8 =====
+● round replay,
+● risk review,
+● bonus review,
+● manual freeze/unfreeze actions,
+● audit timeline inspection,
+● service health monitoring,
+● feature flag management.
+Audit logs should show:
+● who performed the action,
+● what changed,
+● when it changed,
+● request context,
+● system result,
+● correlation id.
+16. Testing Strategy
+Test the platform in layers:
+● Wallet math unit tests.
+● Ledger integrity tests.
+● Game round resolution tests.
+● API contract tests.
+● WebSocket event tests.
+● UI smoke tests.
+● Risk signal tests.
+● Admin workflow tests.
+● Regression tests for settlement and refunds.
+The highest priority is financial correctness: no double spending, no duplicate settlement, no
+missing ledger entries, and no inconsistent balance state.
+17. Deployment Plan
+Use a simple production-style deployment:
+● Frontend app container.
+● Backend API container.
+● Worker container for async jobs.
+● PostgreSQL.
+● Redis.
+● Optional object storage for assets and logs.
+● Optional analytics service later.
+Add environment-specific configs for:
+● local,
+● staging,
+● production.
+Include secrets management, monitoring, and structured logs from day one.
+
+===== PAGE 9 =====
+18. Build Phases
+Phase 1
+● App shell.
+● Auth.
+● Database schema.
+● Wallet service.
+● Basic lobby.
+Phase 2
+● Game engines.
+● Settlement flow.
+● Realtime updates.
+● History and audit.
+Phase 3
+● AI recommendations.
+● Risk scoring.
+● Bonuses and VIP.
+● Admin console.
+Phase 4
+● Hardening.
+● Monitoring.
+● Tests.
+● Documentation.
+19. Implementation Tickets
+T01 — App shell and repo setup
+Set up frontend, backend, shared config, linting, formatting, and environment files.
+T02 — Database schema and migrations
+Create all core tables and indexes for user, wallet, ledger, games, bonuses, AI, and audit.
+T03 — Authentication and user profile
+Implement sign-up, login, session handling, profile page, age gate, and consent.
+T04 — Wallet service
+Implement balance, lock/release, credit/debit, idempotency, and ledger writes.
+T05 — Settlement engine
+Implement bet placement, round settlement, win payout, and refund logic.
+T06 — Realtime eventing
+Implement WebSocket balance updates and round state notifications.
+T07 — Lobby and design system
+Build responsive lobby, navigation, cards, and shared UI components.
+T08 — Slots
+Implement slot game UI, round state, and payout resolution.
+T09 — Blackjack
+Implement blackjack gameplay and settlement.
+T10 — Roulette
+Implement roulette gameplay and settlement.
+
+===== PAGE 10 =====
+T11 — Poker
+Implement poker round flow and hand evaluation.
+T12 — Crash
+Implement crash multiplier and cashout logic.
+T13 — AI recommendations
+Implement lobby ranking, personalized suggestions, and banner targeting.
+T14 — Fraud/risk service
+Implement risk scoring, event capture, and review queues.
+T15 — Bonuses and VIP
+Implement bonus campaigns, claims, loyalty tiers, and rewards.
+T16 — Admin dashboard
+Implement user review, audit timeline, ledger search, and risk console.
+T17 — Testing and hardening
+Add tests, monitoring, structured logs, and deployment readiness.
+20. Definition of Done
+The platform is complete when:
+● a user can create an account,
+● get a wallet,
+● browse games,
+● place bets,
+● receive settlements,
+● see realtime balance changes,
+● get personalized recommendations,
+● and have every action visible in history and audit logs.
+21. Final Implementation Rule
+Keep the casino mathematically deterministic, keep the wallet authoritative, keep AI outside the
+game and wallet core, and make the whole product feel premium and real through UI, admin
+visibility, and strong operational structure
+Casino Platform Ticket Backlog
+T01 — App shell and repo setup
+Summary
+Create the initial monorepo or app structure for the casino platform.
+Scope
+● Set up frontend, backend, shared types, and configuration.
+● Add linting, formatting, and TypeScript config.
+● Add environment files and base scripts.
+Acceptance criteria
+
+===== PAGE 11 =====
+● The project runs locally without missing dependencies.
+● Frontend and backend start from documented commands.
+● TypeScript compiles successfully in all configured packages.
+● Lint and format commands run successfully.
+T02 — Database schema and migrations
+Summary
+Create the foundational database schema for users, wallets, games,
+bonuses, risk, and audit.
+Scope
+● Create tables for users, wallets, ledger entries, sessions, rounds,
+bonuses, risk events, audit events, and admins.
+● Add primary keys, foreign keys, and indexes.
+● Add migration files and seed data.
+Acceptance criteria
+● All core tables exist after migration.
+● Wallet ledger entries are immutable and append-only.
+● One wallet exists per user.
+● Migrations can be applied cleanly on a fresh database.
+T03 — Authentication and user profile
+Summary
+Implement sign-up, login, logout, session handling, and profile access.
+Scope
+● Create account registration and login flows.
+● Add profile page with avatar and stats.
+● Add age gate and consent state.
+Acceptance criteria
+● A new user can create an account and log in.
+● An authenticated user can view and edit profile fields allowed by the
+spec.
+● Age gate and consent must be completed before casino access.
+● Unauthenticated users are redirected away from protected pages.
+T04 — Single wallet service
+
+===== PAGE 12 =====
+Summary
+Implement the authoritative wallet service with balance, locked funds, and
+ledger writes.
+Scope
+● Add credit, debit, lock, release, settle, and refund operations.
+● Store all changes in the ledger.
+● Add idempotency protection.
+Acceptance criteria
+● Each wallet mutation creates exactly one ledger entry.
+● Duplicate requests with the same idempotency key do not
+double-charge the wallet.
+● Available balance and locked balance update correctly after each
+operation.
+● Negative balances are not allowed.
+T05 — Bet locking and settlement flow
+Summary
+Implement the full bet lifecycle from placement to settlement.
+Scope
+● Place bet.
+● Lock funds.
+● Resolve win/loss.
+● Refund on failure.
+Acceptance criteria
+● A bet reduces available balance and increases locked balance
+atomically.
+● A successful win credits the correct amount and closes the round.
+● A failed round refunds locked funds.
+● Concurrent bet attempts cannot overspend the wallet.
+T06 — Realtime wallet updates
+Summary
+Broadcast wallet and settlement changes to the UI in real time.
+Scope
+● Add WebSocket connection handling.
+
+===== PAGE 13 =====
+● Emit wallet balance and round state updates.
+● Add reconnect/resync behavior.
+Acceptance criteria
+● A balance change appears in the UI without a manual refresh.
+● Reconnecting clients receive the current balance state.
+● Round start and round end events are delivered to subscribed clients.
+T07 — Lobby and shared UI system
+Summary
+Build the main casino lobby and shared design system.
+Scope
+● Create navigation, game cards, wallet summary, and filters.
+● Add responsive dark-theme styling.
+● Add reusable UI components.
+Acceptance criteria
+● The lobby works on mobile and desktop layouts.
+● Shared components are reused across pages.
+● Game cards show title, category, and action state.
+● Navigation is accessible and consistent across the app.
+T08 — Slots game
+Summary
+Implement a complete slots module with round resolution and payout logic.
+Scope
+● Add reel display and spin action.
+● Add paylines and payout table.
+● Add free-spin bonus state.
+Acceptance criteria
+● A user can start a spin and see a resolved outcome.
+● Slot payouts follow the game rules in the spec.
+● Bonus/free-spin states are shown and resolved correctly.
+● The wallet updates after slot settlement.
+T09 — Blackjack game
+
+===== PAGE 14 =====
+Summary
+Implement a full blackjack game flow.
+Scope
+● Deal cards.
+● Support hit, stand, double, and split.
+● Add dealer logic and score calculation.
+Acceptance criteria
+● A user can complete a blackjack round end-to-end.
+● Card actions update the game state correctly.
+● Dealer behavior follows the defined rules.
+● Wins, losses, and pushes settle correctly in the wallet.
+T10 — Roulette game
+Summary
+Implement the roulette module with supported betting options.
+Scope
+● Add European roulette wheel logic.
+● Support number, color, odd/even, and high/low bets.
+● Add spin resolution.
+Acceptance criteria
+● A user can place a roulette bet and receive a resolved result.
+● Each supported bet type pays out according to the rules.
+● The wheel result is stored in the round record.
+● The wallet settles correctly after spin resolution.
+T11 — Poker game
+Summary
+Implement a Texas Hold’em-style poker round flow.
+Scope
+● Deal hole cards and community cards.
+● Add hand ranking and pot logic.
+● Add basic dealer or table simulation.
+Acceptance criteria
+● A poker round can progress from deal to settlement.
+
+===== PAGE 15 =====
+● Hand strength is evaluated correctly.
+● Pot and payouts are tracked accurately.
+● Round state can be reconstructed from stored events.
+T12 — Crash game
+Summary
+Implement the crash multiplier game.
+Scope
+● Add multiplier growth.
+● Add manual and auto cashout.
+● Add round start and crash state.
+Acceptance criteria
+● The multiplier increases until crash according to the round logic.
+● A player can cash out before crash.
+● Settlement happens correctly for both win and loss cases.
+● Live round state is visible to subscribed clients.
+T13 — AI recommendations
+Summary
+Implement AI-driven personalization for the lobby and promotions.
+Scope
+● Rank games by likely interest.
+● Reorder lobby sections.
+● Suggest bonuses and content.
+● Add churn and risk signals.
+Acceptance criteria
+● The lobby can show personalized recommendations.
+● AI suggestions change based on stored user behavior signals.
+● AI cannot modify wallet math or game outcomes.
+● Recommendation outputs are logged for review.
+T14 — Fraud and risk service
+Summary
+Detect suspicious behavior and create reviewable risk events.
+Scope
+
+===== PAGE 16 =====
+● Monitor deposits, withdrawals, and play patterns.
+● Flag suspicious activity.
+● Build risk queues and event records.
+Acceptance criteria
+● Suspicious behavior creates a risk event.
+● Risk events are visible in the admin console.
+● The service can classify events as low, medium, or high risk.
+● Risk decisions are logged with timestamps and context.
+T15 — Bonuses and VIP system
+Summary
+Implement bonuses, promotions, and tiered loyalty.
+Scope
+● Add welcome bonus.
+● Add free spins.
+● Add cashback rules.
+● Add VIP tiers and progression.
+Acceptance criteria
+● A user can claim an eligible bonus only once per rule.
+● Bonus usage is tracked in the ledger or bonus history.
+● VIP tier progression updates based on defined activity rules.
+● Bonus and VIP views are visible in the UI.
+T16 — Admin dashboard
+Summary
+Build an internal console for inspecting users, transactions, rounds, and
+risk.
+Scope
+● User search.
+● Ledger search.
+● Audit timeline.
+● Risk review.
+● Feature flag controls.
+Acceptance criteria
+● An admin can search users and open their wallet history.
+
+===== PAGE 17 =====
+● Ledger entries and round history are searchable.
+● Risk events are visible and reviewable.
+● Admin actions are written to audit logs.
+T17 — Notification and messaging system
+Summary
+Add notifications for bonuses, risk events, settlements, and system
+messages.
+Scope
+● In-app notifications.
+● Email or mock notification service.
+● Notification preferences.
+Acceptance criteria
+● A user receives a notification when a bonus is granted.
+● A user sees settlement notifications after game resolution.
+● Notification preferences are respected.
+● Admin-triggered notices are logged.
+T18 — Security hardening
+Summary
+Add platform security protections and privileged access controls.
+Scope
+● MFA for sensitive actions.
+● Rate limiting.
+● Secure session handling.
+● Role-based access control.
+● Encryption and secret management.
+Acceptance criteria
+● MFA is required for privileged or financial actions.
+● Rate limits block abusive request patterns.
+● Protected endpoints reject unauthorized access.
+● Security-related actions are logged.
+T19 — Testing and quality gates
+Summary
+Add automated tests for wallet, games, AI, risk, and admin flows.
+
+===== PAGE 18 =====
+Scope
+● Unit tests.
+● Integration tests.
+● UI smoke tests.
+● Settlement and rollback tests.
+Acceptance criteria
+● Wallet math tests pass without failures.
+● Game settlement tests cover success and refund paths.
+● WebSocket and API tests pass.
+● The app cannot be merged if critical wallet tests fail.
+T20 — Documentation and rollout
+Summary
+Document the system and prepare it for handoff.
+Scope
+● README.
+● Architecture doc.
+● Environment setup.
+● Ticket index.
+● Release notes.
+Acceptance criteria
+● A new developer can run the app using the README alone.
+● The architecture and data model are documented.
+● Ticket status and dependencies are clear.
+● Rollback or failure notes exist for critical flows.
+T21 — AI event collection
+Summary
+Collect the user behavior signals needed for personalization and risk analysis.
+Scope
+● Track page views, game clicks, bet frequency, session duration, deposits,
+withdrawals, bonus usage, and churn indicators.
+● Store events in a structured event model.
+● Add opt-in/out handling where needed.
+
+===== PAGE 19 =====
+Acceptance criteria
+● User behavior events are recorded with timestamps and user identifiers.
+● The platform captures enough data to support recommendations and risk scoring
+later.
+● Event capture does not block the main user flow.
+● The system can filter events by category, user, and time window.
+T22 — AI feature store and user profile signals
+Summary
+Build a feature layer that turns raw events into usable AI inputs.
+Scope
+● Aggregate session statistics, game preferences, bet patterns, and risk signals.
+● Store per-user feature snapshots.
+● Update snapshots on a schedule or event trigger.
+Acceptance criteria
+● Each user has an up-to-date feature profile.
+● Feature generation is deterministic and versioned.
+● The system can refresh features from recent event history.
+● Feature snapshots are usable by recommendations and risk models.
+T23 — Game recommendation engine
+Summary
+Recommend games and lobby ordering based on player behavior.
+Scope
+● Rank games using preference, volatility, recency, and engagement.
+● Reorder lobby cards dynamically.
+● Provide fallback ranking when AI is unavailable.
+Acceptance criteria
+● The lobby can display a personalized game order.
+● Recommendations update based on recent behavior.
+● The system provides a fallback non-AI ranking.
+● Recommendation outputs are logged for audit and debugging.
+
+===== PAGE 20 =====
+T24 — Personalized bonus targeting
+Summary
+Show targeted bonuses and promotions based on player behavior.
+Scope
+● Define eligibility rules for welcome, retention, and reactivation offers.
+● Add timing rules for banner display.
+● Suppress irrelevant offers.
+Acceptance criteria
+● Bonus offers can be targeted to specific player segments.
+● Offers respect eligibility and cooldown rules.
+● The same user does not receive duplicate active offers unless allowed by spec.
+● Bonus targeting decisions are logged with reason codes.
+T25 — Churn and retention model
+Summary
+Predict when users are likely to leave and surface retention actions.
+Scope
+● Score churn risk from inactivity, low engagement, and session drop-off.
+● Trigger retention prompts or outreach candidates.
+● Add model output history.
+Acceptance criteria
+● Each user can receive a churn risk score.
+● High-risk users can be surfaced for retention actions.
+● The model output is explainable enough for admin review.
+● Churn scoring does not affect wallet balance or game resolution.
+T26 — Fraud and anomaly scoring
+Summary
+Detect suspicious behavior in deposits, withdrawals, and gameplay.
+
+===== PAGE 21 =====
+Scope
+● Score abnormal velocity, device changes, geo mismatches, and bonus abuse.
+● Flag account takeover, payment abuse, and collusion patterns.
+● Send events to the risk queue.
+Acceptance criteria
+● Suspicious patterns create a risk flag.
+● Risk scoring uses session, payment, and device signals.
+● High-severity signals can block or require review.
+● Fraud events are visible in the admin console.
+T27 — Responsible play intervention engine
+Summary
+Trigger safer-gambling style interventions when risk conditions are met.
+Scope
+● Detect loss-chasing, long sessions, rapid bet escalation, and self-limit conflicts.
+● Show user-facing warnings or friction.
+● Log intervention decisions.
+Acceptance criteria
+● Intervention rules can trigger from behavioral thresholds.
+● The platform can show warnings or friction before continuing play.
+● Each intervention is logged with timestamp and reason.
+● Interventions are reviewable by admins.
+T28 — AI explanation and audit logging
+Summary
+Make AI decisions explainable and reviewable.
+Scope
+● ogs are searchable by user, model, and time range.
+T29 — AI model monitoring
+
+===== PAGE 22 =====
+Summary
+Monitor AI drift, bias, failures, and performance over time.
+Scope
+● Track accuracy, false positives, false negatives, and alert fatigue.
+● Watch for drift in recommendations and fraud signals.
+● Add alerting for stale or degraded models.
+Acceptance criteria
+● Model health metrics are visible in admin or ops tooling.
+● Drift or degradation creates an operational alert.
+● The platform can disable a model and fall back to rules.
+● Model monitoring data is retained for later review.
+T30 — Security hardening and identity controls
+Summary
+Add the system-wide controls needed to protect accounts, APIs, and internal tools.
+Scope
+● Add JWT/session hardening, MFA, RBAC, and secure API signing.
+● Add rate limiting, timeout controls, and secure secrets handling.
+● Add admin privilege separation.
+Acceptance criteria
+● Sensitive actions require stronger auth or MFA.
+● API requests are protected against abuse and replay.
+● Admin access is limited by role.
+● Security events are logged and searchable.
+T31 — Compliance workflow and case review
+Summary
+Build the review process for compliance, fraud, and responsible-play cases.
+Scope
+● Add case queues.
+● Add review notes and status changes.
+● Add evidence attachment or history links.
+
+===== PAGE 23 =====
+Acceptance criteria
+● Compliance and risk cases can be created, assigned, and closed.
+● Review notes and outcomes are stored permanently.
+● Admins can inspect the evidence behind a case.
+● Case actions appear in the audit trail.
+T32 — AI-safe UI integration
+Summary
+Connect the AI outputs to the product UI safely.
+Scope
+● Display recommendations in the lobby.
+● Show bonus banners and risk warnings.
+● Render explanation snippets when needed.
+● Add fallback UI when AI is unavailable.
+Acceptance criteria
+● AI recommendations render in the lobby without breaking the layout.
+● Risk or responsible-play banners display only when triggered.
+● The UI shows fallback content if AI services fail.
+● AI-driven UI changes never block wallet or game operations.
+Suggested dependency order
+I’d build these in this order:
+1. T21 event collection.
+2. T22 feature store.
+3. T23 recommendations.
+4. T24 bonus targeting.
+5. T25 churn model.
+6. T26 fraud scoring.
+7. T27 responsible-play interventions.
+8. T28 explainability logs.
+9. T29 model monitoring.
+10. T30 security hardening.
+11. T31 compliance case review.
+12. T32 AI-safe UI integration.
+
+===== PAGE 24 =====
+● Log model version, input features, output score, threshold, and reason code.
+● Save decision traces for recommendations and risk events.
+● Add export support for audits.
+Acceptance criteria
+● Every AI-generated recommendation has a stored explanation record.
+● Every risk decision stores model version and threshold data.
+● Admins can review AI decisions after the fact.
+● L

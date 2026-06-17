@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum LedgerEntryType {
+  credit
+  debit
+  lock
+  release
+  settleLoss
+  settleWin
+  refund
+}
+
+enum GameRoundStatus {
+  open
+  settled
+  refunded
+}
+
+enum GameRoundEventType {
+  started
+  action
+  outcome
+  settled
+  refunded
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  username  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wallet        Wallet?
+  ledgerEntries WalletLedgerEntry[]
+  gameRounds    GameRound[]
+
+  @@map("users")
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  available BigInt   @default(0)
+  locked    BigInt   @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerEntries WalletLedgerEntry[]
+
+  @@map("wallets")
+}
+
+model WalletLedgerEntry {
+  id             String          @id @default(cuid())
+  transactionId  String          @unique
+  idempotencyKey String          @unique
+  userId         String
+  walletId       String
+  type           LedgerEntryType
+  amount         BigInt
+  balanceBefore  BigInt
+  balanceAfter   BigInt
+  lockedBefore   BigInt
+  lockedAfter    BigInt
+  gameId         String?
+  roundId        String?
+  metadata       Json?
+  status         String          @default("posted")
+  createdAt      DateTime        @default(now())
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet      @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  round  GameRound?  @relation(fields: [roundId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([walletId, createdAt])
+  @@index([roundId])
+  @@map("wallet_ledger_entries")
+}
+
+model GameRound {
+  id                       String          @id @default(cuid())
+  userId                   String
+  gameId                   String
+  stake                    BigInt
+  status                   GameRoundStatus @default(open)
+  payout                   BigInt          @default(0)
+  outcome                  Json?
+  lockIdempotencyKey       String          @unique
+  settlementIdempotencyKey String?         @unique
+  createdAt                DateTime        @default(now())
+  settledAt                DateTime?
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events        GameRoundEvent[]
+  ledgerEntries WalletLedgerEntry[]
+
+  @@index([userId, createdAt])
+  @@index([gameId, createdAt])
+  @@index([status])
+  @@map("game_rounds")
+}
+
+model GameRoundEvent {
+  id        String             @id @default(cuid())
+  roundId   String
+  type      GameRoundEventType
+  payload   Json?
+  createdAt DateTime           @default(now())
+
+  round GameRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId, createdAt])
+  @@map("game_round_events")
+}

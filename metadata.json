@@ -1,0 +1,6 @@
+{
+  "name": "Vegas Neon Casino",
+  "description": "Premium full-stack Las Vegas style casino featuring Slots, Blackjack, European Roulette, Texas Hold'em Poker, and Crash Game with interactive RNG, user wallet mechanics, and live dealer simulation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
