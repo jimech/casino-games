@@ -254,6 +254,9 @@ Acceptance criteria:
 - Reconnected clients receive current state.
 - Round start and resolution events are delivered.
 
+Implementation note:
+- Current implementation streams authenticated wallet snapshots over `GET /api/wallet/:userId/events` with server-sent events. Game-screen-specific event feeds remain a later expansion.
+
 ### T07 - Lobby and Shared UI System
 
 Summary: Formalize the casino lobby and reusable component system.

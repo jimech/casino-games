@@ -211,6 +211,12 @@ export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> =
   return parseJsonResponse<WalletDto>(response);
 };
 
+export const createWalletEventSource = (userId: string): EventSource => {
+  const token = getStoredAuthToken();
+  const params = token ? `?token=${encodeURIComponent(token)}` : '';
+  return new EventSource(`/api/wallet/${encodeURIComponent(userId)}/events${params}`);
+};
+
 export const placeBet = async (input: {
   userId?: string;
   gameId: string;

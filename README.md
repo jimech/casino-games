@@ -129,6 +129,12 @@ curl http://localhost:3000/api/wallet/demo \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Subscribe to realtime wallet updates:
+
+```bash
+curl -N "http://localhost:3000/api/wallet/demo/events?token=$TOKEN"
+```
+
 Place a bet and lock funds:
 
 ```bash
@@ -254,6 +260,7 @@ fold
 - In-memory backend wallet and settlement service
 - Prisma/PostgreSQL backend service wired to Neon
 - Private account registration, login, logout, token sessions, age gate, and consent gate
+- Realtime wallet updates stream through an authenticated server-sent events endpoint
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time

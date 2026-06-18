@@ -18,6 +18,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const { casinoService, authService } = createServices();
+const walletEventClients = new Map<string, Set<express.Response>>();
 
 app.use(express.json());
 
@@ -126,6 +127,32 @@ app.get('/api/wallet/:userId/ledger', async (req, res) => {
   }
 });
 
+app.get('/api/wallet/:userId/events', async (req, res) => {
+  try {
+    const user = await requireOwnUser(req, req.params.userId);
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no'
+    });
+
+    addWalletClient(user.id, res);
+    sendWalletEvent(res, 'wallet', await casinoService.getWallet(user.id));
+
+    const heartbeat = setInterval(() => {
+      sendSseEvent(res, 'heartbeat', { timestamp: new Date().toISOString() });
+    }, 25000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      removeWalletClient(user.id, res);
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/rounds', async (req, res) => {
   try {
     const user = await requireAuth(req);
@@ -147,7 +174,9 @@ app.post('/api/bets', async (req, res) => {
       stake: Number(req.body.stake),
       idempotencyKey: String(req.body.idempotencyKey ?? '')
     });
-    res.status(201).json({ round, wallet: await casinoService.getWallet(round.userId) });
+    const wallet = await casinoService.getWallet(round.userId);
+    broadcastWallet(round.userId, wallet);
+    res.status(201).json({ round, wallet });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -163,7 +192,9 @@ app.post('/api/rounds/:roundId/settle', async (req, res) => {
       idempotencyKey: String(req.body.idempotencyKey ?? ''),
       outcome: req.body.outcome
     });
-    res.json({ round, wallet: await casinoService.getWallet(round.userId) });
+    const wallet = await casinoService.getWallet(round.userId);
+    broadcastWallet(round.userId, wallet);
+    res.json({ round, wallet });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -178,7 +209,9 @@ app.post('/api/rounds/:roundId/refund', async (req, res) => {
       idempotencyKey: String(req.body.idempotencyKey ?? ''),
       reason: typeof req.body.reason === 'string' ? req.body.reason : undefined
     });
-    res.json({ round, wallet: await casinoService.getWallet(round.userId) });
+    const wallet = await casinoService.getWallet(round.userId);
+    broadcastWallet(round.userId, wallet);
+    res.json({ round, wallet });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -192,6 +225,7 @@ app.post('/api/games/roulette/spin', async (req, res) => {
       bets: req.body.bets,
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -206,6 +240,7 @@ app.post('/api/games/crash/start', async (req, res) => {
       stake: Number(req.body.stake),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -221,6 +256,7 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
       cashoutMultiplier: Number(req.body.cashoutMultiplier),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -238,6 +274,7 @@ app.post('/api/games/slots/spin', async (req, res) => {
       bonusMultiplier: Number(req.body.bonusMultiplier ?? (req.body.freeSpin ? 3 : 1)),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -252,6 +289,7 @@ app.post('/api/games/blackjack/start', async (req, res) => {
       stake: Number(req.body.stake),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -267,6 +305,7 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
       action: req.body.action,
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -281,6 +320,7 @@ app.post('/api/games/poker/start', async (req, res) => {
       ante: Number(req.body.ante),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -296,6 +336,7 @@ app.post('/api/games/poker/:roundId/action', async (req, res) => {
       action: req.body.action,
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    broadcastWallet(result.round.userId, result.wallet);
     res.json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -330,7 +371,7 @@ function sendApiError(res: express.Response, error: unknown) {
 }
 
 async function requireAuth(req: express.Request): Promise<AuthUser> {
-  const session = await authService.getSession(extractBearerToken(req.get('authorization')));
+  const session = await authService.getSession(extractRequestToken(req));
   return session.user;
 }
 
@@ -348,6 +389,45 @@ async function assertOwnUser(user: AuthUser, userIdOrUsername: string): Promise<
 async function assertRoundOwner(roundId: string, userId: string): Promise<void> {
   const rounds = await casinoService.listRounds(userId);
   if (!rounds.some(round => round.id === roundId)) throw new Error('Forbidden round access');
+}
+
+function extractRequestToken(req: express.Request): string {
+  if (typeof req.query.token === 'string' && req.query.token) return req.query.token;
+  return extractBearerToken(req.get('authorization'));
+}
+
+function addWalletClient(userId: string, res: express.Response) {
+  const clients = walletEventClients.get(userId) ?? new Set<express.Response>();
+  clients.add(res);
+  walletEventClients.set(userId, clients);
+}
+
+function removeWalletClient(userId: string, res: express.Response) {
+  const clients = walletEventClients.get(userId);
+  if (!clients) return;
+  clients.delete(res);
+  if (clients.size === 0) walletEventClients.delete(userId);
+}
+
+function broadcastWallet(userId: string, wallet: { available: number; locked: number }) {
+  const clients = walletEventClients.get(userId);
+  if (!clients?.size) return;
+  for (const client of clients) {
+    sendWalletEvent(client, 'wallet', wallet);
+  }
+}
+
+function sendWalletEvent(res: express.Response, event: string, wallet: { available: number; locked: number }) {
+  sendSseEvent(res, event, {
+    available: wallet.available,
+    locked: wallet.locked,
+    timestamp: new Date().toISOString()
+  });
+}
+
+function sendSseEvent(res: express.Response, event: string, payload: unknown) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 function sanitizeRoundForApi<T extends { gameId?: string; outcome?: unknown }>(round: T): T {

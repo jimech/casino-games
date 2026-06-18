@@ -16,6 +16,7 @@ import {
   actBlackjackRound,
   actPokerRound,
   cashoutCrashRound,
+  createWalletEventSource,
   fetchAuthSession,
   fetchWallet,
   getStoredAuthToken,
@@ -130,6 +131,21 @@ export default function App() {
 
   useEffect(() => {
     if (authSession) void syncWalletFromBackend();
+  }, [authSession?.user.id]);
+
+  useEffect(() => {
+    if (!authSession) return;
+    const events = createWalletEventSource(authSession.user.id);
+    events.addEventListener('wallet', event => {
+      const payload = JSON.parse((event as MessageEvent).data) as { available: number; locked: number };
+      setUser(prev => ({ ...prev, walletBalance: payload.available }));
+    });
+    events.onerror = () => {
+      console.warn('Wallet realtime stream disconnected');
+    };
+    return () => {
+      events.close();
+    };
   }, [authSession?.user.id]);
 
   const restoreAuthSession = async () => {
