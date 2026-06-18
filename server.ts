@@ -7,6 +7,7 @@ import { spinRoulette } from './src/backend/games/rouletteEngine';
 import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEngine';
 import { spinSlots } from './src/backend/games/slotsEngine';
 import { actBlackjackRound, startBlackjackRound } from './src/backend/games/blackjackEngine';
+import { actPokerRound, startPokerRound } from './src/backend/games/pokerEngine';
 
 dotenv.config();
 
@@ -174,6 +175,32 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
   }
 });
 
+app.post('/api/games/poker/start', async (req, res) => {
+  try {
+    const result = await startPokerRound(casinoService, {
+      userId: String(req.body.userId ?? ''),
+      ante: Number(req.body.ante),
+      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/games/poker/:roundId/action', async (req, res) => {
+  try {
+    const result = await actPokerRound(casinoService, {
+      roundId: req.params.roundId,
+      action: req.body.action,
+      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+    });
+    res.json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 // Production VS Development serving logic
 if (process.env.NODE_ENV === 'production') {
   // CJS output is bundled to dist/server.cjs; target static files from ../
@@ -202,7 +229,7 @@ function sendApiError(res: express.Response, error: unknown) {
 }
 
 function sanitizeRoundForApi<T extends { gameId?: string; outcome?: unknown }>(round: T): T {
-  if (round.gameId !== 'blackjack') return round;
+  if (round.gameId !== 'blackjack' && round.gameId !== 'poker') return round;
   return {
     ...round,
     outcome: undefined
@@ -210,7 +237,7 @@ function sanitizeRoundForApi<T extends { gameId?: string; outcome?: unknown }>(r
 }
 
 function sanitizeLedgerEntryForApi<T extends { metadata?: Record<string, unknown> }>(entry: T): T {
-  if (entry.metadata?.gameId !== 'blackjack') return entry;
+  if (entry.metadata?.gameId !== 'blackjack' && entry.metadata?.gameId !== 'poker') return entry;
   return {
     ...entry,
     metadata: {

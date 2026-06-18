@@ -11,7 +11,26 @@ import {
 interface PokerGameProps {
   user: UserProfile;
   onUpdateWallet: (amount: number) => void;
+  onStartRound?: (ante: number) => Promise<PokerServerView>;
+  onActionRound?: (roundId: string, action: 'check' | 'call' | 'raise' | 'fold') => Promise<PokerServerView>;
   onTriggerNotification: (message: string, type: 'success' | 'info' | 'error') => void;
+}
+
+interface PokerServerView {
+  roundId: string;
+  stage: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'folded';
+  playerCards: [PlayingCard, PlayingCard];
+  dealerCards: PlayingCard[];
+  dealerCardsHidden: boolean;
+  communityCards: PlayingCard[];
+  pot: number;
+  playerContribution: number;
+  dealerContribution: number;
+  dealerActionStatus: string;
+  playerRank?: { category: string };
+  dealerRank?: { category: string };
+  winner?: 'player' | 'dealer' | 'push';
+  payout?: number;
 }
 
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'] as const;
@@ -27,7 +46,13 @@ const toPlayingCard = (card: Card): PlayingCard => ({
   rank: card.value as PlayingCard['rank']
 });
 
-export default function PokerGame({ user, onUpdateWallet, onTriggerNotification }: PokerGameProps) {
+const fromPlayingCard = (card: PlayingCard): Card => ({
+  suit: card.suit,
+  value: card.rank,
+  score: card.rank === 'A' ? 14 : ['K', 'Q', 'J'].includes(card.rank) ? { K: 13, Q: 12, J: 11 }[card.rank as 'K' | 'Q' | 'J'] : Number(card.rank)
+});
+
+export default function PokerGame({ user, onUpdateWallet, onStartRound, onActionRound, onTriggerNotification }: PokerGameProps) {
   const [deck, setDeck] = useState<Card[]>([]);
   const [pot, setPot] = useState(0);
 
@@ -46,6 +71,7 @@ export default function PokerGame({ user, onUpdateWallet, onTriggerNotification 
   const [gameStage, setGameStage] = useState<'preflop' | 'flop' | 'turn' | 'river' | 'showdown'>('preflop');
   const [dealerActionStatus, setDealerActionStatus] = useState('Waiting');
   const [winnerMessage, setWinnerMessage] = useState('');
+  const [serverRoundId, setServerRoundId] = useState<string | null>(null);
 
   const initDeck = () => {
     let d: Card[] = [];
@@ -63,11 +89,55 @@ export default function PokerGame({ user, onUpdateWallet, onTriggerNotification 
     return d;
   };
 
-  const handleStartGame = () => {
+  const applyServerView = (view: PokerServerView) => {
+    setServerRoundId(view.roundId);
+    setPlayerCards(view.playerCards.map(fromPlayingCard));
+    setDealerCards(view.dealerCards.map(fromPlayingCard));
+    setCommunityCards(view.communityCards.map(fromPlayingCard));
+    setPot(view.pot);
+    setPlayerCurrentBet(view.playerContribution);
+    setCurrentCallBet(view.playerContribution);
+    setDealerActionStatus(view.dealerActionStatus);
+    setGameStage(view.stage === 'folded' ? 'showdown' : view.stage);
+    setGameStarted(view.stage !== 'showdown' && view.stage !== 'folded');
+
+    if (view.stage === 'showdown' || view.stage === 'folded') {
+      if (view.winner === 'player') {
+        sound.playBigWin();
+        setWinnerMessage(`👑 PLAYER WINS POT OF $${view.payout ?? 0}! ${view.playerRank?.category ?? 'Best hand'} beats Dealer: ${view.dealerRank?.category ?? 'hand'}!`);
+        onTriggerNotification("Congratulations! You won the poker showdown!", "success");
+      } else if (view.winner === 'push') {
+        setWinnerMessage(`⚖️ SPLIT POT Push! Refunded $${view.payout ?? 0}.`);
+        onTriggerNotification("Poker push. Split pot returned.", "info");
+      } else {
+        sound.playError();
+        setWinnerMessage(view.stage === 'folded'
+          ? "You folded. Dealer takes the remaining accumulated pot."
+          : `❌ DEALER WINS! Dealer ${view.dealerRank?.category ?? 'hand'} beats your ${view.playerRank?.category ?? 'hand'}!`);
+        onTriggerNotification("Dealer won this poker round.", "error");
+      }
+    } else {
+      setWinnerMessage('');
+    }
+  };
+
+  const handleStartGame = async () => {
     sound.playClick();
     if (user.walletBalance < ante) {
       sound.playError();
       onTriggerNotification("Insufficient wallet funds for the Poker Ante stake!", "error");
+      return;
+    }
+
+    if (onStartRound) {
+      try {
+        sound.playDeal();
+        const view = await onStartRound(ante);
+        applyServerView(view);
+      } catch (error) {
+        sound.playError();
+        onTriggerNotification(error instanceof Error ? error.message : "Poker deal failed.", "error");
+      }
       return;
     }
 
@@ -106,12 +176,20 @@ export default function PokerGame({ user, onUpdateWallet, onTriggerNotification 
 
   // Check state
   const handleCheck = () => {
+    if (onActionRound && serverRoundId) {
+      void runServerAction('check');
+      return;
+    }
     sound.playClick();
     executeStageProgression();
   };
 
   // Call state
   const handleCall = () => {
+    if (onActionRound && serverRoundId) {
+      void runServerAction('call');
+      return;
+    }
     const callDiff = currentCallBet - playerCurrentBet;
     let cost = Math.max(0, callDiff);
     if (cost > 0) {
@@ -130,6 +208,10 @@ export default function PokerGame({ user, onUpdateWallet, onTriggerNotification 
 
   // Raise option
   const handleRaise = () => {
+    if (onActionRound && serverRoundId) {
+      void runServerAction('raise');
+      return;
+    }
     sound.playClick();
     const raiseAmount = 20; // fixed increment raise
     const totalStake = (currentCallBet - playerCurrentBet) + raiseAmount;
@@ -153,10 +235,26 @@ export default function PokerGame({ user, onUpdateWallet, onTriggerNotification 
 
   // Fold Option
   const handleFold = () => {
+    if (onActionRound && serverRoundId) {
+      void runServerAction('fold');
+      return;
+    }
     sound.playClick();
     sound.playError();
     setGameStarted(false);
     onTriggerNotification("You folded. Dealer takes the remaining accumulated pot.", "info");
+  };
+
+  const runServerAction = async (action: 'check' | 'call' | 'raise' | 'fold') => {
+    if (!serverRoundId || !onActionRound) return;
+    try {
+      sound.playClick();
+      const view = await onActionRound(serverRoundId, action);
+      applyServerView(view);
+    } catch (error) {
+      sound.playError();
+      onTriggerNotification(error instanceof Error ? error.message : `Poker ${action} failed.`, "error");
+    }
   };
 
   const executeStageProgression = () => {

@@ -193,6 +193,31 @@ double
 split
 ```
 
+Server-authoritative poker deal:
+
+```bash
+curl -X POST http://localhost:3000/api/games/poker/start \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"demo","ante":25,"idempotencyKey":"poker-demo-1"}'
+```
+
+Server-authoritative poker action:
+
+```bash
+curl -X POST http://localhost:3000/api/games/poker/ROUND_ID/action \
+  -H "Content-Type: application/json" \
+  -d '{"action":"raise","idempotencyKey":"poker-demo-1-raise"}'
+```
+
+Supported poker actions:
+
+```text
+check
+call
+raise
+fold
+```
+
 ## Current Status
 
 - React/Vite frontend prototype
@@ -205,6 +230,7 @@ split
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time
 - Slots has server-authoritative reel strips, stop selection, paytable resolution, and wallet settlement
 - Blackjack has server-authoritative deal, hit, stand, double down, split hands, dealer draw, hole-card protection, and settlement
+- Poker has server-authoritative deck control, staged board dealing, fold/check/call/raise actions, showdown evaluation, pot settlement, and hidden dealer cards
 - No real auth yet
 - Domain math tests and backend settlement tests exist
 

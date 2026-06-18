@@ -89,6 +89,39 @@ interface BlackjackResponse extends RoundResponse {
   view: BlackjackViewDto;
 }
 
+interface PokerCardDto {
+  suit: 'hearts' | 'diamonds' | 'clubs' | 'spades';
+  rank: '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A';
+}
+
+interface PokerRankDto {
+  category: string;
+  categoryValue: number;
+  tiebreakers: number[];
+  cards: PokerCardDto[];
+}
+
+interface PokerViewDto {
+  roundId: string;
+  stage: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'folded';
+  playerCards: [PokerCardDto, PokerCardDto];
+  dealerCards: PokerCardDto[];
+  dealerCardsHidden: boolean;
+  communityCards: PokerCardDto[];
+  pot: number;
+  playerContribution: number;
+  dealerContribution: number;
+  dealerActionStatus: string;
+  playerRank?: PokerRankDto;
+  dealerRank?: PokerRankDto;
+  winner?: 'player' | 'dealer' | 'push';
+  payout?: number;
+}
+
+interface PokerResponse extends RoundResponse {
+  view: PokerViewDto;
+}
+
 export const CASINO_USER_ID = 'demo';
 
 export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> => {
@@ -237,6 +270,39 @@ export const actBlackjackRound = async (input: {
     })
   });
   return parseJsonResponse<BlackjackResponse>(response);
+};
+
+export const startPokerRound = async (input: {
+  userId?: string;
+  ante: number;
+  idempotencyKey: string;
+}): Promise<PokerResponse> => {
+  const response = await fetch('/api/games/poker/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: input.userId ?? CASINO_USER_ID,
+      ante: input.ante,
+      idempotencyKey: input.idempotencyKey
+    })
+  });
+  return parseJsonResponse<PokerResponse>(response);
+};
+
+export const actPokerRound = async (input: {
+  roundId: string;
+  action: 'check' | 'call' | 'raise' | 'fold';
+  idempotencyKey: string;
+}): Promise<PokerResponse> => {
+  const response = await fetch(`/api/games/poker/${encodeURIComponent(input.roundId)}/action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: input.action,
+      idempotencyKey: input.idempotencyKey
+    })
+  });
+  return parseJsonResponse<PokerResponse>(response);
 };
 
 const parseJsonResponse = async <T>(response: Response): Promise<T> => {

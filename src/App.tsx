@@ -14,6 +14,7 @@ import { UserProfile, GameCatalogItem, BlogPost } from './types';
 import {
   CASINO_USER_ID,
   actBlackjackRound,
+  actPokerRound,
   cashoutCrashRound,
   fetchWallet,
   placeBet,
@@ -21,7 +22,8 @@ import {
   spinSlots,
   spinRoulette,
   startBlackjackRound,
-  startCrashRound
+  startCrashRound,
+  startPokerRound
 } from './api/casinoApi';
 
 // Complete 20-Game Catalog Pre-designed nodes
@@ -251,6 +253,26 @@ export default function App() {
       roundId,
       action,
       idempotencyKey: `blackjack-${action}-${roundId}-${crypto.randomUUID()}`
+    });
+    setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    return response.view;
+  };
+
+  const startPokerGameRound = async (ante: number) => {
+    const response = await startPokerRound({
+      userId: CASINO_USER_ID,
+      ante,
+      idempotencyKey: `poker-start-${crypto.randomUUID()}`
+    });
+    setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    return response.view;
+  };
+
+  const actPokerGameRound = async (roundId: string, action: 'check' | 'call' | 'raise' | 'fold') => {
+    const response = await actPokerRound({
+      roundId,
+      action,
+      idempotencyKey: `poker-${action}-${roundId}-${crypto.randomUUID()}`
     });
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
     return response.view;
@@ -662,7 +684,13 @@ export default function App() {
             )}
 
             {activeCasinoTab === 'poker' && (
-              <PokerGame user={user} onUpdateWallet={(amount) => handleUpdateWallet(amount, 'poker')} onTriggerNotification={triggerNotification} />
+              <PokerGame
+                user={user}
+                onUpdateWallet={(amount) => handleUpdateWallet(amount, 'poker')}
+                onStartRound={startPokerGameRound}
+                onActionRound={actPokerGameRound}
+                onTriggerNotification={triggerNotification}
+              />
             )}
 
             {activeCasinoTab === 'crash' && (
