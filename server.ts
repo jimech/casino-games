@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { extractBearerToken, AuthUser } from './src/backend/authService';
+import { GameRoundRecord } from './src/backend/casinoService';
 import { createServices } from './src/backend/serviceFactory';
 import { spinRoulette } from './src/backend/games/rouletteEngine';
 import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEngine';
@@ -17,7 +18,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService } = createServices();
+const { casinoService, authService, riskService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 
 app.use(express.json());
@@ -62,6 +63,16 @@ app.post('/api/auth/login', async (req, res) => {
     });
     res.json(session);
   } catch (error) {
+    await riskService.recordEvent({
+      type: 'failed_login',
+      severity: 'low',
+      score: 10,
+      context: {
+        login: typeof req.body.login === 'string' ? req.body.login.slice(0, 120) : undefined,
+        userAgent: req.get('user-agent'),
+        ipAddress: req.ip
+      }
+    });
     sendApiError(res, error);
   }
 });
@@ -165,6 +176,18 @@ app.get('/api/rounds', async (req, res) => {
   }
 });
 
+app.get('/api/risk/events', async (req, res) => {
+  try {
+    await requireAuth(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const status = isRiskStatus(req.query.status) ? req.query.status : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ events: await riskService.listEvents({ userId, status, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/bets', async (req, res) => {
   try {
     const user = await requireAuth(req);
@@ -176,6 +199,7 @@ app.post('/api/bets', async (req, res) => {
     });
     const wallet = await casinoService.getWallet(round.userId);
     broadcastWallet(round.userId, wallet);
+    await assessRoundStarted(round);
     res.status(201).json({ round, wallet });
   } catch (error) {
     sendApiError(res, error);
@@ -194,6 +218,7 @@ app.post('/api/rounds/:roundId/settle', async (req, res) => {
     });
     const wallet = await casinoService.getWallet(round.userId);
     broadcastWallet(round.userId, wallet);
+    await riskService.assessRoundSettled(round);
     res.json({ round, wallet });
   } catch (error) {
     sendApiError(res, error);
@@ -211,6 +236,7 @@ app.post('/api/rounds/:roundId/refund', async (req, res) => {
     });
     const wallet = await casinoService.getWallet(round.userId);
     broadcastWallet(round.userId, wallet);
+    await riskService.assessRoundSettled(round);
     res.json({ round, wallet });
   } catch (error) {
     sendApiError(res, error);
@@ -226,6 +252,8 @@ app.post('/api/games/roulette/spin', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    await assessRoundStarted(result.round);
+    await riskService.assessRoundSettled(result.round);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -241,6 +269,7 @@ app.post('/api/games/crash/start', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    await assessRoundStarted(result.round);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -257,6 +286,7 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    await riskService.assessRoundSettled(result.round);
     res.json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -275,6 +305,8 @@ app.post('/api/games/slots/spin', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    await assessRoundStarted(result.round);
+    await riskService.assessRoundSettled(result.round);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -290,6 +322,8 @@ app.post('/api/games/blackjack/start', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    await assessRoundStarted(result.round);
+    if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -306,6 +340,7 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
     res.json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -321,6 +356,7 @@ app.post('/api/games/poker/start', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    await assessRoundStarted(result.round);
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -337,6 +373,7 @@ app.post('/api/games/poker/:roundId/action', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     broadcastWallet(result.round.userId, result.wallet);
+    if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
     res.json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -383,12 +420,37 @@ async function requireOwnUser(req: express.Request, userId: string): Promise<Aut
 
 async function assertOwnUser(user: AuthUser, userIdOrUsername: string): Promise<void> {
   if (userIdOrUsername === user.id || userIdOrUsername === user.username) return;
+  await riskService.recordEvent({
+    userId: user.id,
+    type: 'forbidden_user_access',
+    severity: 'high',
+    score: 70,
+    context: { requestedUser: userIdOrUsername }
+  });
   throw new Error('Forbidden user access');
 }
 
 async function assertRoundOwner(roundId: string, userId: string): Promise<void> {
   const rounds = await casinoService.listRounds(userId);
-  if (!rounds.some(round => round.id === roundId)) throw new Error('Forbidden round access');
+  if (!rounds.some(round => round.id === roundId)) {
+    await riskService.recordEvent({
+      userId,
+      type: 'forbidden_round_access',
+      severity: 'high',
+      score: 75,
+      context: { roundId }
+    });
+    throw new Error('Forbidden round access');
+  }
+}
+
+async function assessRoundStarted(round: GameRoundRecord) {
+  const recentRounds = await casinoService.listRounds(round.userId);
+  await riskService.assessRoundStarted(round, recentRounds);
+}
+
+function isRiskStatus(value: unknown): value is 'open' | 'reviewed' | 'dismissed' {
+  return value === 'open' || value === 'reviewed' || value === 'dismissed';
 }
 
 function extractRequestToken(req: express.Request): string {

@@ -252,6 +252,13 @@ raise
 fold
 ```
 
+List risk events:
+
+```bash
+curl "http://localhost:3000/api/risk/events?status=open&limit=50" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Current Status
 
 - React/Vite frontend prototype
@@ -261,6 +268,7 @@ fold
 - Prisma/PostgreSQL backend service wired to Neon
 - Private account registration, login, logout, token sessions, age gate, and consent gate
 - Realtime wallet updates stream through an authenticated server-sent events endpoint
+- Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time

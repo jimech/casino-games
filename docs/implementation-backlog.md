@@ -385,6 +385,9 @@ Acceptance criteria:
 - Risk events are visible to admins.
 - Events include severity, timestamp, user, and context.
 
+Implementation note:
+- Current implementation persists risk events and exposes them through `GET /api/risk/events`. Rules cover failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts.
+
 ### T15 - Bonuses and VIP System
 
 Summary: Implement bonus campaigns, claims, loyalty tiers, and rewards.
