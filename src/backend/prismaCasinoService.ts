@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
   AddRoundStakeInput,
+  CreateUserWalletInput,
   GameRoundRecord,
   PlaceBetInput,
   RefundRoundInput,
@@ -25,6 +26,21 @@ export class PrismaCasinoService {
     const resolvedUserId = await this.resolveUserId(userId);
     const wallet = await this.prisma.wallet.findUnique({ where: { userId: resolvedUserId } });
     if (!wallet) throw new Error(`Wallet not found for user ${userId}`);
+    return walletToState(wallet);
+  }
+
+  async createUserWallet(input: CreateUserWalletInput): Promise<WalletState> {
+    assertText(input.userId, 'userId');
+    const balance = BigInt(asMoney(input.balance ?? Number(process.env.DEMO_WALLET_BALANCE ?? 100000)));
+    const wallet = await this.prisma.wallet.upsert({
+      where: { userId: input.userId },
+      update: {},
+      create: {
+        userId: input.userId,
+        available: balance,
+        locked: 0
+      }
+    });
     return walletToState(wallet);
   }
 

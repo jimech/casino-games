@@ -76,7 +76,7 @@ Deploy committed migrations to a remote database:
 npm run db:deploy
 ```
 
-Seed the demo user and wallet:
+Seed the demo user and wallet. The default local seed login is `demo` / `demo-password`; override it with `SEED_USERNAME` and `SEED_PASSWORD` in `.env`.
 
 ```bash
 npm run db:seed
@@ -100,16 +100,33 @@ npm audit --audit-level=high
 
 ## Backend API
 
-The backend can run in memory or Prisma mode. With `CASINO_BACKEND_DRIVER=prisma`, wallet reads, bet locks, round settlement, refunds, and ledger entries are stored in PostgreSQL. The default seeded user is:
+The backend can run in memory or Prisma mode. With `CASINO_BACKEND_DRIVER=prisma`, users, auth sessions, wallet reads, bet locks, round settlement, refunds, and ledger entries are stored in PostgreSQL. The default seeded user is:
 
 ```text
 demo
 ```
 
+Register a private account:
+
+```bash
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"private_player","password":"very-secret-pass","acceptAgeGate":true,"acceptTerms":true,"acceptPrivacy":true}'
+```
+
+Log in and save the session token for protected API calls:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"login":"demo","password":"demo-password"}' | node -pe "JSON.parse(require('fs').readFileSync(0, 'utf8')).token")
+```
+
 Read wallet:
 
 ```bash
-curl http://localhost:3000/api/wallet/demo
+curl http://localhost:3000/api/wallet/demo \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Place a bet and lock funds:
@@ -117,7 +134,8 @@ Place a bet and lock funds:
 ```bash
 curl -X POST http://localhost:3000/api/bets \
   -H "Content-Type: application/json" \
-  -d '{"userId":"demo","gameId":"roulette","stake":100,"idempotencyKey":"bet-demo-1"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"gameId":"roulette","stake":100,"idempotencyKey":"bet-demo-1"}'
 ```
 
 Settle a round:
@@ -125,6 +143,7 @@ Settle a round:
 ```bash
 curl -X POST http://localhost:3000/api/rounds/ROUND_ID/settle \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"payout":3600,"idempotencyKey":"settle-demo-1","outcome":{"number":17}}'
 ```
 
@@ -133,6 +152,7 @@ Refund a round:
 ```bash
 curl -X POST http://localhost:3000/api/rounds/ROUND_ID/refund \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"idempotencyKey":"refund-demo-1","reason":"round failed"}'
 ```
 
@@ -141,7 +161,8 @@ Server-authoritative roulette spin:
 ```bash
 curl -X POST http://localhost:3000/api/games/roulette/spin \
   -H "Content-Type: application/json" \
-  -d '{"userId":"demo","bets":{"outside":{"red":10},"straight":{"17":5}},"idempotencyKey":"roulette-demo-1"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"bets":{"outside":{"red":10},"straight":{"17":5}},"idempotencyKey":"roulette-demo-1"}'
 ```
 
 Server-authoritative crash launch:
@@ -149,7 +170,8 @@ Server-authoritative crash launch:
 ```bash
 curl -X POST http://localhost:3000/api/games/crash/start \
   -H "Content-Type: application/json" \
-  -d '{"userId":"demo","stake":20,"idempotencyKey":"crash-demo-1"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"stake":20,"idempotencyKey":"crash-demo-1"}'
 ```
 
 Server-authoritative crash cashout:
@@ -157,6 +179,7 @@ Server-authoritative crash cashout:
 ```bash
 curl -X POST http://localhost:3000/api/games/crash/ROUND_ID/cashout \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"cashoutMultiplier":1.5,"idempotencyKey":"crash-demo-1-cashout"}'
 ```
 
@@ -165,7 +188,8 @@ Server-authoritative slots spin:
 ```bash
 curl -X POST http://localhost:3000/api/games/slots/spin \
   -H "Content-Type: application/json" \
-  -d '{"userId":"demo","machineId":"fruit-mania","bet":5,"freeSpin":false,"bonusMultiplier":1,"idempotencyKey":"slots-demo-1"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"machineId":"fruit-mania","bet":5,"freeSpin":false,"bonusMultiplier":1,"idempotencyKey":"slots-demo-1"}'
 ```
 
 Server-authoritative blackjack deal:
@@ -173,7 +197,8 @@ Server-authoritative blackjack deal:
 ```bash
 curl -X POST http://localhost:3000/api/games/blackjack/start \
   -H "Content-Type: application/json" \
-  -d '{"userId":"demo","stake":25,"idempotencyKey":"blackjack-demo-1"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"stake":25,"idempotencyKey":"blackjack-demo-1"}'
 ```
 
 Server-authoritative blackjack action:
@@ -181,6 +206,7 @@ Server-authoritative blackjack action:
 ```bash
 curl -X POST http://localhost:3000/api/games/blackjack/ROUND_ID/action \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"action":"stand","idempotencyKey":"blackjack-demo-1-stand"}'
 ```
 
@@ -198,7 +224,8 @@ Server-authoritative poker deal:
 ```bash
 curl -X POST http://localhost:3000/api/games/poker/start \
   -H "Content-Type: application/json" \
-  -d '{"userId":"demo","ante":25,"idempotencyKey":"poker-demo-1"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"ante":25,"idempotencyKey":"poker-demo-1"}'
 ```
 
 Server-authoritative poker action:
@@ -206,6 +233,7 @@ Server-authoritative poker action:
 ```bash
 curl -X POST http://localhost:3000/api/games/poker/ROUND_ID/action \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"action":"raise","idempotencyKey":"poker-demo-1-raise"}'
 ```
 
@@ -225,13 +253,13 @@ fold
 - Playable Slots, Blackjack, Roulette, Poker, and Crash game components
 - In-memory backend wallet and settlement service
 - Prisma/PostgreSQL backend service wired to Neon
+- Private account registration, login, logout, token sessions, age gate, and consent gate
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time
 - Slots has server-authoritative reel strips, stop selection, paytable resolution, and wallet settlement
 - Blackjack has server-authoritative deal, hit, stand, double down, split hands, dealer draw, hole-card protection, and settlement
 - Poker has server-authoritative deck control, staged board dealing, fold/check/call/raise actions, showdown evaluation, pot settlement, and hidden dealer cards
-- No real auth yet
 - Domain math tests and backend settlement tests exist
 
 Start with `T00.1` in the backlog, then continue ticket by ticket.

@@ -62,6 +62,11 @@ export interface CasinoServiceSnapshot {
   rounds: GameRoundRecord[];
 }
 
+export interface CreateUserWalletInput {
+  userId: string;
+  balance?: number;
+}
+
 export class CasinoService {
   private wallets = new Map<string, WalletState>();
   private ledger: LedgerEntry[] = [];
@@ -77,6 +82,14 @@ export class CasinoService {
 
   getWallet(userId: string): WalletState {
     return this.requireWallet(userId);
+  }
+
+  createUserWallet(input: CreateUserWalletInput): WalletState {
+    this.assertText(input.userId, 'userId');
+    if (this.wallets.has(input.userId)) return this.requireWallet(input.userId);
+    const wallet = createWalletState(input.balance ?? Number(process.env.DEMO_WALLET_BALANCE ?? 100000), 0);
+    this.wallets.set(input.userId, wallet);
+    return wallet;
   }
 
   getLedger(userId: string): LedgerEntry[] {

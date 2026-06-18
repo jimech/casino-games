@@ -2,7 +2,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { createCasinoService } from './src/backend/serviceFactory';
+import { extractBearerToken, AuthUser } from './src/backend/authService';
+import { createServices } from './src/backend/serviceFactory';
 import { spinRoulette } from './src/backend/games/rouletteEngine';
 import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEngine';
 import { spinSlots } from './src/backend/games/slotsEngine';
@@ -16,7 +17,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const casinoService = createCasinoService();
+const { casinoService, authService } = createServices();
 
 app.use(express.json());
 
@@ -30,8 +31,85 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const session = await authService.register({
+      email: typeof req.body.email === 'string' ? req.body.email : undefined,
+      username: String(req.body.username ?? ''),
+      password: String(req.body.password ?? ''),
+      displayName: typeof req.body.displayName === 'string' ? req.body.displayName : undefined,
+      dateOfBirth: typeof req.body.dateOfBirth === 'string' ? req.body.dateOfBirth : undefined,
+      acceptAgeGate: Boolean(req.body.acceptAgeGate),
+      acceptTerms: Boolean(req.body.acceptTerms),
+      acceptPrivacy: Boolean(req.body.acceptPrivacy),
+      userAgent: req.get('user-agent'),
+      ipAddress: req.ip
+    });
+    res.status(201).json(session);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const session = await authService.login({
+      login: String(req.body.login ?? ''),
+      password: String(req.body.password ?? ''),
+      userAgent: req.get('user-agent'),
+      ipAddress: req.ip
+    });
+    res.json(session);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/auth/session', async (req, res) => {
+  try {
+    res.json(await authService.getSession(extractBearerToken(req.get('authorization'))));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  try {
+    await authService.logout(extractBearerToken(req.get('authorization')));
+    res.status(204).end();
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.patch('/api/auth/profile', async (req, res) => {
+  try {
+    res.json(await authService.updateProfile({
+      token: extractBearerToken(req.get('authorization')),
+      displayName: typeof req.body.displayName === 'string' ? req.body.displayName : undefined,
+      email: typeof req.body.email === 'string' ? req.body.email : undefined
+    }));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/auth/consent', async (req, res) => {
+  try {
+    res.json(await authService.updateConsent({
+      token: extractBearerToken(req.get('authorization')),
+      acceptAgeGate: Boolean(req.body.acceptAgeGate),
+      acceptTerms: Boolean(req.body.acceptTerms),
+      acceptPrivacy: Boolean(req.body.acceptPrivacy)
+    }));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/wallet/:userId', async (req, res) => {
   try {
+    await requireOwnUser(req, req.params.userId);
     res.json(await casinoService.getWallet(req.params.userId));
   } catch (error) {
     sendApiError(res, error);
@@ -40,6 +118,7 @@ app.get('/api/wallet/:userId', async (req, res) => {
 
 app.get('/api/wallet/:userId/ledger', async (req, res) => {
   try {
+    await requireOwnUser(req, req.params.userId);
     const entries = await casinoService.getLedger(req.params.userId);
     res.json({ entries: entries.map(sanitizeLedgerEntryForApi) });
   } catch (error) {
@@ -48,15 +127,22 @@ app.get('/api/wallet/:userId/ledger', async (req, res) => {
 });
 
 app.get('/api/rounds', async (req, res) => {
-  const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
-  const rounds = await casinoService.listRounds(userId);
-  res.json({ rounds: rounds.map(sanitizeRoundForApi) });
+  try {
+    const user = await requireAuth(req);
+    const requestedUserId = typeof req.query.userId === 'string' ? req.query.userId : user.id;
+    await assertOwnUser(user, requestedUserId);
+    const rounds = await casinoService.listRounds(user.id);
+    res.json({ rounds: rounds.map(sanitizeRoundForApi) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
 });
 
 app.post('/api/bets', async (req, res) => {
   try {
+    const user = await requireAuth(req);
     const round = await casinoService.placeBet({
-      userId: String(req.body.userId ?? ''),
+      userId: user.id,
       gameId: String(req.body.gameId ?? ''),
       stake: Number(req.body.stake),
       idempotencyKey: String(req.body.idempotencyKey ?? '')
@@ -69,6 +155,8 @@ app.post('/api/bets', async (req, res) => {
 
 app.post('/api/rounds/:roundId/settle', async (req, res) => {
   try {
+    const user = await requireAuth(req);
+    await assertRoundOwner(req.params.roundId, user.id);
     const round = await casinoService.settleRound({
       roundId: req.params.roundId,
       payout: Number(req.body.payout),
@@ -83,6 +171,8 @@ app.post('/api/rounds/:roundId/settle', async (req, res) => {
 
 app.post('/api/rounds/:roundId/refund', async (req, res) => {
   try {
+    const user = await requireAuth(req);
+    await assertRoundOwner(req.params.roundId, user.id);
     const round = await casinoService.refundRound({
       roundId: req.params.roundId,
       idempotencyKey: String(req.body.idempotencyKey ?? ''),
@@ -96,8 +186,9 @@ app.post('/api/rounds/:roundId/refund', async (req, res) => {
 
 app.post('/api/games/roulette/spin', async (req, res) => {
   try {
+    const user = await requireAuth(req);
     const result = await spinRoulette(casinoService, {
-      userId: String(req.body.userId ?? ''),
+      userId: user.id,
       bets: req.body.bets,
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
@@ -109,8 +200,9 @@ app.post('/api/games/roulette/spin', async (req, res) => {
 
 app.post('/api/games/crash/start', async (req, res) => {
   try {
+    const user = await requireAuth(req);
     const result = await startCrashRound(casinoService, {
-      userId: String(req.body.userId ?? ''),
+      userId: user.id,
       stake: Number(req.body.stake),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
@@ -122,6 +214,8 @@ app.post('/api/games/crash/start', async (req, res) => {
 
 app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
   try {
+    const user = await requireAuth(req);
+    await assertRoundOwner(req.params.roundId, user.id);
     const result = await cashoutCrashRound(casinoService, {
       roundId: req.params.roundId,
       cashoutMultiplier: Number(req.body.cashoutMultiplier),
@@ -135,8 +229,9 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
 
 app.post('/api/games/slots/spin', async (req, res) => {
   try {
+    const user = await requireAuth(req);
     const result = await spinSlots(casinoService, {
-      userId: String(req.body.userId ?? ''),
+      userId: user.id,
       machineId: String(req.body.machineId ?? ''),
       bet: Number(req.body.bet),
       freeSpin: Boolean(req.body.freeSpin),
@@ -151,8 +246,9 @@ app.post('/api/games/slots/spin', async (req, res) => {
 
 app.post('/api/games/blackjack/start', async (req, res) => {
   try {
+    const user = await requireAuth(req);
     const result = await startBlackjackRound(casinoService, {
-      userId: String(req.body.userId ?? ''),
+      userId: user.id,
       stake: Number(req.body.stake),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
@@ -164,6 +260,8 @@ app.post('/api/games/blackjack/start', async (req, res) => {
 
 app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
   try {
+    const user = await requireAuth(req);
+    await assertRoundOwner(req.params.roundId, user.id);
     const result = await actBlackjackRound(casinoService, {
       roundId: req.params.roundId,
       action: req.body.action,
@@ -177,8 +275,9 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
 
 app.post('/api/games/poker/start', async (req, res) => {
   try {
+    const user = await requireAuth(req);
     const result = await startPokerRound(casinoService, {
-      userId: String(req.body.userId ?? ''),
+      userId: user.id,
       ante: Number(req.body.ante),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
@@ -190,6 +289,8 @@ app.post('/api/games/poker/start', async (req, res) => {
 
 app.post('/api/games/poker/:roundId/action', async (req, res) => {
   try {
+    const user = await requireAuth(req);
+    await assertRoundOwner(req.params.roundId, user.id);
     const result = await actPokerRound(casinoService, {
       roundId: req.params.roundId,
       action: req.body.action,
@@ -224,8 +325,29 @@ app.listen(port, '0.0.0.0', () => {
 
 function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
-  const status = /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open/i.test(message) ? 400 : 500;
+  const status = /unauthorized/i.test(message) ? 401 : /forbidden/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|consent/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
+}
+
+async function requireAuth(req: express.Request): Promise<AuthUser> {
+  const session = await authService.getSession(extractBearerToken(req.get('authorization')));
+  return session.user;
+}
+
+async function requireOwnUser(req: express.Request, userId: string): Promise<AuthUser> {
+  const user = await requireAuth(req);
+  await assertOwnUser(user, userId);
+  return user;
+}
+
+async function assertOwnUser(user: AuthUser, userIdOrUsername: string): Promise<void> {
+  if (userIdOrUsername === user.id || userIdOrUsername === user.username) return;
+  throw new Error('Forbidden user access');
+}
+
+async function assertRoundOwner(roundId: string, userId: string): Promise<void> {
+  const rounds = await casinoService.listRounds(userId);
+  if (!rounds.some(round => round.id === roundId)) throw new Error('Forbidden round access');
 }
 
 function sanitizeRoundForApi<T extends { gameId?: string; outcome?: unknown }>(round: T): T {

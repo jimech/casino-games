@@ -3,6 +3,24 @@ interface WalletDto {
   locked: number;
 }
 
+export interface AuthUserDto {
+  id: string;
+  email?: string;
+  username: string;
+  displayName?: string;
+  dateOfBirth?: string;
+  ageGateAcceptedAt?: string;
+  termsAcceptedAt?: string;
+  privacyAcceptedAt?: string;
+  createdAt: string;
+}
+
+export interface AuthSessionDto {
+  token: string;
+  expiresAt: string;
+  user: AuthUserDto;
+}
+
 interface RoundDto {
   id: string;
   userId: string;
@@ -123,9 +141,73 @@ interface PokerResponse extends RoundResponse {
 }
 
 export const CASINO_USER_ID = 'demo';
+const AUTH_TOKEN_STORAGE_KEY = 'casino.sessionToken';
+
+export const getStoredAuthToken = (): string | null => {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+};
+
+export const setStoredAuthToken = (token: string | null) => {
+  if (typeof localStorage === 'undefined') return;
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  }
+};
+
+export const registerAccount = async (input: {
+  email?: string;
+  username: string;
+  password: string;
+  displayName?: string;
+  dateOfBirth?: string;
+  acceptAgeGate: boolean;
+  acceptTerms: boolean;
+  acceptPrivacy: boolean;
+}): Promise<AuthSessionDto> => {
+  const response = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const session = await parseJsonResponse<AuthSessionDto>(response);
+  setStoredAuthToken(session.token);
+  return session;
+};
+
+export const loginAccount = async (input: { login: string; password: string }): Promise<AuthSessionDto> => {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const session = await parseJsonResponse<AuthSessionDto>(response);
+  setStoredAuthToken(session.token);
+  return session;
+};
+
+export const fetchAuthSession = async (): Promise<AuthSessionDto> => {
+  const response = await fetch('/api/auth/session', {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<AuthSessionDto>(response);
+};
+
+export const logoutAccount = async (): Promise<void> => {
+  const response = await fetch('/api/auth/logout', {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  if (!response.ok && response.status !== 401) await parseJsonResponse(response);
+  setStoredAuthToken(null);
+};
 
 export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> => {
-  const response = await fetch(`/api/wallet/${encodeURIComponent(userId)}`);
+  const response = await fetch(`/api/wallet/${encodeURIComponent(userId)}`, {
+    headers: authHeaders()
+  });
   return parseJsonResponse<WalletDto>(response);
 };
 
@@ -137,7 +219,7 @@ export const placeBet = async (input: {
 }): Promise<RoundResponse> => {
   const response = await fetch('/api/bets', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       userId: input.userId ?? CASINO_USER_ID,
       gameId: input.gameId,
@@ -156,7 +238,7 @@ export const settleRound = async (input: {
 }): Promise<RoundResponse> => {
   const response = await fetch(`/api/rounds/${encodeURIComponent(input.roundId)}/settle`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       payout: input.payout,
       idempotencyKey: input.idempotencyKey,
@@ -173,7 +255,7 @@ export const spinRoulette = async (input: {
 }): Promise<RouletteSpinResponse> => {
   const response = await fetch('/api/games/roulette/spin', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       userId: input.userId ?? CASINO_USER_ID,
       bets: input.bets,
@@ -190,7 +272,7 @@ export const startCrashRound = async (input: {
 }): Promise<CrashStartResponse> => {
   const response = await fetch('/api/games/crash/start', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       userId: input.userId ?? CASINO_USER_ID,
       stake: input.stake,
@@ -207,7 +289,7 @@ export const cashoutCrashRound = async (input: {
 }): Promise<CrashCashoutResponse> => {
   const response = await fetch(`/api/games/crash/${encodeURIComponent(input.roundId)}/cashout`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       cashoutMultiplier: input.cashoutMultiplier,
       idempotencyKey: input.idempotencyKey
@@ -226,7 +308,7 @@ export const spinSlots = async (input: {
 }): Promise<SlotsSpinResponse> => {
   const response = await fetch('/api/games/slots/spin', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       userId: input.userId ?? CASINO_USER_ID,
       machineId: input.machineId,
@@ -246,7 +328,7 @@ export const startBlackjackRound = async (input: {
 }): Promise<BlackjackResponse> => {
   const response = await fetch('/api/games/blackjack/start', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       userId: input.userId ?? CASINO_USER_ID,
       stake: input.stake,
@@ -263,7 +345,7 @@ export const actBlackjackRound = async (input: {
 }): Promise<BlackjackResponse> => {
   const response = await fetch(`/api/games/blackjack/${encodeURIComponent(input.roundId)}/action`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       action: input.action,
       idempotencyKey: input.idempotencyKey
@@ -279,7 +361,7 @@ export const startPokerRound = async (input: {
 }): Promise<PokerResponse> => {
   const response = await fetch('/api/games/poker/start', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       userId: input.userId ?? CASINO_USER_ID,
       ante: input.ante,
@@ -296,7 +378,7 @@ export const actPokerRound = async (input: {
 }): Promise<PokerResponse> => {
   const response = await fetch(`/api/games/poker/${encodeURIComponent(input.roundId)}/action`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify({
       action: input.action,
       idempotencyKey: input.idempotencyKey
@@ -315,3 +397,13 @@ const parseJsonResponse = async <T>(response: Response): Promise<T> => {
   }
   return payload as T;
 };
+
+const authHeaders = (): HeadersInit => {
+  const token = getStoredAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const jsonHeaders = (): HeadersInit => ({
+  'Content-Type': 'application/json',
+  ...authHeaders()
+});

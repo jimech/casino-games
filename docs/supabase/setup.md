@@ -70,7 +70,12 @@ npm run dev
 ## Verify
 
 ```bash
-curl http://localhost:3000/api/wallet/demo
+TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"login":"demo","password":"demo-password"}' | node -pe "JSON.parse(require('fs').readFileSync(0, 'utf8')).token")
+
+curl http://localhost:3000/api/wallet/demo \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Expected: the demo wallet should persist after server restarts.
@@ -81,3 +86,4 @@ Expected: the demo wallet should persist after server restarts.
 - This project currently uses Prisma directly, not the Supabase Data API.
 - RLS is enabled on generated public tables as defense in depth.
 - No `anon` or `authenticated` table policies are created yet.
+- Keep `SEED_PASSWORD`, `DATABASE_URL`, and `DIRECT_URL` out of git.

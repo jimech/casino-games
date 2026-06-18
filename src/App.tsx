@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle, Compass, Play, Coins, UserCheck, User, Gift, Award, CreditCard,
-  BookOpen, HeartHandshake, Settings as SettingsIcon
+  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut
 } from 'lucide-react';
 
 import SlotsGame from './components/SlotsGame';
@@ -12,12 +12,17 @@ import CrashGame from './components/CrashGame';
 import { sound } from './utils/audio';
 import { UserProfile, GameCatalogItem, BlogPost } from './types';
 import {
-  CASINO_USER_ID,
+  AuthSessionDto,
   actBlackjackRound,
   actPokerRound,
   cashoutCrashRound,
+  fetchAuthSession,
   fetchWallet,
+  getStoredAuthToken,
+  loginAccount,
+  logoutAccount,
   placeBet,
+  registerAccount,
   settleRound,
   spinSlots,
   spinRoulette,
@@ -94,7 +99,22 @@ export default function App() {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterVolatility, setFilterVolatility] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [authSession, setAuthSession] = useState<AuthSessionDto | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authForm, setAuthForm] = useState({
+    username: 'neon_private',
+    email: '',
+    password: '',
+    displayName: 'Neon Private',
+    dateOfBirth: '',
+    acceptAgeGate: false,
+    acceptTerms: false,
+    acceptPrivacy: false
+  });
   const pendingRoundsRef = useRef<Record<string, string[]>>({});
+  const activeUserId = authSession?.user.id ?? '';
 
   // Floating notifications
   const triggerNotification = (message: string, type: 'success' | 'info' | 'error') => {
@@ -105,12 +125,79 @@ export default function App() {
   };
 
   useEffect(() => {
-    void syncWalletFromBackend();
+    void restoreAuthSession();
   }, []);
 
-  const syncWalletFromBackend = async () => {
+  useEffect(() => {
+    if (authSession) void syncWalletFromBackend();
+  }, [authSession?.user.id]);
+
+  const restoreAuthSession = async () => {
     try {
-      const wallet = await fetchWallet(CASINO_USER_ID);
+      if (!getStoredAuthToken()) {
+        setAuthLoading(false);
+        return;
+      }
+      const session = await fetchAuthSession();
+      setAuthSession(session);
+      setUser(prev => ({
+        ...prev,
+        username: session.user.displayName ?? session.user.username,
+        joinedDate: session.user.createdAt.slice(0, 10)
+      }));
+    } catch (error) {
+      console.warn('Session restore failed', error);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleAuthSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAuthSubmitting(true);
+    try {
+      const session = authMode === 'register'
+        ? await registerAccount({
+            username: authForm.username,
+            email: authForm.email || undefined,
+            password: authForm.password,
+            displayName: authForm.displayName,
+            dateOfBirth: authForm.dateOfBirth || undefined,
+            acceptAgeGate: authForm.acceptAgeGate,
+            acceptTerms: authForm.acceptTerms,
+            acceptPrivacy: authForm.acceptPrivacy
+          })
+        : await loginAccount({
+            login: authForm.username,
+            password: authForm.password
+          });
+      setAuthSession(session);
+      setUser(prev => ({
+        ...prev,
+        username: session.user.displayName ?? session.user.username,
+        joinedDate: session.user.createdAt.slice(0, 10)
+      }));
+      triggerNotification(authMode === 'register' ? 'Private account created. Session is active.' : 'Session restored. Welcome back.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Authentication failed';
+      triggerNotification(message, 'error');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    sound.playClick();
+    await logoutAccount();
+    setAuthSession(null);
+    setActiveCasinoTab('home');
+    triggerNotification('Logged out of the private casino session.', 'info');
+  };
+
+  const syncWalletFromBackend = async () => {
+    if (!activeUserId) return;
+    try {
+      const wallet = await fetchWallet(activeUserId);
       setUser(prev => ({ ...prev, walletBalance: wallet.available }));
     } catch (error) {
       console.warn('Wallet sync failed', error);
@@ -147,7 +234,7 @@ export default function App() {
     try {
       if (amount < 0) {
         const response = await placeBet({
-          userId: CASINO_USER_ID,
+          userId: activeUserId,
           gameId,
           stake: Math.abs(amount),
           idempotencyKey: `${gameId}-bet-${crypto.randomUUID()}`
@@ -183,7 +270,7 @@ export default function App() {
 
   const resolveRouletteSpin = async (bets: Parameters<typeof spinRoulette>[0]['bets']) => {
     const response = await spinRoulette({
-      userId: CASINO_USER_ID,
+      userId: activeUserId,
       bets,
       idempotencyKey: `roulette-spin-${crypto.randomUUID()}`
     });
@@ -197,7 +284,7 @@ export default function App() {
 
   const startCrashGameRound = async (stake: number) => {
     const response = await startCrashRound({
-      userId: CASINO_USER_ID,
+      userId: activeUserId,
       stake,
       idempotencyKey: `crash-start-${crypto.randomUUID()}`
     });
@@ -226,7 +313,7 @@ export default function App() {
   const spinSlotsGameRound = async (input: Parameters<typeof spinSlots>[0]) => {
     const response = await spinSlots({
       ...input,
-      userId: CASINO_USER_ID,
+      userId: activeUserId,
       idempotencyKey: `slots-spin-${crypto.randomUUID()}`
     });
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
@@ -240,7 +327,7 @@ export default function App() {
 
   const startBlackjackGameRound = async (stake: number) => {
     const response = await startBlackjackRound({
-      userId: CASINO_USER_ID,
+      userId: activeUserId,
       stake,
       idempotencyKey: `blackjack-start-${crypto.randomUUID()}`
     });
@@ -260,7 +347,7 @@ export default function App() {
 
   const startPokerGameRound = async (ante: number) => {
     const response = await startPokerRound({
-      userId: CASINO_USER_ID,
+      userId: activeUserId,
       ante,
       idempotencyKey: `poker-start-${crypto.randomUUID()}`
     });
@@ -335,6 +422,26 @@ export default function App() {
         </div>
       )}
 
+      {authLoading && (
+        <div className="min-h-screen flex items-center justify-center bg-[#0B0B14] text-neutral-300">
+          <div className="text-xs uppercase tracking-widest font-black">Loading private session...</div>
+        </div>
+      )}
+
+      {!authLoading && !authSession && (
+        <AuthGate
+          mode={authMode}
+          setMode={setAuthMode}
+          form={authForm}
+          setForm={setAuthForm}
+          submitting={authSubmitting}
+          onSubmit={handleAuthSubmit}
+        />
+      )}
+
+      {!authLoading && authSession && (
+      <>
+
       {/* DECORATIVE CONTROL HEADER */}
       <header className="bg-neutral-950 border-b border-neutral-850 px-4 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-4 z-40 relative">
         <div className="flex items-center gap-3">
@@ -369,6 +476,13 @@ export default function App() {
             className="bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 text-[10px] font-black uppercase px-3 py-2 rounded-lg leading-none cursor-pointer"
           >
             Deposit
+          </button>
+          <button
+            onClick={handleLogout}
+            className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 text-[10px] font-black uppercase px-3 py-2 rounded-lg leading-none cursor-pointer flex items-center gap-1.5"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Logout
           </button>
         </div>
       </header>
@@ -1176,9 +1290,144 @@ export default function App() {
               </div>
             )}
           </main>
-        </div>
       </div>
-    );
+      </>
+      )}
+    </div>
+  );
+}
+
+interface AuthGateProps {
+  mode: 'login' | 'register';
+  setMode: (mode: 'login' | 'register') => void;
+  form: {
+    username: string;
+    email: string;
+    password: string;
+    displayName: string;
+    dateOfBirth: string;
+    acceptAgeGate: boolean;
+    acceptTerms: boolean;
+    acceptPrivacy: boolean;
+  };
+  setForm: React.Dispatch<React.SetStateAction<AuthGateProps['form']>>;
+  submitting: boolean;
+  onSubmit: (event: React.FormEvent) => void;
+}
+
+function AuthGate({ mode, setMode, form, setForm, submitting, onSubmit }: AuthGateProps) {
+  return (
+    <main className="min-h-screen bg-[#0B0B14] text-neutral-100 flex items-center justify-center p-4">
+      <section className="w-full max-w-md bg-[#10101C] border border-[#FF0055]/20 rounded-xl p-6 space-y-5 shadow-2xl">
+        <div className="space-y-1">
+          <span className="text-[10px] uppercase tracking-widest font-black text-[#00FF88]">Private Access</span>
+          <h1 className="text-xl font-black uppercase tracking-wide text-white">Vegas Neon Arena</h1>
+          <p className="text-xs text-neutral-400">
+            Use a private account before wallet or game actions are available.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 bg-neutral-950 p-1 rounded-lg">
+          {(['register', 'login'] as const).map(nextMode => (
+            <button
+              key={nextMode}
+              type="button"
+              onClick={() => setMode(nextMode)}
+              className={`py-2 rounded-md text-[10px] uppercase font-black ${mode === nextMode ? 'bg-[#FF0055] text-white' : 'text-neutral-400 hover:text-white'}`}
+            >
+              {nextMode}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-3">
+          <label className="block space-y-1">
+            <span className="text-[10px] uppercase font-bold text-neutral-400">{mode === 'register' ? 'Username' : 'Username or Email'}</span>
+            <input
+              value={form.username}
+              onChange={event => setForm(prev => ({ ...prev, username: event.target.value }))}
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-[#FF0055]"
+              required
+            />
+          </label>
+
+          {mode === 'register' && (
+            <>
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase font-bold text-neutral-400">Email</span>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={event => setForm(prev => ({ ...prev, email: event.target.value }))}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-[#FF0055]"
+                  placeholder="optional"
+                />
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-neutral-400">Display Name</span>
+                  <input
+                    value={form.displayName}
+                    onChange={event => setForm(prev => ({ ...prev, displayName: event.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-[#FF0055]"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-neutral-400">Birth Date</span>
+                  <input
+                    type="date"
+                    value={form.dateOfBirth}
+                    onChange={event => setForm(prev => ({ ...prev, dateOfBirth: event.target.value }))}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-[#FF0055]"
+                  />
+                </label>
+              </div>
+            </>
+          )}
+
+          <label className="block space-y-1">
+            <span className="text-[10px] uppercase font-bold text-neutral-400">Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={event => setForm(prev => ({ ...prev, password: event.target.value }))}
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-[#FF0055]"
+              minLength={10}
+              required
+            />
+          </label>
+
+          {mode === 'register' && (
+            <div className="space-y-2 bg-neutral-950 border border-neutral-850 rounded-lg p-3">
+              {[
+                ['acceptAgeGate', 'I confirm I meet the required age for this private project.'],
+                ['acceptTerms', 'I accept the private project terms.'],
+                ['acceptPrivacy', 'I accept profile and session data storage.']
+              ].map(([key, label]) => (
+                <label key={key} className="flex gap-2 text-[11px] text-neutral-300">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form[key as keyof typeof form])}
+                    onChange={event => setForm(prev => ({ ...prev, [key]: event.target.checked }))}
+                    className="mt-0.5"
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full bg-[#00FF88] hover:bg-emerald-400 disabled:opacity-60 text-neutral-950 font-black uppercase text-xs py-3 rounded-lg"
+          >
+            {submitting ? 'Working...' : mode === 'register' ? 'Create private account' : 'Log in'}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
 }
 
 // ======================= COMPONENT SUB-ROUTINES =======================
