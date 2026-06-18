@@ -53,6 +53,42 @@ interface SlotsSpinResponse extends RoundResponse {
   };
 }
 
+interface BlackjackCardDto {
+  suit: 'hearts' | 'diamonds' | 'clubs' | 'spades';
+  rank: '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A';
+}
+
+interface BlackjackViewDto {
+  roundId: string;
+  phase: 'player' | 'settled';
+  playerHand: BlackjackCardDto[];
+  splitHand?: BlackjackCardDto[];
+  activeHandIndex: 0 | 1;
+  dealerHand: BlackjackCardDto[];
+  dealerHoleHidden: boolean;
+  playerScore: number;
+  splitScore?: number;
+  dealerScore?: number;
+  runningCount: number;
+  cardsPlayedCount: number;
+  settlement?: {
+    status: 'win' | 'lose' | 'push' | 'blackjack';
+    payout: number;
+    playerScore: number;
+    dealerScore: number;
+  };
+  splitSettlement?: {
+    status: 'win' | 'lose' | 'push' | 'blackjack';
+    payout: number;
+    playerScore: number;
+    dealerScore: number;
+  };
+}
+
+interface BlackjackResponse extends RoundResponse {
+  view: BlackjackViewDto;
+}
+
 export const CASINO_USER_ID = 'demo';
 
 export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> => {
@@ -168,6 +204,39 @@ export const spinSlots = async (input: {
     })
   });
   return parseJsonResponse<SlotsSpinResponse>(response);
+};
+
+export const startBlackjackRound = async (input: {
+  userId?: string;
+  stake: number;
+  idempotencyKey: string;
+}): Promise<BlackjackResponse> => {
+  const response = await fetch('/api/games/blackjack/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: input.userId ?? CASINO_USER_ID,
+      stake: input.stake,
+      idempotencyKey: input.idempotencyKey
+    })
+  });
+  return parseJsonResponse<BlackjackResponse>(response);
+};
+
+export const actBlackjackRound = async (input: {
+  roundId: string;
+  action: 'hit' | 'stand' | 'double' | 'split';
+  idempotencyKey: string;
+}): Promise<BlackjackResponse> => {
+  const response = await fetch(`/api/games/blackjack/${encodeURIComponent(input.roundId)}/action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: input.action,
+      idempotencyKey: input.idempotencyKey
+    })
+  });
+  return parseJsonResponse<BlackjackResponse>(response);
 };
 
 const parseJsonResponse = async <T>(response: Response): Promise<T> => {

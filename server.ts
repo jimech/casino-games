@@ -6,6 +6,7 @@ import { createCasinoService } from './src/backend/serviceFactory';
 import { spinRoulette } from './src/backend/games/rouletteEngine';
 import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEngine';
 import { spinSlots } from './src/backend/games/slotsEngine';
+import { actBlackjackRound, startBlackjackRound } from './src/backend/games/blackjackEngine';
 
 dotenv.config();
 
@@ -38,7 +39,8 @@ app.get('/api/wallet/:userId', async (req, res) => {
 
 app.get('/api/wallet/:userId/ledger', async (req, res) => {
   try {
-    res.json({ entries: await casinoService.getLedger(req.params.userId) });
+    const entries = await casinoService.getLedger(req.params.userId);
+    res.json({ entries: entries.map(sanitizeLedgerEntryForApi) });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -46,7 +48,8 @@ app.get('/api/wallet/:userId/ledger', async (req, res) => {
 
 app.get('/api/rounds', async (req, res) => {
   const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
-  res.json({ rounds: await casinoService.listRounds(userId) });
+  const rounds = await casinoService.listRounds(userId);
+  res.json({ rounds: rounds.map(sanitizeRoundForApi) });
 });
 
 app.post('/api/bets', async (req, res) => {
@@ -145,6 +148,32 @@ app.post('/api/games/slots/spin', async (req, res) => {
   }
 });
 
+app.post('/api/games/blackjack/start', async (req, res) => {
+  try {
+    const result = await startBlackjackRound(casinoService, {
+      userId: String(req.body.userId ?? ''),
+      stake: Number(req.body.stake),
+      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
+  try {
+    const result = await actBlackjackRound(casinoService, {
+      roundId: req.params.roundId,
+      action: req.body.action,
+      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+    });
+    res.json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 // Production VS Development serving logic
 if (process.env.NODE_ENV === 'production') {
   // CJS output is bundled to dist/server.cjs; target static files from ../
@@ -170,4 +199,23 @@ function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
   const status = /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
+}
+
+function sanitizeRoundForApi<T extends { gameId?: string; outcome?: unknown }>(round: T): T {
+  if (round.gameId !== 'blackjack') return round;
+  return {
+    ...round,
+    outcome: undefined
+  };
+}
+
+function sanitizeLedgerEntryForApi<T extends { metadata?: Record<string, unknown> }>(entry: T): T {
+  if (entry.metadata?.gameId !== 'blackjack') return entry;
+  return {
+    ...entry,
+    metadata: {
+      ...entry.metadata,
+      outcome: undefined
+    }
+  };
 }

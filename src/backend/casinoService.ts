@@ -43,6 +43,19 @@ export interface RefundRoundInput {
   reason?: string;
 }
 
+export interface UpdateRoundOutcomeInput {
+  roundId: string;
+  outcome: unknown;
+  eventType?: string;
+}
+
+export interface AddRoundStakeInput {
+  roundId: string;
+  amount: number;
+  idempotencyKey: string;
+  reason?: string;
+}
+
 export interface CasinoServiceSnapshot {
   wallets: Record<string, WalletState>;
   ledger: LedgerEntry[];
@@ -204,6 +217,55 @@ export class CasinoService {
     };
     this.rounds.set(round.id, refunded);
     return refunded;
+  }
+
+  updateRoundOutcome(input: UpdateRoundOutcomeInput): GameRoundRecord {
+    this.assertText(input.roundId, 'roundId');
+    const round = this.requireRound(input.roundId);
+    if (round.status !== 'open') {
+      throw new Error(`Round ${round.id} is not open`);
+    }
+    const updated: GameRoundRecord = {
+      ...round,
+      outcome: input.outcome
+    };
+    this.rounds.set(round.id, updated);
+    return updated;
+  }
+
+  addRoundStake(input: AddRoundStakeInput): GameRoundRecord {
+    this.assertText(input.roundId, 'roundId');
+    this.assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = asMoney(input.amount);
+    const round = this.requireRound(input.roundId);
+    if (round.status !== 'open') {
+      throw new Error(`Round ${round.id} is not open`);
+    }
+
+    const wallet = this.requireWallet(round.userId);
+    const commandResult = applyWalletCommand(wallet, {
+      id: this.nextId('ledger'),
+      idempotencyKey: input.idempotencyKey,
+      type: 'lock',
+      amount,
+      metadata: {
+        userId: round.userId,
+        gameId: round.gameId,
+        roundId: round.id,
+        reason: input.reason
+      }
+    });
+
+    this.wallets.set(round.userId, commandResult.wallet);
+    if (!commandResult.entry) return round;
+    this.ledger.push(commandResult.entry);
+
+    const updated: GameRoundRecord = {
+      ...round,
+      stake: asMoney(round.stake + amount)
+    };
+    this.rounds.set(round.id, updated);
+    return updated;
   }
 
   snapshot(): CasinoServiceSnapshot {

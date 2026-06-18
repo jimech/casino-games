@@ -13,12 +13,14 @@ import { sound } from './utils/audio';
 import { UserProfile, GameCatalogItem, BlogPost } from './types';
 import {
   CASINO_USER_ID,
+  actBlackjackRound,
   cashoutCrashRound,
   fetchWallet,
   placeBet,
   settleRound,
   spinSlots,
   spinRoulette,
+  startBlackjackRound,
   startCrashRound
 } from './api/casinoApi';
 
@@ -232,6 +234,26 @@ export default function App() {
       bonusSpinsAwarded: response.outcome.bonusSpinsAwarded,
       walletAvailable: response.wallet.available
     };
+  };
+
+  const startBlackjackGameRound = async (stake: number) => {
+    const response = await startBlackjackRound({
+      userId: CASINO_USER_ID,
+      stake,
+      idempotencyKey: `blackjack-start-${crypto.randomUUID()}`
+    });
+    setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    return response.view;
+  };
+
+  const actBlackjackGameRound = async (roundId: string, action: 'hit' | 'stand' | 'double' | 'split') => {
+    const response = await actBlackjackRound({
+      roundId,
+      action,
+      idempotencyKey: `blackjack-${action}-${roundId}-${crypto.randomUUID()}`
+    });
+    setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    return response.view;
   };
 
   // Fast auto sync standard payouts for games loading inside specific frames
@@ -621,7 +643,13 @@ export default function App() {
             )}
 
             {activeCasinoTab === 'blackjack' && (
-              <BlackjackGame user={user} onUpdateWallet={(amount) => handleUpdateWallet(amount, 'blackjack')} onTriggerNotification={triggerNotification} />
+              <BlackjackGame
+                user={user}
+                onUpdateWallet={(amount) => handleUpdateWallet(amount, 'blackjack')}
+                onStartRound={startBlackjackGameRound}
+                onActionRound={actBlackjackGameRound}
+                onTriggerNotification={triggerNotification}
+              />
             )}
 
             {activeCasinoTab === 'roulette' && (

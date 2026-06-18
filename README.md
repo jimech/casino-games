@@ -168,6 +168,31 @@ curl -X POST http://localhost:3000/api/games/slots/spin \
   -d '{"userId":"demo","machineId":"fruit-mania","bet":5,"freeSpin":false,"bonusMultiplier":1,"idempotencyKey":"slots-demo-1"}'
 ```
 
+Server-authoritative blackjack deal:
+
+```bash
+curl -X POST http://localhost:3000/api/games/blackjack/start \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"demo","stake":25,"idempotencyKey":"blackjack-demo-1"}'
+```
+
+Server-authoritative blackjack action:
+
+```bash
+curl -X POST http://localhost:3000/api/games/blackjack/ROUND_ID/action \
+  -H "Content-Type: application/json" \
+  -d '{"action":"stand","idempotencyKey":"blackjack-demo-1-stand"}'
+```
+
+Supported blackjack actions:
+
+```text
+hit
+stand
+double
+split
+```
+
 ## Current Status
 
 - React/Vite frontend prototype
@@ -179,6 +204,7 @@ curl -X POST http://localhost:3000/api/games/slots/spin \
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time
 - Slots has server-authoritative reel strips, stop selection, paytable resolution, and wallet settlement
+- Blackjack has server-authoritative deal, hit, stand, double down, split hands, dealer draw, hole-card protection, and settlement
 - No real auth yet
 - Domain math tests and backend settlement tests exist
 

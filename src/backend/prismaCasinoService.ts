@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
+  AddRoundStakeInput,
   GameRoundRecord,
   PlaceBetInput,
   RefundRoundInput,
-  SettleRoundInput
+  SettleRoundInput,
+  UpdateRoundOutcomeInput
 } from './casinoService';
 import { LedgerEntry, WalletState } from '../domain/ledger';
 import { asMoney } from '../domain/money';
@@ -254,6 +256,103 @@ export class PrismaCasinoService {
       });
 
       return roundToRecord(refunded);
+    }, { isolationLevel: SERIALIZABLE });
+  }
+
+  async updateRoundOutcome(input: UpdateRoundOutcomeInput): Promise<GameRoundRecord> {
+    assertText(input.roundId, 'roundId');
+    return this.prisma.$transaction(async tx => {
+      const round = await requireRound(tx, input.roundId);
+      if (round.status !== 'open') throw new Error(`Round ${round.id} is not open`);
+      const outcome = toJson(input.outcome);
+      const updated = await tx.gameRound.update({
+        where: { id: round.id },
+        data: {
+          outcome,
+          events: {
+            create: {
+              type: 'action',
+              payload: {
+                type: input.eventType ?? 'stateUpdated',
+                outcome
+              }
+            }
+          }
+        }
+      });
+      return roundToRecord(updated);
+    }, { isolationLevel: SERIALIZABLE });
+  }
+
+  async addRoundStake(input: AddRoundStakeInput): Promise<GameRoundRecord> {
+    assertText(input.roundId, 'roundId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = BigInt(asMoney(input.amount));
+
+    return this.prisma.$transaction(async tx => {
+      const existingLedger = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { round: true }
+      });
+      if (existingLedger?.round) return roundToRecord(existingLedger.round);
+
+      const round = await requireRound(tx, input.roundId);
+      if (round.status !== 'open') throw new Error(`Round ${round.id} is not open`);
+
+      const wallet = await requireWallet(tx, round.userId);
+      if (wallet.available < amount) {
+        throw new Error(`Insufficient funds: tried to lock ${amount.toString()} from ${wallet.available.toString()}`);
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          available: wallet.available - amount,
+          locked: wallet.locked + amount
+        }
+      });
+
+      const updatedRound = await tx.gameRound.update({
+        where: { id: round.id },
+        data: {
+          stake: round.stake + amount,
+          events: {
+            create: {
+              type: 'action',
+              payload: {
+                type: 'stakeAdded',
+                amount: input.amount,
+                reason: input.reason
+              }
+            }
+          }
+        }
+      });
+
+      await tx.walletLedgerEntry.create({
+        data: {
+          transactionId: randomUUID(),
+          idempotencyKey: input.idempotencyKey,
+          userId: round.userId,
+          walletId: wallet.id,
+          type: 'lock',
+          amount,
+          balanceBefore: wallet.available,
+          balanceAfter: updatedWallet.available,
+          lockedBefore: wallet.locked,
+          lockedAfter: updatedWallet.locked,
+          gameId: round.gameId,
+          roundId: round.id,
+          metadata: {
+            userId: round.userId,
+            gameId: round.gameId,
+            roundId: round.id,
+            reason: input.reason
+          }
+        }
+      });
+
+      return roundToRecord(updatedRound);
     }, { isolationLevel: SERIALIZABLE });
   }
 

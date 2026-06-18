@@ -15,7 +15,36 @@ import { asMoney } from '../domain/money';
 interface BlackjackGameProps {
   user: UserProfile;
   onUpdateWallet: (amount: number) => void;
+  onStartRound?: (stake: number) => Promise<BlackjackServerView>;
+  onActionRound?: (roundId: string, action: 'hit' | 'stand' | 'double' | 'split') => Promise<BlackjackServerView>;
   onTriggerNotification: (message: string, type: 'success' | 'info' | 'error') => void;
+}
+
+interface BlackjackServerView {
+  roundId: string;
+  phase: 'player' | 'settled';
+  playerHand: BlackjackCard[];
+  splitHand?: BlackjackCard[];
+  activeHandIndex: 0 | 1;
+  dealerHand: BlackjackCard[];
+  dealerHoleHidden: boolean;
+  playerScore: number;
+  splitScore?: number;
+  dealerScore?: number;
+  runningCount: number;
+  cardsPlayedCount: number;
+  settlement?: {
+    status: 'win' | 'lose' | 'push' | 'blackjack';
+    payout: number;
+    playerScore: number;
+    dealerScore: number;
+  };
+  splitSettlement?: {
+    status: 'win' | 'lose' | 'push' | 'blackjack';
+    payout: number;
+    playerScore: number;
+    dealerScore: number;
+  };
 }
 
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'] as const;
@@ -44,7 +73,13 @@ const toBlackjackCard = (card: Card): BlackjackCard => ({
 
 const toBlackjackCards = (cards: readonly Card[]): BlackjackCard[] => cards.map(toBlackjackCard);
 
-export default function BlackjackGame({ user, onUpdateWallet, onTriggerNotification }: BlackjackGameProps) {
+const fromBlackjackCard = (card: BlackjackCard): Card => ({
+  suit: card.suit,
+  value: card.rank,
+  score: card.rank === 'A' ? 11 : ['J', 'Q', 'K'].includes(card.rank) ? 10 : Number(card.rank)
+});
+
+export default function BlackjackGame({ user, onUpdateWallet, onStartRound, onActionRound, onTriggerNotification }: BlackjackGameProps) {
   const [deck, setDeck] = useState<Card[]>([]);
   const [bet, setBet] = useState(25);
   const [gameInProgress, setGameInProgress] = useState(false);
@@ -59,6 +94,7 @@ export default function BlackjackGame({ user, onUpdateWallet, onTriggerNotificat
   const [activeHandIdx, setActiveHandIdx] = useState<0 | 1>(0); // 0 = main hand, 1 = split hand
   const [runningCount, setRunningCount] = useState(0);
   const [cardsPlayedCount, setCardsPlayedCount] = useState(0);
+  const [serverRoundId, setServerRoundId] = useState<string | null>(null);
 
   // Game statuses
   const [mainHandStatus, setMainHandStatus] = useState<BlackjackUiStatus>('playing');
@@ -110,10 +146,58 @@ export default function BlackjackGame({ user, onUpdateWallet, onTriggerNotificat
   };
 
   // Start new game deal
-  const dealNewGame = () => {
+  const applyServerView = (view: BlackjackServerView) => {
+    setServerRoundId(view.roundId);
+    setPlayerHand(view.playerHand.map(fromBlackjackCard));
+    setSplitHand(view.splitHand ? view.splitHand.map(fromBlackjackCard) : null);
+    setDealerHand(view.dealerHand.map(fromBlackjackCard));
+    setActiveHandIdx(view.activeHandIndex);
+    setDealerTurn(!view.dealerHoleHidden);
+    setRunningCount(view.runningCount);
+    setCardsPlayedCount(view.cardsPlayedCount);
+    setGameInProgress(view.phase === 'player');
+    setSplitHandStatus(view.splitHand ? 'playing' : 'playing');
+
+    if (view.phase === 'player') {
+      setMainHandStatus('playing');
+      return;
+    }
+
+    const status = view.settlement?.status ?? 'lose';
+    setMainHandStatus(status);
+    if (view.splitSettlement) {
+      setSplitHandStatus(view.splitSettlement.status);
+    }
+    if (status === 'lose') {
+      sound.playError();
+      onTriggerNotification(`Dealer wins with ${view.settlement?.dealerScore ?? view.dealerScore}.`, 'error');
+    } else if (status === 'blackjack') {
+      sound.playBigWin();
+      onTriggerNotification(`BLACKJACK! Returned $${view.settlement?.payout ?? 0}.`, 'success');
+    } else if (status === 'win') {
+      sound.playWin();
+      onTriggerNotification(`You won against Dealer! Returned $${view.settlement?.payout ?? 0}.`, 'success');
+    } else {
+      onTriggerNotification('Push round! Bet refunded.', 'info');
+    }
+  };
+
+  const dealNewGame = async () => {
     if (user.walletBalance < bet) {
       sound.playError();
       onTriggerNotification("Insufficient coins to place Blackjack bet!", "error");
+      return;
+    }
+
+    if (onStartRound) {
+      try {
+        sound.playDeal();
+        const view = await onStartRound(bet);
+        applyServerView(view);
+      } catch (error) {
+        sound.playError();
+        onTriggerNotification(error instanceof Error ? error.message : "Blackjack deal failed.", "error");
+      }
       return;
     }
 
@@ -157,8 +241,21 @@ export default function BlackjackGame({ user, onUpdateWallet, onTriggerNotificat
   };
 
   // Hit command
-  const hit = () => {
+  const hit = async () => {
     if (!gameInProgress) return;
+
+    if (onActionRound && serverRoundId) {
+      try {
+        sound.playDeal();
+        const view = await onActionRound(serverRoundId, 'hit');
+        applyServerView(view);
+      } catch (error) {
+        sound.playError();
+        onTriggerNotification(error instanceof Error ? error.message : "Blackjack hit failed.", "error");
+      }
+      return;
+    }
+
     sound.playDeal();
 
     let activeDeck = [...deck];
@@ -204,8 +301,21 @@ export default function BlackjackGame({ user, onUpdateWallet, onTriggerNotificat
   };
 
   // Stand command
-  const stand = () => {
+  const stand = async () => {
     if (!gameInProgress) return;
+
+    if (onActionRound && serverRoundId) {
+      try {
+        sound.playClick();
+        const view = await onActionRound(serverRoundId, 'stand');
+        applyServerView(view);
+      } catch (error) {
+        sound.playError();
+        onTriggerNotification(error instanceof Error ? error.message : "Blackjack stand failed.", "error");
+      }
+      return;
+    }
+
     sound.playClick();
 
     if (activeHandIdx === 0 && splitHand) {
@@ -223,6 +333,19 @@ export default function BlackjackGame({ user, onUpdateWallet, onTriggerNotificat
   // Double down command
   const doubleDown = () => {
     if (!gameInProgress) return;
+    if (onActionRound && serverRoundId) {
+      void (async () => {
+        try {
+          sound.playDeal();
+          const view = await onActionRound(serverRoundId, 'double');
+          applyServerView(view);
+        } catch (error) {
+          sound.playError();
+          onTriggerNotification(error instanceof Error ? error.message : "Blackjack double down failed.", "error");
+        }
+      })();
+      return;
+    }
     if (user.walletBalance < bet) {
       sound.playError();
       onTriggerNotification("Not enough virtual credentials to double down!", "error");
@@ -265,6 +388,20 @@ export default function BlackjackGame({ user, onUpdateWallet, onTriggerNotificat
   // Split command
   const split = () => {
     if (!gameInProgress) return;
+    if (onActionRound && serverRoundId) {
+      void (async () => {
+        try {
+          sound.playDeal();
+          const view = await onActionRound(serverRoundId, 'split');
+          applyServerView(view);
+          onTriggerNotification("Split hand locked. Play main hand first, then second hand.", "success");
+        } catch (error) {
+          sound.playError();
+          onTriggerNotification(error instanceof Error ? error.message : "Blackjack split failed.", "error");
+        }
+      })();
+      return;
+    }
     if (playerHand.length !== 2) return;
     const canSplit = canSplitBlackjackHand(toBlackjackCards(playerHand));
 
