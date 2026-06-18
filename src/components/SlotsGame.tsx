@@ -2,77 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { Play, Sparkles, Coins, Info, Zap } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { UserProfile } from '../types';
+import { SLOT_MACHINES } from '../domain/slots';
 
 interface SlotsGameProps {
   user: UserProfile;
-  onUpdateWallet: (amount: number) => void;
+  onSpin: (input: {
+    machineId: string;
+    bet: number;
+    freeSpin: boolean;
+    bonusMultiplier: number;
+  }) => Promise<{
+    displaySymbols: [string, string, string];
+    payout: number;
+    bonusSpinsAwarded: number;
+    walletAvailable: number;
+  }>;
   onTriggerNotification: (message: string, type: 'success' | 'info' | 'error') => void;
 }
 
-const MACHINES = [
-  {
-    id: 'fruit-mania',
-    name: 'Neon Fruit Mania',
-    theme: 'fruit',
-    rtp: '96.5%',
-    rtpVal: 0.965,
-    volatility: 'Low',
-    minBet: 5,
-    maxBet: 100,
-    decor: 'from-orange-500 via-pink-500 to-purple-600',
-    symbols: [
-      { char: '🍒', value: 3, name: 'Cherry' },
-      { char: '🍋', value: 4, name: 'Lemon' },
-      { char: '🍉', value: 6, name: 'Watermelon' },
-      { char: '🍇', value: 8, name: 'Grapes' },
-      { char: '💎', value: 15, name: 'Diamond' },
-      { char: '🔔', value: 25, name: 'Bell' },
-      { char: '⭐', value: 50, name: 'Scatter (Free Spins)' }
-    ]
-  },
-  {
-    id: 'cyber-jackpot',
-    name: 'Cyber Jackpot 2077',
-    theme: 'cyber',
-    rtp: '95.0%',
-    rtpVal: 0.95,
-    volatility: 'High',
-    minBet: 20,
-    maxBet: 500,
-    decor: 'from-cyan-400 via-blue-600 to-indigo-900',
-    symbols: [
-      { char: '🔋', value: 5, name: 'Battery' },
-      { char: '💾', value: 10, name: 'Disk' },
-      { char: '🦾', value: 20, name: 'Cyber Arm' },
-      { char: '💻', value: 40, name: 'Deck' },
-      { char: '🕶️', value: 75, name: 'Visor' },
-      { char: '🌐', value: 150, name: 'Core Server' },
-      { char: '⚡', value: 300, name: 'Scatter (Bonus Multip)' }
-    ]
-  },
-  {
-    id: 'ancient-gold',
-    name: "Pharaoh's Neon Gold",
-    theme: 'ancient',
-    rtp: '97.2%',
-    rtpVal: 0.972,
-    volatility: 'Medium',
-    minBet: 10,
-    maxBet: 250,
-    decor: 'from-yellow-400 via-amber-600 to-red-600',
-    symbols: [
-      { char: '🏺', value: 4, name: 'Urn' },
-      { char: '🐍', value: 7, name: 'Cobra' },
-      { char: '🦂', value: 12, name: 'Scarab' },
-      { char: '👁️', value: 25, name: 'Eye of Horus' },
-      { char: '🐪', value: 50, name: 'Camel' },
-      { char: '👑', value: 100, name: 'Pharaoh Mask' },
-      { char: '🔱', value: 200, name: 'Scatter (Golden Key)' }
-    ]
-  }
-];
+const MACHINES = SLOT_MACHINES;
 
-export default function SlotsGame({ user, onUpdateWallet, onTriggerNotification }: SlotsGameProps) {
+export default function SlotsGame({ user, onSpin, onTriggerNotification }: SlotsGameProps) {
   const [activeMachineIdx, setActiveMachineIdx] = useState(0);
   const currentMachine = MACHINES[activeMachineIdx];
 
@@ -98,7 +48,7 @@ export default function SlotsGame({ user, onUpdateWallet, onTriggerNotification 
     setBet(Math.min(currentMachine.maxBet, Math.max(currentMachine.minBet, amt)));
   };
 
-  const executeSpin = () => {
+  const executeSpin = async () => {
     if (spinning) return;
     const isFreeSpin = isBonusRound && bonusSpinsLeft > 0;
 
@@ -108,9 +58,7 @@ export default function SlotsGame({ user, onUpdateWallet, onTriggerNotification 
       return;
     }
 
-    if (!isFreeSpin) {
-      onUpdateWallet(-bet);
-    } else {
+    if (isFreeSpin) {
       setBonusSpinsLeft(prev => prev - 1);
     }
 
@@ -126,113 +74,59 @@ export default function SlotsGame({ user, onUpdateWallet, onTriggerNotification 
       if (ticksPlayed >= 10) clearInterval(soundInterval);
     }, 120);
 
-    // Reel spinning algorithm complying with RTP settings
+    let spinResult: {
+      displaySymbols: [string, string, string];
+      payout: number;
+      bonusSpinsAwarded: number;
+      walletAvailable: number;
+    };
+
+    try {
+      spinResult = await onSpin({
+        machineId: currentMachine.id,
+        bet,
+        freeSpin: isFreeSpin,
+        bonusMultiplier: isBonusRound ? 3 : 1
+      });
+    } catch (error) {
+      clearInterval(soundInterval);
+      setSpinning(false);
+      if (isFreeSpin) setBonusSpinsLeft(prev => prev + 1);
+      sound.playError();
+      onTriggerNotification(error instanceof Error ? error.message : "Slots spin failed.", "error");
+      return;
+    }
+
     setTimeout(() => {
       clearInterval(soundInterval);
-
-      // Deciding standard random generator based on RTP
-      const rollRtp = Math.random();
-      let outcomeReels: string[] = [];
-
-      const symbolsList = currentMachine.symbols;
-      const isArrangedWin = rollRtp < currentMachine.rtpVal;
-
-      if (isArrangedWin) {
-        // High likelihood of hit
-        const chosenSym = symbolsList[Math.floor(Math.random() * (symbolsList.length - 1))];
-        const hasDouble = Math.random() > 0.4;
-        const hasTriple = Math.random() > 0.4;
-
-        if (hasTriple) {
-          outcomeReels = [chosenSym.char, chosenSym.char, chosenSym.char];
-        } else if (hasDouble) {
-          const raw = symbolsList.filter(s => s.char !== chosenSym.char);
-          const outerSym = raw[Math.floor(Math.random() * raw.length)];
-          const idxToMiss = Math.floor(Math.random() * 3);
-          outcomeReels = [chosenSym.char, chosenSym.char, chosenSym.char];
-          outcomeReels[idxToMiss] = outerSym.char;
-        } else {
-          // Semi scatter
-          outcomeReels = [
-            symbolsList[Math.floor(Math.random() * symbolsList.length)].char,
-            symbolsList[Math.floor(Math.random() * symbolsList.length)].char,
-            symbolsList[Math.floor(Math.random() * symbolsList.length)].char
-          ];
-        }
-      } else {
-        // Strict miss sequence
-        outcomeReels = [
-          symbolsList[Math.floor(Math.random() * symbolsList.length)].char,
-          symbolsList[Math.floor(Math.random() * symbolsList.length)].char,
-          symbolsList[Math.floor(Math.random() * symbolsList.length)].char
-        ];
-        // Ensure not identical
-        if (outcomeReels[0] === outcomeReels[1] && outcomeReels[1] === outcomeReels[2]) {
-          const symsFiltered = symbolsList.filter(s => s.char !== outcomeReels[0]);
-          outcomeReels[2] = symsFiltered[Math.floor(Math.random() * symsFiltered.length)].char;
-        }
-      }
-
-      setReels(outcomeReels);
+      setReels(spinResult.displaySymbols);
       setSpinning(false);
-
-      // Calculate payout
-      evaluatePayout(outcomeReels);
+      evaluatePayout(spinResult);
     }, 1500);
   };
 
-  const evaluatePayout = (results: string[]) => {
-    const sym0 = results[0];
-    const sym1 = results[1];
-    const sym2 = results[2];
-
-    const scatterSymObj = currentMachine.symbols.find(s => s.name.includes("Scatter"));
-    const scatterSymbol = scatterSymObj ? scatterSymObj.char : '⭐';
-
-    // Count scatter counts for free spin trigger
-    const scattersCount = results.filter(r => r === scatterSymbol).length;
-
-    let basePayMult = 0;
-    let earnedBonusSpins = 0;
-
-    if (sym0 === sym1 && sym1 === sym2) {
-      // 3 of a kind
-      const matchObj = currentMachine.symbols.find(s => s.char === sym0);
-      basePayMult = matchObj ? matchObj.value * 3 : 10;
-    } else if (sym0 === sym1 || sym1 === sym2 || sym0 === sym2) {
-      // 2 of a kind
-      const doubleSym = sym0 === sym1 ? sym0 : sym2;
-      const matchObj = currentMachine.symbols.find(s => s.char === doubleSym);
-      basePayMult = matchObj ? Math.ceil(matchObj.value * 0.8) : 2;
-    }
-
-    // Trigger Free Spins Bonus
-    if (scattersCount >= 2) {
-      earnedBonusSpins = scattersCount === 2 ? 5 : 12;
+  const evaluatePayout = (result: { payout: number; bonusSpinsAwarded: number }) => {
+    if (result.bonusSpinsAwarded > 0) {
       sound.playBigWin();
-      onTriggerNotification(`🎰 SCATTER BONUS TRIGGERED! Received ${earnedBonusSpins} Free Spins!`, "success");
+      onTriggerNotification(`🎰 SCATTER BONUS TRIGGERED! Received ${result.bonusSpinsAwarded} Free Spins!`, "success");
       setIsBonusRound(true);
-      setBonusSpinsLeft(prev => prev + earnedBonusSpins);
+      setBonusSpinsLeft(prev => prev + result.bonusSpinsAwarded);
     }
 
-    const currentMult = isBonusRound ? 3 : 1;
-    const finalPayout = Math.floor(bet * basePayMult * currentMult);
-
-    if (finalPayout > 0) {
-      onUpdateWallet(finalPayout);
-      setLastWinAmount(finalPayout);
+    if (result.payout > 0) {
+      setLastWinAmount(result.payout);
       setWinAnimation(true);
-      if (finalPayout >= bet * 5) {
+      if (result.payout >= bet * 5) {
         sound.playBigWin();
       } else {
         sound.playWin();
       }
-    } else if (earnedBonusSpins === 0) {
+    } else if (result.bonusSpinsAwarded === 0) {
       // Lose
     }
 
     // End of bonus check
-    if (isBonusRound && bonusSpinsLeft === 1 && earnedBonusSpins === 0) {
+    if (isBonusRound && bonusSpinsLeft === 1 && result.bonusSpinsAwarded === 0) {
       setTimeout(() => {
         setIsBonusRound(false);
         onTriggerNotification("Bonus free rounds fully completed!", "info");

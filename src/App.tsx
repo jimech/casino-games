@@ -17,6 +17,7 @@ import {
   fetchWallet,
   placeBet,
   settleRound,
+  spinSlots,
   spinRoulette,
   startCrashRound
 } from './api/casinoApi';
@@ -214,6 +215,21 @@ export default function App() {
     return {
       payout: response.payout,
       cashoutMultiplier: response.cashoutMultiplier,
+      walletAvailable: response.wallet.available
+    };
+  };
+
+  const spinSlotsGameRound = async (input: Parameters<typeof spinSlots>[0]) => {
+    const response = await spinSlots({
+      ...input,
+      userId: CASINO_USER_ID,
+      idempotencyKey: `slots-spin-${crypto.randomUUID()}`
+    });
+    setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    return {
+      displaySymbols: response.outcome.displaySymbols,
+      payout: response.outcome.payout,
+      bonusSpinsAwarded: response.outcome.bonusSpinsAwarded,
       walletAvailable: response.wallet.available
     };
   };
@@ -597,7 +613,11 @@ export default function App() {
 
             {/* EMBEDDED REAL INTERACTIVE GAMES IN CASINO TAB MODE */}
             {activeCasinoTab === 'slots' && (
-              <SlotsGame user={user} onUpdateWallet={(amount) => handleUpdateWallet(amount, 'slots')} onTriggerNotification={triggerNotification} />
+              <SlotsGame
+                user={user}
+                onSpin={spinSlotsGameRound}
+                onTriggerNotification={triggerNotification}
+              />
             )}
 
             {activeCasinoTab === 'blackjack' && (

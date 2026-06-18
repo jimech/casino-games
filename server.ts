@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { createCasinoService } from './src/backend/serviceFactory';
 import { spinRoulette } from './src/backend/games/rouletteEngine';
 import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEngine';
+import { spinSlots } from './src/backend/games/slotsEngine';
 
 dotenv.config();
 
@@ -123,6 +124,22 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
     res.json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/games/slots/spin', async (req, res) => {
+  try {
+    const result = await spinSlots(casinoService, {
+      userId: String(req.body.userId ?? ''),
+      machineId: String(req.body.machineId ?? ''),
+      bet: Number(req.body.bet),
+      freeSpin: Boolean(req.body.freeSpin),
+      bonusMultiplier: Number(req.body.bonusMultiplier ?? (req.body.freeSpin ? 3 : 1)),
+      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+    });
+    res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
   }

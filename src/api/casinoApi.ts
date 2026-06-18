@@ -41,6 +41,18 @@ interface CrashCashoutResponse extends RoundResponse {
   payout: number;
 }
 
+interface SlotsSpinResponse extends RoundResponse {
+  outcome: {
+    machineId: string;
+    stops: [number, number, number];
+    symbols: [string, string, string];
+    displaySymbols: [string, string, string];
+    payout: number;
+    bonusSpinsAwarded: number;
+    bonusMultiplier: number;
+  };
+}
+
 export const CASINO_USER_ID = 'demo';
 
 export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> => {
@@ -133,6 +145,29 @@ export const cashoutCrashRound = async (input: {
     })
   });
   return parseJsonResponse<CrashCashoutResponse>(response);
+};
+
+export const spinSlots = async (input: {
+  userId?: string;
+  machineId: string;
+  bet: number;
+  freeSpin: boolean;
+  bonusMultiplier: number;
+  idempotencyKey: string;
+}): Promise<SlotsSpinResponse> => {
+  const response = await fetch('/api/games/slots/spin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: input.userId ?? CASINO_USER_ID,
+      machineId: input.machineId,
+      bet: input.bet,
+      freeSpin: input.freeSpin,
+      bonusMultiplier: input.bonusMultiplier,
+      idempotencyKey: input.idempotencyKey
+    })
+  });
+  return parseJsonResponse<SlotsSpinResponse>(response);
 };
 
 const parseJsonResponse = async <T>(response: Response): Promise<T> => {
