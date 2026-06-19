@@ -71,6 +71,16 @@ enum UserRole {
   admin
 }
 
+enum AiEventCategory {
+  page
+  game
+  wallet
+  bonus
+  risk
+  admin
+  session
+}
+
 model User {
   id                String    @id @default(cuid())
   email             String?   @unique
@@ -93,8 +103,24 @@ model User {
   riskEvents    RiskEvent[]
   bonusClaims   BonusClaim[]
   notifications Notification[]
+  aiEvents      AiEvent[]
 
   @@map("users")
+}
+
+model AiEvent {
+  id        String          @id @default(cuid())
+  userId    String
+  category  AiEventCategory
+  name      String
+  context   Json?
+  createdAt DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([category, createdAt])
+  @@map("ai_events")
 }
 
 model Notification {

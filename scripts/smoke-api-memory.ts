@@ -92,6 +92,23 @@ const main = async () => {
   });
   assertEqual(bet.wallet.available, 99000, 'high-stake bet wallet lock');
 
+  await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
+    category: 'page',
+    name: 'tab_viewed',
+    context: { tab: 'admin' }
+  });
+  const aiEvents = await getJson(`${baseUrl}/api/ai/events?limit=25`, adminSession.token);
+  assertArray(aiEvents.events, 'ai events array');
+  if (!aiEvents.events.some((event: { category: string; name: string }) => event.category === 'bonus' && event.name === 'bonus_claimed')) {
+    throw new Error('Expected bonus AI event to be captured');
+  }
+  if (!aiEvents.events.some((event: { category: string; name: string }) => event.category === 'game' && event.name === 'round_started')) {
+    throw new Error('Expected game AI event to be captured');
+  }
+  if (!aiEvents.events.some((event: { category: string; name: string }) => event.category === 'page' && event.name === 'tab_viewed')) {
+    throw new Error('Expected manual page AI event to be captured');
+  }
+
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {
     throw new Error('Expected high-stake risk event to be created');

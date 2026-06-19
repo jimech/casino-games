@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { AiEventCategory } from './src/backend/aiEventService';
 import { extractBearerToken, AuthUser } from './src/backend/authService';
 import { GameRoundRecord } from './src/backend/casinoService';
 import { createServices } from './src/backend/serviceFactory';
@@ -18,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -192,6 +193,42 @@ app.get('/api/risk/events', async (req, res) => {
   }
 });
 
+app.get('/api/ai/events', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const requestedUserId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const category = isAiEventCategory(req.query.category) ? req.query.category : undefined;
+    const since = typeof req.query.since === 'string' ? req.query.since : undefined;
+    const until = typeof req.query.until === 'string' ? req.query.until : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const userId = requestedUserId ?? (user.role === 'admin' ? undefined : user.id);
+
+    if (requestedUserId && requestedUserId !== user.id) await requireAdmin(req);
+
+    res.json({
+      events: await aiEventService.list({ userId, category, since, until, limit })
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/ai/events', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    if (!isAiEventCategory(req.body.category)) throw new Error('category is invalid');
+    const event = await aiEventService.track({
+      userId: user.id,
+      category: req.body.category,
+      name: String(req.body.name ?? ''),
+      context: isRecord(req.body.context) ? req.body.context : undefined
+    });
+    res.status(201).json({ event });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/bonuses', async (req, res) => {
   try {
     const user = await requireAuth(req);
@@ -207,14 +244,27 @@ app.get('/api/bonuses', async (req, res) => {
 app.get('/api/admin/summary', async (req, res) => {
   try {
     const user = await requireAdmin(req);
-    const [wallet, ledger, rounds, riskEvents, campaigns, claims] = await Promise.all([
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
       casinoService.listRounds(user.id),
       riskService.listEvents({ userId: user.id, limit: 25 }),
       bonusService.listCampaigns(),
-      bonusService.listClaims(user.id)
+      bonusService.listClaims(user.id),
+      aiEventService.list({ userId: user.id, limit: 25 })
     ]);
+
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'admin',
+      name: 'admin_summary_viewed',
+      context: {
+        ledgerCount: ledger.length,
+        roundCount: rounds.length,
+        openRiskCount: riskEvents.filter(event => event.status === 'open').length,
+        bonusClaimCount: claims.length
+      }
+    });
 
     res.json({
       user,
@@ -223,7 +273,8 @@ app.get('/api/admin/summary', async (req, res) => {
       rounds: rounds.map(sanitizeRoundForApi).slice(0, 25),
       riskEvents,
       bonusCampaigns: campaigns,
-      bonusClaims: claims
+      bonusClaims: claims,
+      aiEvents
     });
   } catch (error) {
     sendApiError(res, error);
@@ -293,6 +344,17 @@ app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
         }
       });
     }
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'bonus',
+      name: 'bonus_claimed',
+      context: {
+        campaignId: result.campaign.id,
+        claimId: result.claim.id,
+        claimKey: result.claim.claimKey,
+        amount: result.claim.amount
+      }
+    });
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -572,11 +634,45 @@ async function assertRoundOwner(roundId: string, userId: string): Promise<void> 
 
 async function assessRoundStarted(round: GameRoundRecord) {
   const recentRounds = await casinoService.listRounds(round.userId);
+  await trackAiEventSafely({
+    userId: round.userId,
+    category: 'game',
+    name: 'round_started',
+    context: {
+      roundId: round.id,
+      gameId: round.gameId,
+      stake: round.stake,
+      status: round.status
+    }
+  });
   await riskService.assessRoundStarted(round, recentRounds);
 }
 
 function isRiskStatus(value: unknown): value is 'open' | 'reviewed' | 'dismissed' {
   return value === 'open' || value === 'reviewed' || value === 'dismissed';
+}
+
+function isAiEventCategory(value: unknown): value is AiEventCategory {
+  return value === 'page' ||
+    value === 'game' ||
+    value === 'wallet' ||
+    value === 'bonus' ||
+    value === 'risk' ||
+    value === 'admin' ||
+    value === 'session';
+}
+
+async function trackAiEventSafely(input: {
+  userId: string;
+  category: AiEventCategory;
+  name: string;
+  context?: Record<string, unknown>;
+}) {
+  try {
+    await aiEventService.track(input);
+  } catch (error) {
+    console.warn('AI event capture failed', error);
+  }
 }
 
 function extractRequestToken(req: express.Request): string {

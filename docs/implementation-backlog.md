@@ -513,6 +513,8 @@ Implementation note:
 
 Summary: Collect behavior signals for personalization and risk analysis.
 
+Implementation status: Complete. The platform now stores structured AI event telemetry in memory and Prisma drivers, exposes filtered event APIs, captures page/game/bonus/admin signals, and shows recent events in the admin audit screen. Capture is best-effort and cannot block game or wallet flows.
+
 Scope:
 - Track page views, game clicks, bet frequency, session duration, bonus usage, and churn indicators.
 - Store structured events.

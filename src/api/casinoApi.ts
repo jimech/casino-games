@@ -192,6 +192,15 @@ interface RiskEventDto {
   reviewedAt?: string;
 }
 
+export interface AiEventDto {
+  id: string;
+  userId: string;
+  category: 'page' | 'game' | 'wallet' | 'bonus' | 'risk' | 'admin' | 'session';
+  name: string;
+  context?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface AdminSummaryDto {
   user: AuthUserDto;
   wallet: WalletDto;
@@ -200,6 +209,7 @@ export interface AdminSummaryDto {
   riskEvents: RiskEventDto[];
   bonusCampaigns: BonusCampaignDto[];
   bonusClaims: BonusClaimDto[];
+  aiEvents: AiEventDto[];
 }
 
 export interface NotificationDto {
@@ -308,6 +318,41 @@ export const fetchAdminSummary = async (): Promise<AdminSummaryDto> => {
     headers: authHeaders()
   });
   return parseJsonResponse<AdminSummaryDto>(response);
+};
+
+export const fetchAiEvents = async (input: {
+  userId?: string;
+  category?: AiEventDto['category'];
+  since?: string;
+  until?: string;
+  limit?: number;
+} = {}): Promise<AiEventDto[]> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  if (input.category) params.set('category', input.category);
+  if (input.since) params.set('since', input.since);
+  if (input.until) params.set('until', input.until);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/ai/events${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ events: AiEventDto[] }>(response);
+  return payload.events;
+};
+
+export const trackAiEvent = async (input: {
+  category: AiEventDto['category'];
+  name: string;
+  context?: Record<string, unknown>;
+}): Promise<AiEventDto> => {
+  const response = await fetch('/api/ai/events', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ event: AiEventDto }>(response);
+  return payload.event;
 };
 
 export const fetchNotifications = async (input: { unreadOnly?: boolean; limit?: number } = {}): Promise<NotificationDto[]> => {

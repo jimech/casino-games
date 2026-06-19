@@ -17,7 +17,7 @@ The backend can run in two modes:
 - `CASINO_BACKEND_DRIVER=memory`: fast local/demo mode with in-process state.
 - `CASINO_BACKEND_DRIVER=prisma`: persistent PostgreSQL mode through Prisma.
 
-Both modes expose the same API surface for auth, wallet, games, bonuses, risk, notifications, and admin audit.
+Both modes expose the same API surface for auth, wallet, games, bonuses, risk, notifications, AI event collection, and admin audit.
 
 ## Core Flows
 
@@ -46,6 +46,7 @@ Roulette, Crash, Slots, Blackjack, and Poker use backend engines for outcome gen
 - Risk service records failed logins, forbidden access, high stakes, rapid play, refunds, and high payouts.
 - Bonus service records claims and credits wallet through the ledger.
 - Notification service stores persistent inbox records with unread/read state.
+- AI event service stores page, game, bonus, admin, wallet, risk, and session telemetry for later deterministic feature snapshots. Event capture is best-effort and never decides outcomes or wallet movements.
 
 ## Data Model
 
@@ -61,6 +62,7 @@ Primary tables:
 - `bonus_campaigns`
 - `bonus_claims`
 - `notifications`
+- `ai_events`
 
 ## Quality Gate
 

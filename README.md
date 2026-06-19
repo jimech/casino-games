@@ -2,7 +2,7 @@
 
 Private casino platform project built with React, TypeScript, Vite, Express, Prisma, and PostgreSQL.
 
-The current codebase is a playable private platform prototype with server-authoritative game engines, wallet ledger, auth, risk, bonuses, notifications, admin audit, and a quality gate. The production roadmap is tracked in [docs/implementation-backlog.md](docs/implementation-backlog.md).
+The current codebase is a playable private platform prototype with server-authoritative game engines, wallet ledger, auth, risk, bonuses, notifications, AI event collection, admin audit, and a quality gate. The production roadmap is tracked in [docs/implementation-backlog.md](docs/implementation-backlog.md).
 
 Project docs:
 
@@ -150,6 +150,22 @@ Subscribe to realtime wallet updates:
 
 ```bash
 curl -N "http://localhost:3000/api/wallet/demo/events?token=$TOKEN"
+```
+
+Record an AI behavior event for future personalization/risk features:
+
+```bash
+curl -X POST http://localhost:3000/api/ai/events \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"category":"page","name":"tab_viewed","context":{"tab":"games"}}'
+```
+
+Read recent AI events. Admin sessions can filter by `userId`; regular sessions only see their own events:
+
+```bash
+curl "http://localhost:3000/api/ai/events?category=game&limit=25" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Place a bet and lock funds:

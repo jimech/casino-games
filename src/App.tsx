@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle, Compass, Play, Coins, UserCheck, User, Gift, Award, CreditCard,
-  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut, ShieldCheck, Bell
+  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut, ShieldCheck, Bell, Activity
 } from 'lucide-react';
 
 import SlotsGame from './components/SlotsGame';
@@ -36,7 +36,8 @@ import {
   spinRoulette,
   startBlackjackRound,
   startCrashRound,
-  startPokerRound
+  startPokerRound,
+  trackAiEvent
 } from './api/casinoApi';
 
 // Complete 20-Game Catalog Pre-designed nodes
@@ -155,6 +156,11 @@ export default function App() {
 
   useEffect(() => {
     if (!authSession) return;
+    void recordUiEvent('page', 'tab_viewed', { tab: activeCasinoTab });
+  }, [authSession?.user.id, activeCasinoTab]);
+
+  useEffect(() => {
+    if (!authSession) return;
     const events = createWalletEventSource(authSession.user.id);
     events.addEventListener('wallet', event => {
       const payload = JSON.parse((event as MessageEvent).data) as { available: number; locked: number };
@@ -260,6 +266,36 @@ export default function App() {
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Notification update failed.", "error");
     }
+  };
+
+  const recordUiEvent = async (
+    category: 'page' | 'game' | 'wallet' | 'bonus' | 'risk' | 'admin' | 'session',
+    name: string,
+    context?: Record<string, unknown>
+  ) => {
+    if (!authSession) return;
+    try {
+      await trackAiEvent({ category, name, context });
+    } catch (error) {
+      console.warn('AI event capture failed', error);
+    }
+  };
+
+  const launchGameFromLobby = (game: { id: string; title: string; category?: string; provider?: string; rtp?: string }) => {
+    sound.playClick();
+    const route = game.category === 'live'
+      ? 'live'
+      : game.category === 'slots' || game.id === 'slots'
+        ? 'slots'
+        : game.category ?? game.id;
+    void recordUiEvent('game', 'game_clicked', {
+      gameId: game.id,
+      title: game.title,
+      provider: game.provider,
+      rtp: game.rtp,
+      route
+    });
+    setActiveCasinoTab(route);
   };
 
   const syncWalletFromBackend = async () => {
@@ -717,8 +753,7 @@ export default function App() {
                         <span className="text-[10px] font-mono text-neutral-500">Provider: {game.provider}</span>
                         <button
                           onClick={() => {
-                            sound.playClick();
-                            setActiveCasinoTab(game.id === 'slots' ? 'slots' : game.id);
+                            launchGameFromLobby(game);
                           }}
                           className="bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black uppercase text-[10px] px-3.5 py-1.5 rounded-lg leading-none transition-all cursor-pointer"
                         >
@@ -843,10 +878,7 @@ export default function App() {
 
                         <button
                           onClick={() => {
-                            sound.playClick();
-                            // If user clicked any categories, direct launch inside gameplay modes if matching exists
-                            const route = g.category === 'live' ? 'live' : g.category === 'slots' ? 'slots' : g.category;
-                            setActiveCasinoTab(route);
+                            launchGameFromLobby(g);
                             triggerNotification(`Launching ${g.title} standard game room...`, "success");
                           }}
                           className="w-full bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black uppercase text-[10px] py-1.5 rounded-lg transition-all"
@@ -1226,6 +1258,18 @@ export default function App() {
                     ))}
                     {adminSummary?.bonusClaims.length === 0 && <EmptyAdminRow />}
                   </AdminPanel>
+
+                  <AdminPanel title="AI Events">
+                    {(adminSummary?.aiEvents ?? []).slice(0, 8).map(event => (
+                      <AdminRow
+                        key={event.id}
+                        left={`${event.category} / ${event.name}`}
+                        right={<Activity className="h-3.5 w-3.5" />}
+                        detail={event.createdAt.slice(0, 19).replace('T', ' ')}
+                      />
+                    ))}
+                    {adminSummary?.aiEvents.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
                 </div>
               </div>
             )}
@@ -1548,7 +1592,7 @@ const AdminPanel: React.FC<{ title: string; children: React.ReactNode }> = ({ ti
   );
 };
 
-const AdminRow: React.FC<{ left: string; right: string; detail: string }> = ({ left, right, detail }) => {
+const AdminRow: React.FC<{ left: string; right: React.ReactNode; detail: string }> = ({ left, right, detail }) => {
   return (
     <div className="flex items-center justify-between gap-3 bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
       <div className="min-w-0">
