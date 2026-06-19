@@ -20,6 +20,7 @@ const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const { casinoService, authService, riskService, bonusService, notificationService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
 app.use(express.json());
 
@@ -35,6 +36,7 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
+    await enforceRateLimit(req, 'auth_register', 6, 60_000);
     const session = await authService.register({
       email: typeof req.body.email === 'string' ? req.body.email : undefined,
       username: String(req.body.username ?? ''),
@@ -44,6 +46,7 @@ app.post('/api/auth/register', async (req, res) => {
       acceptAgeGate: Boolean(req.body.acceptAgeGate),
       acceptTerms: Boolean(req.body.acceptTerms),
       acceptPrivacy: Boolean(req.body.acceptPrivacy),
+      adminInviteCode: typeof req.body.adminInviteCode === 'string' ? req.body.adminInviteCode : undefined,
       userAgent: req.get('user-agent'),
       ipAddress: req.ip
     });
@@ -55,6 +58,7 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
+    await enforceRateLimit(req, 'auth_login', 10, 60_000);
     const session = await authService.login({
       login: String(req.body.login ?? ''),
       password: String(req.body.password ?? ''),
@@ -178,7 +182,7 @@ app.get('/api/rounds', async (req, res) => {
 
 app.get('/api/risk/events', async (req, res) => {
   try {
-    await requireAuth(req);
+    await requireAdmin(req);
     const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
     const status = isRiskStatus(req.query.status) ? req.query.status : undefined;
     const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
@@ -202,7 +206,7 @@ app.get('/api/bonuses', async (req, res) => {
 
 app.get('/api/admin/summary', async (req, res) => {
   try {
-    const user = await requireAuth(req);
+    const user = await requireAdmin(req);
     const [wallet, ledger, rounds, riskEvents, campaigns, claims] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
@@ -510,13 +514,28 @@ app.listen(port, '0.0.0.0', () => {
 
 function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
-  const status = /unauthorized/i.test(message) ? 401 : /forbidden/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|consent/i.test(message) ? 400 : 500;
+  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|consent/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
 }
 
 async function requireAuth(req: express.Request): Promise<AuthUser> {
   const session = await authService.getSession(extractRequestToken(req));
   return session.user;
+}
+
+async function requireAdmin(req: express.Request): Promise<AuthUser> {
+  const user = await requireAuth(req);
+  if (user.role !== 'admin') {
+    await riskService.recordEvent({
+      userId: user.id,
+      type: 'forbidden_admin_access',
+      severity: 'high',
+      score: 80,
+      context: { path: req.path, method: req.method }
+    });
+    throw new Error('Forbidden admin access');
+  }
+  return user;
 }
 
 async function requireOwnUser(req: express.Request, userId: string): Promise<AuthUser> {
@@ -620,4 +639,24 @@ function sanitizeLedgerEntryForApi<T extends { metadata?: Record<string, unknown
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function enforceRateLimit(req: express.Request, scope: string, limit: number, windowMs: number) {
+  const key = `${scope}:${req.ip}`;
+  const now = Date.now();
+  const bucket = rateLimitBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return;
+  }
+  bucket.count += 1;
+  if (bucket.count > limit) {
+    await riskService.recordEvent({
+      type: 'rate_limit_exceeded',
+      severity: 'medium',
+      score: 50,
+      context: { scope, ipAddress: req.ip, path: req.path }
+    });
+    throw new Error('Too many requests');
+  }
 }

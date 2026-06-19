@@ -82,6 +82,8 @@ Seed the demo user and wallet. The default local seed login is `demo` / `demo-pa
 npm run db:seed
 ```
 
+The seeded user is an admin. New registrations receive the `user` role unless they submit the configured `ADMIN_INVITE_CODE`.
+
 Smoke test the Prisma-backed wallet and settlement flow:
 
 ```bash
@@ -290,6 +292,7 @@ curl http://localhost:3000/api/notifications \
 - In-memory backend wallet and settlement service
 - Prisma/PostgreSQL backend service wired to Neon
 - Private account registration, login, logout, token sessions, age gate, and consent gate
+- Role-based admin access, admin invite codes, auth rate limiting, and security risk events
 - Realtime wallet updates stream through an authenticated server-sent events endpoint
 - Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
 - Bonus service supports persisted welcome and daily credit claims with ledger-linked wallet credits

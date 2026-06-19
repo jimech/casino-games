@@ -121,6 +121,7 @@ export default function App() {
     password: '',
     displayName: 'Neon Private',
     dateOfBirth: '',
+    adminInviteCode: '',
     acceptAgeGate: false,
     acceptTerms: false,
     acceptPrivacy: false
@@ -200,7 +201,8 @@ export default function App() {
             dateOfBirth: authForm.dateOfBirth || undefined,
             acceptAgeGate: authForm.acceptAgeGate,
             acceptTerms: authForm.acceptTerms,
-            acceptPrivacy: authForm.acceptPrivacy
+            acceptPrivacy: authForm.acceptPrivacy,
+            adminInviteCode: authForm.adminInviteCode || undefined
           })
         : await loginAccount({
             login: authForm.username,
@@ -596,7 +598,7 @@ export default function App() {
                   { id: 'bonuses', label: 'Bonuses & Promos', icon: <Gift className="h-4 w-4" /> },
                   { id: 'vip', label: 'VIP Club Benefits', icon: <Award className="h-4 w-4" /> },
                   { id: 'wallet', label: 'My Wallet', icon: <CreditCard className="h-4 w-4" /> },
-                  { id: 'admin', label: 'Admin Audit', icon: <ShieldCheck className="h-4 w-4 text-[#00FF88]" /> },
+                  ...(authSession?.user.role === 'admin' ? [{ id: 'admin', label: 'Admin Audit', icon: <ShieldCheck className="h-4 w-4 text-[#00FF88]" /> }] : []),
                   { id: 'inbox', label: 'Notifications', icon: <Bell className="h-4 w-4 text-yellow-400" /> },
                   { id: 'blog', label: 'Strategy Guidelines', icon: <BookOpen className="h-4 w-4" /> },
                   { id: 'support', label: 'Support center', icon: <HeartHandshake className="h-4 w-4" /> },
@@ -1530,6 +1532,7 @@ interface AuthGateProps {
     acceptAgeGate: boolean;
     acceptTerms: boolean;
     acceptPrivacy: boolean;
+    adminInviteCode: string;
   };
   setForm: React.Dispatch<React.SetStateAction<AuthGateProps['form']>>;
   submitting: boolean;
@@ -1632,6 +1635,15 @@ function AuthGate({ mode, setMode, form, setForm, submitting, onSubmit }: AuthGa
                   />
                 </label>
               </div>
+              <label className="block space-y-1">
+                <span className="text-[10px] uppercase font-bold text-neutral-400">Admin Invite Code</span>
+                <input
+                  value={form.adminInviteCode}
+                  onChange={event => setForm(prev => ({ ...prev, adminInviteCode: event.target.value }))}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none focus:border-[#FF0055]"
+                  placeholder="optional"
+                />
+              </label>
             </>
           )}
 

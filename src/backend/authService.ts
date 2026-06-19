@@ -6,6 +6,7 @@ export interface AuthUser {
   id: string;
   email?: string;
   username: string;
+  role: 'user' | 'admin';
   displayName?: string;
   dateOfBirth?: string;
   ageGateAcceptedAt?: string;
@@ -29,6 +30,7 @@ export interface RegisterInput {
   acceptAgeGate: boolean;
   acceptTerms: boolean;
   acceptPrivacy: boolean;
+  adminInviteCode?: string;
   userAgent?: string;
   ipAddress?: string;
 }
@@ -103,6 +105,7 @@ export class MemoryAuthService implements AuthService {
       id: `user_${randomUUID()}`,
       email: input.email?.trim().toLowerCase(),
       username: input.username.trim(),
+      role: resolveRegistrationRole(input.adminInviteCode),
       displayName: cleanOptionalText(input.displayName) ?? input.username.trim(),
       dateOfBirth: input.dateOfBirth,
       ageGateAcceptedAt: input.acceptAgeGate ? now : undefined,
@@ -205,7 +208,8 @@ export class PrismaAuthService implements AuthService {
       data: {
         email: input.email?.trim().toLowerCase(),
         username: input.username.trim(),
-      passwordHash: hashPasswordForStorage(input.password),
+        passwordHash: hashPasswordForStorage(input.password),
+        role: resolveRegistrationRole(input.adminInviteCode),
         displayName: cleanOptionalText(input.displayName) ?? input.username.trim(),
         dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
         ageGateAcceptedAt: input.acceptAgeGate ? now : undefined,
@@ -358,6 +362,7 @@ const publicUser = (user: StoredUser): AuthUser => ({
   id: user.id,
   email: user.email,
   username: user.username,
+  role: user.role,
   displayName: user.displayName,
   dateOfBirth: user.dateOfBirth,
   ageGateAcceptedAt: user.ageGateAcceptedAt,
@@ -370,6 +375,7 @@ const prismaUserToAuthUser = (user: {
   id: string;
   email: string | null;
   username: string;
+  role: string;
   displayName: string | null;
   dateOfBirth: Date | null;
   ageGateAcceptedAt: Date | null;
@@ -380,6 +386,7 @@ const prismaUserToAuthUser = (user: {
   id: user.id,
   email: user.email ?? undefined,
   username: user.username,
+  role: user.role === 'admin' ? 'admin' : 'user',
   displayName: user.displayName ?? undefined,
   dateOfBirth: user.dateOfBirth?.toISOString().slice(0, 10),
   ageGateAcceptedAt: user.ageGateAcceptedAt?.toISOString(),
@@ -390,4 +397,10 @@ const prismaUserToAuthUser = (user: {
 
 const assertText = (value: string, field: string) => {
   if (!value || typeof value !== 'string') throw new Error(`${field} is required`);
+};
+
+const resolveRegistrationRole = (adminInviteCode: string | undefined): 'user' | 'admin' => {
+  const configuredCode = process.env.ADMIN_INVITE_CODE;
+  if (configuredCode && adminInviteCode === configuredCode) return 'admin';
+  return 'user';
 };

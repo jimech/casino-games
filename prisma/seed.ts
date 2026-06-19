@@ -15,6 +15,7 @@ const main = async () => {
     create: {
       username,
       passwordHash: hashPasswordForStorage(password),
+      role: 'admin',
       displayName: username,
       ageGateAcceptedAt: new Date(),
       termsAcceptedAt: new Date(),

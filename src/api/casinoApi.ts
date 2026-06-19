@@ -7,6 +7,7 @@ export interface AuthUserDto {
   id: string;
   email?: string;
   username: string;
+  role: 'user' | 'admin';
   displayName?: string;
   dateOfBirth?: string;
   ageGateAcceptedAt?: string;
@@ -238,6 +239,7 @@ export const registerAccount = async (input: {
   acceptAgeGate: boolean;
   acceptTerms: boolean;
   acceptPrivacy: boolean;
+  adminInviteCode?: string;
 }): Promise<AuthSessionDto> => {
   const response = await fetch('/api/auth/register', {
     method: 'POST',

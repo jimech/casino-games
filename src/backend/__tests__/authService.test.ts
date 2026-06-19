@@ -75,4 +75,35 @@ describe('auth service', () => {
 
     await expect(authService.getSession(session.token)).rejects.toThrow(/unauthorized/i);
   });
+
+  it('assigns admin role only when the invite code matches configuration', async () => {
+    const previousCode = process.env.ADMIN_INVITE_CODE;
+    process.env.ADMIN_INVITE_CODE = 'private-admin-code';
+    const authService = new MemoryAuthService(new CasinoService({}));
+
+    const userSession = await authService.register({
+      username: 'regular_player',
+      password: 'very-secret-pass',
+      adminInviteCode: 'wrong-code',
+      acceptAgeGate: true,
+      acceptTerms: true,
+      acceptPrivacy: true
+    });
+    const adminSession = await authService.register({
+      username: 'admin_player',
+      password: 'very-secret-pass',
+      adminInviteCode: 'private-admin-code',
+      acceptAgeGate: true,
+      acceptTerms: true,
+      acceptPrivacy: true
+    });
+
+    expect(userSession.user.role).toBe('user');
+    expect(adminSession.user.role).toBe('admin');
+    if (previousCode === undefined) {
+      delete process.env.ADMIN_INVITE_CODE;
+    } else {
+      process.env.ADMIN_INVITE_CODE = previousCode;
+    }
+  });
 });

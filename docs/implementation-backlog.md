@@ -466,6 +466,9 @@ Acceptance criteria:
 - Rate limits block abusive patterns.
 - Security events are logged.
 
+Implementation note:
+- Current implementation adds persisted user roles, admin invite-code registration, admin-only access for audit/risk endpoints, auth rate limiting, and risk events for forbidden admin access and rate-limit abuse. MFA, CSRF tokens, and cookie-based sessions remain later expansions.
+
 ### T19 - Testing and Quality Gates
 
 Summary: Add automated coverage for wallet, games, API, realtime, AI, risk, and admin flows.
