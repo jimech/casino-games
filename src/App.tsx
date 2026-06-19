@@ -1270,6 +1270,35 @@ export default function App() {
                     ))}
                     {adminSummary?.aiEvents.length === 0 && <EmptyAdminRow />}
                   </AdminPanel>
+
+                  <AdminPanel title="AI Feature Profile">
+                    {adminSummary?.aiFeatureSnapshot ? (
+                      <>
+                        <AdminRow
+                          left="Snapshot version"
+                          right={adminSummary.aiFeatureSnapshot.version}
+                          detail={`${adminSummary.aiFeatureSnapshot.sourceEventCount} source events`}
+                        />
+                        <AdminRow
+                          left="Favorite game"
+                          right={adminSummary.aiFeatureSnapshot.features.gameSignals.favoriteGameId ?? 'n/a'}
+                          detail={`Average stake $${adminSummary.aiFeatureSnapshot.features.gameSignals.averageStake}`}
+                        />
+                        <AdminRow
+                          left="Bonus value"
+                          right={`$${adminSummary.aiFeatureSnapshot.features.bonusSignals.totalClaimed}`}
+                          detail={`${adminSummary.aiFeatureSnapshot.features.bonusSignals.claims} claims`}
+                        />
+                        <AdminRow
+                          left="High stake ratio"
+                          right={`${Math.round(adminSummary.aiFeatureSnapshot.features.riskSignals.highStakeRatio * 100)}%`}
+                          detail={`${adminSummary.aiFeatureSnapshot.features.riskSignals.highStakeRounds} high stake rounds`}
+                        />
+                      </>
+                    ) : (
+                      <EmptyAdminRow />
+                    )}
+                  </AdminPanel>
                 </div>
               </div>
             )}

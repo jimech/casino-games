@@ -168,6 +168,22 @@ curl "http://localhost:3000/api/ai/events?category=game&limit=25" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Refresh the deterministic AI feature profile from recent events:
+
+```bash
+curl -X POST http://localhost:3000/api/ai/profile/refresh \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"limit":250}'
+```
+
+Read the latest feature snapshot:
+
+```bash
+curl http://localhost:3000/api/ai/profile \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 Place a bet and lock funds:
 
 ```bash

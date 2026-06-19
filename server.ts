@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -223,7 +223,35 @@ app.post('/api/ai/events', async (req, res) => {
       name: String(req.body.name ?? ''),
       context: isRecord(req.body.context) ? req.body.context : undefined
     });
-    res.status(201).json({ event });
+    const snapshot = await aiFeatureService.refresh({ userId: user.id });
+    res.status(201).json({ event, snapshot });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/ai/profile', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveAiProfileUserId(req, user);
+    const snapshot = await aiFeatureService.latest({ userId }) ?? await aiFeatureService.refresh({ userId });
+    res.json({ snapshot });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/ai/profile/refresh', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveAiProfileUserId(req, user);
+    const snapshot = await aiFeatureService.refresh({
+      userId,
+      since: typeof req.body.since === 'string' ? req.body.since : undefined,
+      until: typeof req.body.until === 'string' ? req.body.until : undefined,
+      limit: typeof req.body.limit === 'number' ? req.body.limit : undefined
+    });
+    res.status(201).json({ snapshot });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -265,6 +293,7 @@ app.get('/api/admin/summary', async (req, res) => {
         bonusClaimCount: claims.length
       }
     });
+    const aiFeatureSnapshot = await aiFeatureService.latest({ userId: user.id });
 
     res.json({
       user,
@@ -274,7 +303,8 @@ app.get('/api/admin/summary', async (req, res) => {
       riskEvents,
       bonusCampaigns: campaigns,
       bonusClaims: claims,
-      aiEvents
+      aiEvents,
+      aiFeatureSnapshot
     });
   } catch (error) {
     sendApiError(res, error);
@@ -669,10 +699,24 @@ async function trackAiEventSafely(input: {
   context?: Record<string, unknown>;
 }) {
   try {
-    await aiEventService.track(input);
+    const event = await aiEventService.track(input);
+    await aiFeatureService.refresh({ userId: input.userId });
+    return event;
   } catch (error) {
     console.warn('AI event capture failed', error);
+    return undefined;
   }
+}
+
+async function resolveAiProfileUserId(req: express.Request, user: AuthUser): Promise<string> {
+  const requestedUserId = typeof req.query.userId === 'string'
+    ? req.query.userId
+    : typeof req.body?.userId === 'string'
+      ? req.body.userId
+      : undefined;
+  if (!requestedUserId || requestedUserId === user.id) return user.id;
+  await requireAdmin(req);
+  return requestedUserId;
 }
 
 function extractRequestToken(req: express.Request): string {

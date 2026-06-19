@@ -104,8 +104,26 @@ model User {
   bonusClaims   BonusClaim[]
   notifications Notification[]
   aiEvents      AiEvent[]
+  aiFeatureSnapshots AiFeatureSnapshot[]
 
   @@map("users")
+}
+
+model AiFeatureSnapshot {
+  id               String   @id @default(cuid())
+  userId           String
+  version          String
+  sourceEventCount Int      @default(0)
+  features         Json
+  windowStartedAt  DateTime?
+  windowEndedAt    DateTime?
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, version, createdAt])
+  @@map("ai_feature_snapshots")
 }
 
 model AiEvent {

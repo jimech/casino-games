@@ -108,6 +108,19 @@ const main = async () => {
   if (!aiEvents.events.some((event: { category: string; name: string }) => event.category === 'page' && event.name === 'tab_viewed')) {
     throw new Error('Expected manual page AI event to be captured');
   }
+  const aiProfile = await postJson(`${baseUrl}/api/ai/profile/refresh`, adminSession.token, {
+    limit: 25
+  });
+  assertEqual(aiProfile.snapshot.version, 'behavior-v1', 'ai profile version');
+  if (aiProfile.snapshot.sourceEventCount < 3) {
+    throw new Error('Expected AI profile to aggregate recent events');
+  }
+  if (aiProfile.snapshot.features.gameSignals.favoriteGameId !== 'roulette') {
+    throw new Error('Expected AI profile favorite game to be roulette');
+  }
+  if (aiProfile.snapshot.features.riskSignals.highStakeRounds < 1) {
+    throw new Error('Expected AI profile high-stake signal');
+  }
 
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {

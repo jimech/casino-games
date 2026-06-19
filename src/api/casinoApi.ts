@@ -201,6 +201,52 @@ export interface AiEventDto {
   createdAt: string;
 }
 
+export interface AiFeatureSnapshotDto {
+  id: string;
+  userId: string;
+  version: string;
+  sourceEventCount: number;
+  features: {
+    totals: {
+      events: number;
+      pageViews: number;
+      gameClicks: number;
+      roundsStarted: number;
+      bonusClaims: number;
+      adminViews: number;
+    };
+    categoryCounts: Record<string, number>;
+    gameSignals: {
+      favoriteGameId?: string;
+      favoriteRoute?: string;
+      gameClicksByRoute: Record<string, number>;
+      roundsByGameId: Record<string, number>;
+      totalStake: number;
+      averageStake: number;
+      maxStake: number;
+    };
+    engagement: {
+      firstEventAt?: string;
+      lastEventAt?: string;
+      activeSpanMinutes: number;
+      recentTabs: string[];
+    };
+    bonusSignals: {
+      claims: number;
+      totalClaimed: number;
+      lastCampaignId?: string;
+    };
+    riskSignals: {
+      highStakeRounds: number;
+      highStakeRatio: number;
+      manualRiskEvents: number;
+    };
+  };
+  windowStartedAt?: string;
+  windowEndedAt?: string;
+  createdAt: string;
+}
+
 export interface AdminSummaryDto {
   user: AuthUserDto;
   wallet: WalletDto;
@@ -210,6 +256,7 @@ export interface AdminSummaryDto {
   bonusCampaigns: BonusCampaignDto[];
   bonusClaims: BonusClaimDto[];
   aiEvents: AiEventDto[];
+  aiFeatureSnapshot?: AiFeatureSnapshotDto;
 }
 
 export interface NotificationDto {
@@ -351,8 +398,34 @@ export const trackAiEvent = async (input: {
     headers: jsonHeaders(),
     body: JSON.stringify(input)
   });
-  const payload = await parseJsonResponse<{ event: AiEventDto }>(response);
+  const payload = await parseJsonResponse<{ event: AiEventDto; snapshot: AiFeatureSnapshotDto }>(response);
   return payload.event;
+};
+
+export const fetchAiFeatureProfile = async (input: { userId?: string } = {}): Promise<AiFeatureSnapshotDto> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  const query = params.toString();
+  const response = await fetch(`/api/ai/profile${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ snapshot: AiFeatureSnapshotDto }>(response);
+  return payload.snapshot;
+};
+
+export const refreshAiFeatureProfile = async (input: {
+  userId?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+} = {}): Promise<AiFeatureSnapshotDto> => {
+  const response = await fetch('/api/ai/profile/refresh', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ snapshot: AiFeatureSnapshotDto }>(response);
+  return payload.snapshot;
 };
 
 export const fetchNotifications = async (input: { unreadOnly?: boolean; limit?: number } = {}): Promise<NotificationDto[]> => {

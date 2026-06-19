@@ -1,6 +1,7 @@
 import { CasinoService } from './casinoService';
 import { PrismaCasinoService } from './prismaCasinoService';
 import { MemoryAiEventService, PrismaAiEventService } from './aiEventService';
+import { MemoryAiFeatureService, PrismaAiFeatureService } from './aiFeatureService';
 import { MemoryAuthService, PrismaAuthService } from './authService';
 import { MemoryBonusService, PrismaBonusService } from './bonusService';
 import { MemoryNotificationService, PrismaNotificationService } from './notificationService';
@@ -39,6 +40,9 @@ export const createServices = () => {
   const aiEventService = driver === 'prisma'
     ? new PrismaAiEventService(prisma)
     : new MemoryAiEventService();
+  const aiFeatureService = driver === 'prisma'
+    ? new PrismaAiFeatureService(prisma, aiEventService)
+    : new MemoryAiFeatureService(aiEventService);
 
-  return { casinoService, authService, riskService, bonusService, notificationService, aiEventService };
+  return { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService };
 };

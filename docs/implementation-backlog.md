@@ -529,6 +529,8 @@ Acceptance criteria:
 
 Summary: Convert raw events into deterministic AI feature snapshots.
 
+Implementation status: Complete. Raw AI events now refresh versioned `behavior-v1` feature snapshots with deterministic totals, category counts, game preference, stake profile, bonus usage, engagement, and high-stake signals.
+
 Scope:
 - Aggregate session stats, game preferences, bet patterns, and risk signals.
 - Store versioned per-user feature snapshots.
