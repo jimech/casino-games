@@ -486,6 +486,9 @@ Acceptance criteria:
 - WebSocket and API tests pass.
 - Critical wallet tests block merge or release.
 
+Implementation note:
+- Current implementation adds `npm run quality`, a memory-mode API smoke script, and `.github/workflows/quality.yml`. The gate validates Prisma schema, runs TypeScript, all Vitest suites, production build, and API smoke coverage for auth, RBAC, bonus, risk, notifications, and wallet events.
+
 ### T20 - Documentation and Rollout
 
 Summary: Prepare the system for handoff and repeatable rollout.

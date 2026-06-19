@@ -14,10 +14,12 @@
     "db:validate": "DATABASE_URL=postgresql://user:password@localhost:5432/casino_games prisma validate",
     "db:seed": "tsx prisma/seed.ts",
     "smoke:prisma": "tsx scripts/smoke-prisma.ts",
+    "smoke:api": "tsx scripts/smoke-api-memory.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:backend": "vitest run src/backend",
-    "test:math": "vitest run src/domain"
+    "test:math": "vitest run src/domain",
+    "quality": "npm run db:validate && npm run lint && npm run test && npm run build && npm run smoke:api"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -93,10 +93,17 @@ npm run smoke:prisma
 ## Verification
 
 ```bash
+npm run quality
+```
+
+The quality gate runs Prisma schema validation, TypeScript, all tests, production build, and the memory-mode API smoke test. Individual checks are also available:
+
+```bash
 npm run lint
 npm run test:math
 npm run test:backend
 npm run build
+npm run smoke:api
 npm audit --audit-level=high
 ```
 
@@ -298,6 +305,7 @@ curl http://localhost:3000/api/notifications \
 - Bonus service supports persisted welcome and daily credit claims with ledger-linked wallet credits
 - Admin audit panel summarizes wallet, ledger, rounds, risk events, and bonus claims
 - Notification inbox persists bonus, support, admin, and system notices with unread/read state
+- Quality gate and GitHub Actions workflow cover schema validation, TypeScript, tests, build, and memory API smoke
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time
