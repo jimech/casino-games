@@ -1,15 +1,22 @@
+import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 
 const port = 4300 + Math.floor(Math.random() * 500);
 const baseUrl = `http://127.0.0.1:${port}`;
+const serverEntry = 'dist/server.js';
 
-const server = spawn('npm', ['run', 'dev'], {
+if (!existsSync(serverEntry)) {
+  throw new Error('dist/server.js is missing. Run npm run build before npm run smoke:api.');
+}
+
+const server = spawn(process.execPath, [serverEntry], {
   cwd: process.cwd(),
   env: {
     ...process.env,
     CASINO_BACKEND_DRIVER: 'memory',
     ADMIN_INVITE_CODE: 'smoke-admin',
     PORT: String(port),
+    NODE_ENV: 'production',
     DISABLE_HMR: 'true'
   },
   stdio: ['ignore', 'pipe', 'pipe']

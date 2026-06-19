@@ -104,7 +104,7 @@ npm run smoke:prisma
 npm run quality
 ```
 
-The quality gate runs Prisma schema validation, TypeScript, all tests, production build, and the memory-mode API smoke test. Individual checks are also available:
+The quality gate runs Prisma schema validation, TypeScript, all tests, production build, and the memory-mode API smoke test. `npm run smoke:api` expects `dist/server.js`, so run `npm run build` first when using it directly. Individual checks are also available:
 
 ```bash
 npm run lint
