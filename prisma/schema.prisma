@@ -45,6 +45,18 @@ enum RiskEventStatus {
   dismissed
 }
 
+enum BonusCampaignType {
+  welcome
+  daily
+  cashback
+  freeSpins
+}
+
+enum BonusClaimStatus {
+  claimed
+  rejected
+}
+
 model User {
   id                String    @id @default(cuid())
   email             String?   @unique
@@ -64,8 +76,48 @@ model User {
   gameRounds    GameRound[]
   authSessions  AuthSession[]
   riskEvents    RiskEvent[]
+  bonusClaims   BonusClaim[]
 
   @@map("users")
+}
+
+model BonusCampaign {
+  id          String            @id
+  type        BonusCampaignType
+  title       String
+  description String?
+  amount      BigInt            @default(0)
+  metadata    Json?
+  active      Boolean           @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  claims BonusClaim[]
+
+  @@index([active, type])
+  @@map("bonus_campaigns")
+}
+
+model BonusClaim {
+  id             String           @id @default(cuid())
+  userId         String
+  campaignId     String
+  amount         BigInt
+  status         BonusClaimStatus @default(claimed)
+  claimKey       String
+  idempotencyKey String           @unique
+  ledgerEntryId  String?
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign BonusCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, campaignId, claimKey])
+  @@index([userId, createdAt])
+  @@map("bonus_claims")
 }
 
 model RiskEvent {

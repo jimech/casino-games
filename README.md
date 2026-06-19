@@ -259,6 +259,15 @@ curl "http://localhost:3000/api/risk/events?status=open&limit=50" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Claim a bonus:
+
+```bash
+curl -X POST http://localhost:3000/api/bonuses/welcome-match-500/claim \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"idempotencyKey":"bonus-demo-welcome"}'
+```
+
 ## Current Status
 
 - React/Vite frontend prototype
@@ -269,6 +278,7 @@ curl "http://localhost:3000/api/risk/events?status=open&limit=50" \
 - Private account registration, login, logout, token sessions, age gate, and consent gate
 - Realtime wallet updates stream through an authenticated server-sent events endpoint
 - Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
+- Bonus service supports persisted welcome and daily credit claims with ledger-linked wallet credits
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time

@@ -405,6 +405,9 @@ Acceptance criteria:
 - VIP progression updates from activity.
 - Bonus and VIP views are visible.
 
+Implementation note:
+- Current implementation persists welcome and daily bonus campaigns, records welcome claims once and daily claims once per day, and credits the wallet through the ledger. Cashback rules and VIP progression remain later expansions.
+
 ### T16 - Admin Dashboard
 
 Summary: Build internal tooling for users, transactions, rounds, risk, and audit.

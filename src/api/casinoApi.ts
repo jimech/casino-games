@@ -140,6 +140,34 @@ interface PokerResponse extends RoundResponse {
   view: PokerViewDto;
 }
 
+interface BonusCampaignDto {
+  id: string;
+  type: 'welcome' | 'daily' | 'cashback' | 'freeSpins';
+  title: string;
+  description?: string;
+  amount: number;
+  metadata?: Record<string, unknown>;
+  active: boolean;
+}
+
+interface BonusClaimDto {
+  id: string;
+  userId: string;
+  campaignId: string;
+  amount: number;
+  status: 'claimed' | 'rejected';
+  claimKey: string;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+interface BonusClaimResponse {
+  campaign: BonusCampaignDto;
+  claim: BonusClaimDto;
+  wallet: WalletDto;
+}
+
 export const CASINO_USER_ID = 'demo';
 const AUTH_TOKEN_STORAGE_KEY = 'casino.sessionToken';
 
@@ -215,6 +243,18 @@ export const createWalletEventSource = (userId: string): EventSource => {
   const token = getStoredAuthToken();
   const params = token ? `?token=${encodeURIComponent(token)}` : '';
   return new EventSource(`/api/wallet/${encodeURIComponent(userId)}/events${params}`);
+};
+
+export const claimBonus = async (input: {
+  campaignId: string;
+  idempotencyKey: string;
+}): Promise<BonusClaimResponse> => {
+  const response = await fetch(`/api/bonuses/${encodeURIComponent(input.campaignId)}/claim`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ idempotencyKey: input.idempotencyKey })
+  });
+  return parseJsonResponse<BonusClaimResponse>(response);
 };
 
 export const placeBet = async (input: {

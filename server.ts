@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService } = createServices();
+const { casinoService, authService, riskService, bonusService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 
 app.use(express.json());
@@ -183,6 +183,33 @@ app.get('/api/risk/events', async (req, res) => {
     const status = isRiskStatus(req.query.status) ? req.query.status : undefined;
     const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
     res.json({ events: await riskService.listEvents({ userId, status, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/bonuses', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    res.json({
+      campaigns: await bonusService.listCampaigns(),
+      claims: await bonusService.listClaims(user.id)
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const result = await bonusService.claimBonus({
+      userId: user.id,
+      campaignId: req.params.campaignId,
+      idempotencyKey: String(req.body.idempotencyKey ?? '')
+    });
+    broadcastWallet(user.id, result.wallet);
+    res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
   }

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
   AddRoundStakeInput,
+  CreditWalletInput,
   CreateUserWalletInput,
   GameRoundRecord,
   PlaceBetInput,
@@ -51,6 +52,51 @@ export class PrismaCasinoService {
       orderBy: { createdAt: 'asc' }
     });
     return entries.map(ledgerToRecord);
+  }
+
+  async creditWallet(input: CreditWalletInput): Promise<WalletState> {
+    assertText(input.userId, 'userId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = BigInt(asMoney(input.amount));
+    const userId = await this.resolveUserId(input.userId);
+
+    return this.prisma.$transaction(async tx => {
+      const existing = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (existing) return walletToState(existing.wallet);
+
+      const wallet = await requireWallet(tx, userId);
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          available: wallet.available + amount
+        }
+      });
+
+      await tx.walletLedgerEntry.create({
+        data: {
+          transactionId: randomUUID(),
+          idempotencyKey: input.idempotencyKey,
+          userId,
+          walletId: wallet.id,
+          type: 'credit',
+          amount,
+          balanceBefore: wallet.available,
+          balanceAfter: updatedWallet.available,
+          lockedBefore: wallet.locked,
+          lockedAfter: updatedWallet.locked,
+          gameId: typeof input.metadata?.gameId === 'string' ? input.metadata.gameId : undefined,
+          metadata: {
+            ...input.metadata,
+            userId
+          }
+        }
+      });
+
+      return walletToState(updatedWallet);
+    }, { isolationLevel: SERIALIZABLE });
   }
 
   async listRounds(userId?: string): Promise<GameRoundRecord[]> {

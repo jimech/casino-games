@@ -16,6 +16,7 @@ import {
   actBlackjackRound,
   actPokerRound,
   cashoutCrashRound,
+  claimBonus,
   createWalletEventSource,
   fetchAuthSession,
   fetchWallet,
@@ -382,23 +383,36 @@ export default function App() {
   };
 
   // Fast auto sync standard payouts for games loading inside specific frames
-  const claimDailySpins = () => {
+  const claimDailySpins = async () => {
     sound.playClick();
-    if (user.freeSpinsLeft > 0) {
-      setUser(prev => ({ ...prev, freeSpinsLeft: 0, walletBalance: prev.walletBalance + 100 }));
+    try {
+      const response = await claimBonus({
+        campaignId: 'daily-free-credits-100',
+        idempotencyKey: `bonus-daily-${activeUserId}-${new Date().toISOString().slice(0, 10)}`
+      });
+      setUser(prev => ({ ...prev, freeSpinsLeft: 0, walletBalance: response.wallet.available, lastDailyClaim: response.claim.createdAt }));
       sound.playBigWin();
-      triggerNotification("🎰 Cleaned 50 Daily Free Spins! Loaded +$100 inside virtual credentials!", "success");
-    } else {
+      triggerNotification(`Daily bonus claimed: +$${response.claim.amount}`, "success");
+    } catch (error) {
       sound.playError();
-      triggerNotification("Daily Free Spins have already been redeemed today. Returns tomorrow!", "info");
+      triggerNotification(error instanceof Error ? error.message : "Daily bonus claim failed.", "error");
     }
   };
 
-  const handleClaimWelcomeMatch = () => {
+  const handleClaimWelcomeMatch = async () => {
     sound.playClick();
-    setUser(prev => ({ ...prev, walletBalance: prev.walletBalance + 500 }));
-    sound.playBigWin();
-    triggerNotification("🎁 Welcome Bonus Credited: +$500 loaded!", "success");
+    try {
+      const response = await claimBonus({
+        campaignId: 'welcome-match-500',
+        idempotencyKey: `bonus-welcome-${activeUserId}`
+      });
+      setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+      sound.playBigWin();
+      triggerNotification(`Welcome bonus credited: +$${response.claim.amount}`, "success");
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : "Welcome bonus claim failed.", "error");
+    }
   };
 
   // Support Validation Handler
