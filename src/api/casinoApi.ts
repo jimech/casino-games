@@ -169,6 +169,27 @@ interface BonusClaimResponse {
   wallet: WalletDto;
 }
 
+export interface TargetedBonusOfferDto {
+  id: string;
+  campaignId: string;
+  segment: 'welcome' | 'retention' | 'reactivation';
+  title: string;
+  description: string;
+  score: number;
+  amount: number;
+  reasonCodes: string[];
+  suppressionCodes: string[];
+  cooldownUntil?: string;
+}
+
+export interface BonusTargetingResponseDto {
+  generatedAt: string;
+  source: 'profile' | 'fallback';
+  profileVersion?: string;
+  offers: TargetedBonusOfferDto[];
+  suppressed: TargetedBonusOfferDto[];
+}
+
 interface LedgerEntryDto {
   id: string;
   idempotencyKey: string;
@@ -372,6 +393,13 @@ export const claimBonus = async (input: {
     body: JSON.stringify({ idempotencyKey: input.idempotencyKey })
   });
   return parseJsonResponse<BonusClaimResponse>(response);
+};
+
+export const fetchTargetedBonuses = async (): Promise<BonusTargetingResponseDto> => {
+  const response = await fetch('/api/bonuses/targeted', {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<BonusTargetingResponseDto>(response);
 };
 
 export const fetchAdminSummary = async (): Promise<AdminSummaryDto> => {

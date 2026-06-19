@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -315,6 +315,40 @@ app.get('/api/bonuses', async (req, res) => {
       campaigns: await bonusService.listCampaigns(),
       claims: await bonusService.listClaims(user.id)
     });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/bonuses/targeted', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const [campaigns, claims, snapshot, recentTargetingEvents] = await Promise.all([
+      bonusService.listCampaigns(),
+      bonusService.listClaims(user.id),
+      aiFeatureService.latest({ userId: user.id }),
+      aiEventService.list({ userId: user.id, category: 'bonus', limit: 25 })
+    ]);
+    const result = bonusTargetingService.target({
+      campaigns,
+      claims,
+      snapshot,
+      recentTargetingEvents
+    });
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'bonus',
+      name: 'bonus_targets_generated',
+      context: {
+        source: result.source,
+        profileVersion: result.profileVersion,
+        offerIds: result.offers.map(offer => offer.id),
+        suppressedOfferIds: result.suppressed.map(offer => offer.id),
+        reasons: result.offers.map(offer => ({ offerId: offer.id, reasonCodes: offer.reasonCodes })),
+        suppressions: result.suppressed.map(offer => ({ offerId: offer.id, suppressionCodes: offer.suppressionCodes }))
+      }
+    });
+    res.json(result);
   } catch (error) {
     sendApiError(res, error);
   }

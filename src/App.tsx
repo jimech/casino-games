@@ -24,6 +24,7 @@ import {
   fetchAdminSummary,
   fetchGameRecommendations,
   fetchNotifications,
+  fetchTargetedBonuses,
   fetchWallet,
   GameRecommendationDto,
   getStoredAuthToken,
@@ -39,6 +40,7 @@ import {
   startBlackjackRound,
   startCrashRound,
   startPokerRound,
+  TargetedBonusOfferDto,
   trackAiEvent
 } from './api/casinoApi';
 
@@ -119,6 +121,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
+  const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
   const [authForm, setAuthForm] = useState({
     username: 'neon_private',
     email: '',
@@ -151,6 +154,10 @@ export default function App() {
 
   useEffect(() => {
     if (authSession) void loadNotifications();
+  }, [authSession?.user.id]);
+
+  useEffect(() => {
+    if (authSession) void loadTargetedBonuses();
   }, [authSession?.user.id]);
 
   useEffect(() => {
@@ -273,6 +280,16 @@ export default function App() {
     } catch (error) {
       console.warn('Game recommendations failed', error);
       setGameRecommendations([]);
+    }
+  };
+
+  const loadTargetedBonuses = async () => {
+    try {
+      const result = await fetchTargetedBonuses();
+      setTargetedBonuses(result.offers);
+    } catch (error) {
+      console.warn('Targeted bonuses failed', error);
+      setTargetedBonuses([]);
     }
   };
 
@@ -497,6 +514,7 @@ export default function App() {
       });
       setUser(prev => ({ ...prev, freeSpinsLeft: 0, walletBalance: response.wallet.available, lastDailyClaim: response.claim.createdAt }));
       await loadNotifications();
+      await loadTargetedBonuses();
       sound.playBigWin();
       triggerNotification(`Daily bonus claimed: +$${response.claim.amount}`, "success");
     } catch (error) {
@@ -514,12 +532,25 @@ export default function App() {
       });
       setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
       await loadNotifications();
+      await loadTargetedBonuses();
       sound.playBigWin();
       triggerNotification(`Welcome bonus credited: +$${response.claim.amount}`, "success");
     } catch (error) {
       sound.playError();
       triggerNotification(error instanceof Error ? error.message : "Welcome bonus claim failed.", "error");
     }
+  };
+
+  const claimTargetedBonus = async (offer: TargetedBonusOfferDto) => {
+    if (offer.campaignId === 'welcome-match-500') {
+      await handleClaimWelcomeMatch();
+      return;
+    }
+    if (offer.campaignId === 'daily-free-credits-100') {
+      await claimDailySpins();
+      return;
+    }
+    triggerNotification(`Targeted offer unavailable: ${offer.title}`, 'error');
   };
 
   // Support Validation Handler
@@ -1101,6 +1132,46 @@ export default function App() {
                   </h2>
                   <p className="text-xs text-neutral-400">Claim match rewards and non-deposit credits to play.</p>
                 </div>
+
+                {targetedBonuses.length > 0 && (
+                  <div className="bg-[#10101C] border border-[#00FF88]/20 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-[11px] uppercase font-black tracking-widest text-[#00FF88]">Targeted Offers</h3>
+                        <p className="text-[10px] text-neutral-500">Deterministic segment offers with reason codes.</p>
+                      </div>
+                      <button
+                        onClick={loadTargetedBonuses}
+                        className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 text-[9px] font-black uppercase px-2.5 py-1.5 rounded"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {targetedBonuses.slice(0, 2).map(offer => (
+                        <div key={offer.id} className="bg-neutral-950 border border-neutral-850 rounded-lg p-3 space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <span className="text-[9px] uppercase font-black text-[#FF0055]">{offer.segment}</span>
+                              <h4 className="text-xs font-black uppercase text-white">{offer.title}</h4>
+                            </div>
+                            <span className="text-xs font-black font-mono text-[#00FF88]">${offer.amount}</span>
+                          </div>
+                          <p className="text-[10px] text-neutral-400 leading-relaxed">{offer.description}</p>
+                          <div className="text-[9px] text-neutral-500 font-mono truncate">
+                            {offer.reasonCodes.join(' / ').replaceAll('_', ' ')}
+                          </div>
+                          <button
+                            onClick={() => void claimTargetedBonus(offer)}
+                            className="w-full bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            Claim targeted offer
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {/* Welcome Bonus Card */}

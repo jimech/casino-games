@@ -562,6 +562,8 @@ Acceptance criteria:
 
 Summary: Show targeted promotions based on eligibility and behavior.
 
+Implementation status: Complete. The platform now returns deterministic targeted bonus offers with welcome, retention, and reactivation segments, cooldown/claim suppression, reason codes, and AI-event decision logging.
+
 Scope:
 - Define welcome, retention, and reactivation offers.
 - Add cooldown and suppression rules.

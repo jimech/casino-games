@@ -131,6 +131,20 @@ const main = async () => {
   if (!recommendationAuditEvents.events.some((event: { name: string }) => event.name === 'game_recommendations_generated')) {
     throw new Error('Expected recommendation output to be logged');
   }
+  const targetedBonuses = await getJson(`${baseUrl}/api/bonuses/targeted`, adminSession.token);
+  assertEqual(targetedBonuses.source, 'profile', 'bonus targeting source');
+  assertArray(targetedBonuses.offers, 'targeted bonus offers array');
+  if (!targetedBonuses.offers.some((offer: { id: string; reasonCodes: string[] }) => offer.id === 'target-daily-retention' && offer.reasonCodes.includes('high_stake_activity'))) {
+    throw new Error('Expected high-stake retention bonus target');
+  }
+  const repeatedTargeting = await getJson(`${baseUrl}/api/bonuses/targeted`, adminSession.token);
+  if (!repeatedTargeting.suppressed.some((offer: { id: string; suppressionCodes: string[] }) => offer.id === 'target-daily-retention' && offer.suppressionCodes.includes('targeting_cooldown_active'))) {
+    throw new Error('Expected repeated bonus target to be suppressed by cooldown');
+  }
+  const bonusTargetAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=bonus&limit=25`, adminSession.token);
+  if (!bonusTargetAuditEvents.events.some((event: { name: string }) => event.name === 'bonus_targets_generated')) {
+    throw new Error('Expected bonus targeting decision to be logged');
+  }
 
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {

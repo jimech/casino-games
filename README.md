@@ -191,6 +191,13 @@ curl "http://localhost:3000/api/recommendations/games?limit=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Read targeted bonus offers:
+
+```bash
+curl http://localhost:3000/api/bonuses/targeted \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 Place a bet and lock funds:
 
 ```bash

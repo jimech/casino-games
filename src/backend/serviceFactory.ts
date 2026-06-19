@@ -7,6 +7,7 @@ import { MemoryBonusService, PrismaBonusService } from './bonusService';
 import { MemoryNotificationService, PrismaNotificationService } from './notificationService';
 import { MemoryRiskService, PrismaRiskService } from './riskService';
 import { DeterministicGameRecommendationService } from './gameRecommendationService';
+import { DeterministicBonusTargetingService } from './bonusTargetingService';
 import { prisma } from './db/prisma';
 
 export type CasinoBackendDriver = 'memory' | 'prisma';
@@ -45,6 +46,7 @@ export const createServices = () => {
     ? new PrismaAiFeatureService(prisma, aiEventService)
     : new MemoryAiFeatureService(aiEventService);
   const gameRecommendationService = new DeterministicGameRecommendationService();
+  const bonusTargetingService = new DeterministicBonusTargetingService();
 
-  return { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService };
+  return { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService };
 };
