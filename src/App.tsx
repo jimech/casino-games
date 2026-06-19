@@ -1420,6 +1420,25 @@ export default function App() {
                       <EmptyAdminRow />
                     )}
                   </AdminPanel>
+
+                  <AdminPanel title="Fraud Score">
+                    {adminSummary?.fraudScore ? (
+                      <>
+                        <AdminRow
+                          left={`${adminSummary.fraudScore.band} / ${adminSummary.fraudScore.version}`}
+                          right={String(adminSummary.fraudScore.score)}
+                          detail={adminSummary.fraudScore.reasonCodes.slice(0, 2).join(' / ')}
+                        />
+                        <AdminRow
+                          left="Review action"
+                          right={adminSummary.fraudScore.recommendedActions[0] ?? 'monitor'}
+                          detail={adminSummary.fraudScore.createdAt.slice(0, 19).replace('T', ' ')}
+                        />
+                      </>
+                    ) : (
+                      <EmptyAdminRow />
+                    )}
+                  </AdminPanel>
                 </div>
               </div>
             )}

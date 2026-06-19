@@ -161,9 +161,38 @@ const main = async () => {
     throw new Error('Expected churn score decision to be logged');
   }
 
+  for (const attempt of [
+    { paymentInstrumentHash: 'card-a', deviceId: 'device-a', country: 'DE' },
+    { paymentInstrumentHash: 'card-b', deviceId: 'device-b', country: 'DE' },
+    { paymentInstrumentHash: 'card-c', deviceId: 'device-c', country: 'FR' }
+  ]) {
+    await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
+      category: 'wallet',
+      name: 'deposit_attempt',
+      context: { ...attempt, amount: 100 }
+    });
+  }
+  const fraudScore = await postJson(`${baseUrl}/api/risk/fraud-score/refresh`, adminSession.token, {});
+  assertEqual(fraudScore.score.version, 'fraud-v1', 'fraud score version');
+  assertEqual(fraudScore.score.band, 'critical', 'fraud score band');
+  if (!fraudScore.score.reasonCodes.includes('payment_velocity')) {
+    throw new Error('Expected fraud score to include payment velocity');
+  }
+  const fraudReview = await getJson(`${baseUrl}/api/admin/fraud-scores?band=critical&limit=10`, adminSession.token);
+  if (!fraudReview.scores.some((score: { userId: string }) => score.userId === adminSession.user.id)) {
+    throw new Error('Expected critical fraud score to surface for admin review');
+  }
+  const fraudAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=risk&limit=25`, adminSession.token);
+  if (!fraudAuditEvents.events.some((event: { name: string }) => event.name === 'fraud_score_generated')) {
+    throw new Error('Expected fraud score decision to be logged');
+  }
+
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {
     throw new Error('Expected high-stake risk event to be created');
+  }
+  if (!risks.events.some((event: { type: string }) => event.type === 'fraud_anomaly_high')) {
+    throw new Error('Expected fraud anomaly risk event to be created');
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);

@@ -106,8 +106,29 @@ model User {
   aiEvents      AiEvent[]
   aiFeatureSnapshots AiFeatureSnapshot[]
   churnScores   ChurnScore[]
+  fraudScores   FraudScore[]
 
   @@map("users")
+}
+
+model FraudScore {
+  id                      String   @id @default(cuid())
+  userId                  String
+  version                 String
+  score                   Int
+  band                    String
+  reasonCodes             String[]
+  recommendedActions      String[]
+  sourceFeatureSnapshotId String?
+  sourceFeatureVersion    String?
+  details                 Json?
+  createdAt               DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([band, score, createdAt])
+  @@map("fraud_scores")
 }
 
 model ChurnScore {

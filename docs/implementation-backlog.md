@@ -595,6 +595,8 @@ Acceptance criteria:
 
 Summary: Score suspicious payment-like, device, geo, and gameplay patterns.
 
+Implementation status: Complete. Fraud scoring now produces persisted `fraud-v1` scores with low/medium/high/critical bands, reason codes, recommended review actions, AI-event audit logs, and risk-queue surfacing for high/critical users.
+
 Scope:
 - Detect velocity anomalies, device changes, geo mismatches, bonus abuse, account takeover signals, and collusion indicators.
 - Create risk queue events.

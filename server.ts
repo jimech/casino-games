@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -388,10 +388,44 @@ app.get('/api/admin/churn-scores', async (req, res) => {
   }
 });
 
+app.get('/api/risk/fraud-score', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveModelUserId(req, user);
+    const score = await fraudService.latest({ userId }) ?? await refreshFraudScore(userId);
+    res.json({ score });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/risk/fraud-score/refresh', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveModelUserId(req, user);
+    const score = await refreshFraudScore(userId);
+    res.status(201).json({ score });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/fraud-scores', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const band = isFraudBand(req.query.band) ? req.query.band : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ scores: await fraudService.list({ userId, band, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/summary', async (req, res) => {
   try {
     const user = await requireAdmin(req);
-    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, churnScore] = await Promise.all([
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, churnScore, fraudScore] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
       casinoService.listRounds(user.id),
@@ -399,7 +433,8 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusService.listCampaigns(),
       bonusService.listClaims(user.id),
       aiEventService.list({ userId: user.id, limit: 25 }),
-      churnService.latest({ userId: user.id })
+      churnService.latest({ userId: user.id }),
+      fraudService.latest({ userId: user.id })
     ]);
 
     await trackAiEventSafely({
@@ -425,7 +460,8 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusClaims: claims,
       aiEvents,
       aiFeatureSnapshot,
-      churnScore
+      churnScore,
+      fraudScore
     });
   } catch (error) {
     sendApiError(res, error);
@@ -817,6 +853,10 @@ function isChurnBand(value: unknown): value is 'low' | 'medium' | 'high' | 'crit
   return value === 'low' || value === 'medium' || value === 'high' || value === 'critical';
 }
 
+function isFraudBand(value: unknown): value is 'low' | 'medium' | 'high' | 'critical' {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'critical';
+}
+
 async function trackAiEventSafely(input: {
   userId: string;
   category: AiEventCategory;
@@ -871,6 +911,49 @@ async function refreshChurnScore(userId: string) {
       score: score.score,
       context: {
         churnScoreId: score.id,
+        band: score.band,
+        reasonCodes: score.reasonCodes,
+        recommendedActions: score.recommendedActions
+      }
+    });
+  }
+  return score;
+}
+
+async function refreshFraudScore(userId: string) {
+  const snapshot = await aiFeatureService.latest({ userId }) ?? await aiFeatureService.refresh({ userId });
+  const [aiEvents, riskEvents, bonusClaims] = await Promise.all([
+    aiEventService.list({ userId, limit: 250 }),
+    riskService.listEvents({ userId, limit: 100 }),
+    bonusService.listClaims(userId)
+  ]);
+  const score = await fraudService.score({
+    userId,
+    snapshot,
+    aiEvents,
+    riskEvents,
+    bonusClaims
+  });
+  await trackAiEventSafely({
+    userId,
+    category: 'risk',
+    name: 'fraud_score_generated',
+    context: {
+      score: score.score,
+      band: score.band,
+      reasonCodes: score.reasonCodes,
+      recommendedActions: score.recommendedActions,
+      version: score.version
+    }
+  });
+  if (score.band === 'high' || score.band === 'critical') {
+    await riskService.recordEvent({
+      userId,
+      type: 'fraud_anomaly_high',
+      severity: score.band === 'critical' ? 'critical' : 'high',
+      score: score.score,
+      context: {
+        fraudScoreId: score.id,
         band: score.band,
         reasonCodes: score.reasonCodes,
         recommendedActions: score.recommendedActions

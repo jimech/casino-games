@@ -207,6 +207,15 @@ curl -X POST http://localhost:3000/api/retention/churn-score/refresh \
   -d '{}'
 ```
 
+Refresh fraud and anomaly scoring:
+
+```bash
+curl -X POST http://localhost:3000/api/risk/fraud-score/refresh \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{}'
+```
+
 Place a bet and lock funds:
 
 ```bash

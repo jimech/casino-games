@@ -296,6 +296,20 @@ export interface ChurnScoreDto {
   createdAt: string;
 }
 
+export interface FraudScoreDto {
+  id: string;
+  userId: string;
+  version: string;
+  score: number;
+  band: 'low' | 'medium' | 'high' | 'critical';
+  reasonCodes: string[];
+  recommendedActions: string[];
+  sourceFeatureSnapshotId?: string;
+  sourceFeatureVersion?: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface AdminSummaryDto {
   user: AuthUserDto;
   wallet: WalletDto;
@@ -307,6 +321,7 @@ export interface AdminSummaryDto {
   aiEvents: AiEventDto[];
   aiFeatureSnapshot?: AiFeatureSnapshotDto;
   churnScore?: ChurnScoreDto;
+  fraudScore?: FraudScoreDto;
 }
 
 export interface NotificationDto {
@@ -435,6 +450,27 @@ export const refreshChurnScore = async (input: { userId?: string } = {}): Promis
     body: JSON.stringify(input)
   });
   const payload = await parseJsonResponse<{ score: ChurnScoreDto }>(response);
+  return payload.score;
+};
+
+export const fetchFraudScore = async (input: { userId?: string } = {}): Promise<FraudScoreDto> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  const query = params.toString();
+  const response = await fetch(`/api/risk/fraud-score${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ score: FraudScoreDto }>(response);
+  return payload.score;
+};
+
+export const refreshFraudScore = async (input: { userId?: string } = {}): Promise<FraudScoreDto> => {
+  const response = await fetch('/api/risk/fraud-score/refresh', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ score: FraudScoreDto }>(response);
   return payload.score;
 };
 
