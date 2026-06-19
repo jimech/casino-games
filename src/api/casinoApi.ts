@@ -201,6 +201,17 @@ export interface AdminSummaryDto {
   bonusClaims: BonusClaimDto[];
 }
 
+export interface NotificationDto {
+  id: string;
+  userId: string;
+  type: 'system' | 'bonus' | 'wallet' | 'risk' | 'support' | 'admin';
+  title: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+  readAt?: string;
+  createdAt: string;
+}
+
 export const CASINO_USER_ID = 'demo';
 const AUTH_TOKEN_STORAGE_KEY = 'casino.sessionToken';
 
@@ -295,6 +306,42 @@ export const fetchAdminSummary = async (): Promise<AdminSummaryDto> => {
     headers: authHeaders()
   });
   return parseJsonResponse<AdminSummaryDto>(response);
+};
+
+export const fetchNotifications = async (input: { unreadOnly?: boolean; limit?: number } = {}): Promise<NotificationDto[]> => {
+  const params = new URLSearchParams();
+  if (input.unreadOnly) params.set('unreadOnly', 'true');
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/notifications${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ notifications: NotificationDto[] }>(response);
+  return payload.notifications;
+};
+
+export const createNotification = async (input: {
+  type: 'support' | 'admin' | 'system';
+  title: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+}): Promise<NotificationDto> => {
+  const response = await fetch('/api/notifications', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ notification: NotificationDto }>(response);
+  return payload.notification;
+};
+
+export const markNotificationRead = async (notificationId: string): Promise<NotificationDto> => {
+  const response = await fetch(`/api/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ notification: NotificationDto }>(response);
+  return payload.notification;
 };
 
 export const placeBet = async (input: {

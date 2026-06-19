@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle, Compass, Play, Coins, UserCheck, User, Gift, Award, CreditCard,
-  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut, ShieldCheck
+  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut, ShieldCheck, Bell
 } from 'lucide-react';
 
 import SlotsGame from './components/SlotsGame';
@@ -18,13 +18,17 @@ import {
   actPokerRound,
   cashoutCrashRound,
   claimBonus,
+  createNotification,
   createWalletEventSource,
   fetchAuthSession,
   fetchAdminSummary,
+  fetchNotifications,
   fetchWallet,
   getStoredAuthToken,
   loginAccount,
   logoutAccount,
+  markNotificationRead,
+  NotificationDto,
   placeBet,
   registerAccount,
   settleRound,
@@ -109,6 +113,8 @@ export default function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [adminSummary, setAdminSummary] = useState<AdminSummaryDto | null>(null);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationDto[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [authForm, setAuthForm] = useState({
     username: 'neon_private',
     email: '',
@@ -136,6 +142,10 @@ export default function App() {
 
   useEffect(() => {
     if (authSession) void syncWalletFromBackend();
+  }, [authSession?.user.id]);
+
+  useEffect(() => {
+    if (authSession) void loadNotifications();
   }, [authSession?.user.id]);
 
   useEffect(() => {
@@ -227,6 +237,26 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Admin summary failed to load.", "error");
     } finally {
       setAdminLoading(false);
+    }
+  };
+
+  const loadNotifications = async () => {
+    setNotificationsLoading(true);
+    try {
+      setNotifications(await fetchNotifications({ limit: 50 }));
+    } catch (error) {
+      console.warn('Notification load failed', error);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  const markInboxItemRead = async (notificationId: string) => {
+    try {
+      const updated = await markNotificationRead(notificationId);
+      setNotifications(prev => prev.map(item => item.id === updated.id ? updated : item));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Notification update failed.", "error");
     }
   };
 
@@ -410,6 +440,7 @@ export default function App() {
         idempotencyKey: `bonus-daily-${activeUserId}-${new Date().toISOString().slice(0, 10)}`
       });
       setUser(prev => ({ ...prev, freeSpinsLeft: 0, walletBalance: response.wallet.available, lastDailyClaim: response.claim.createdAt }));
+      await loadNotifications();
       sound.playBigWin();
       triggerNotification(`Daily bonus claimed: +$${response.claim.amount}`, "success");
     } catch (error) {
@@ -426,6 +457,7 @@ export default function App() {
         idempotencyKey: `bonus-welcome-${activeUserId}`
       });
       setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+      await loadNotifications();
       sound.playBigWin();
       triggerNotification(`Welcome bonus credited: +$${response.claim.amount}`, "success");
     } catch (error) {
@@ -435,7 +467,7 @@ export default function App() {
   };
 
   // Support Validation Handler
-  const handleSupportFormSubmit = (e: React.FormEvent) => {
+  const handleSupportFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     sound.playClick();
     if (!supportForm.name || !supportForm.email || !supportForm.message) {
@@ -443,6 +475,16 @@ export default function App() {
       triggerNotification("Please fill out all support inputs before submitting!", "error");
       return;
     }
+    await createNotification({
+      type: 'support',
+      title: 'Support request received',
+      message: supportForm.message.slice(0, 240),
+      metadata: {
+        name: supportForm.name,
+        email: supportForm.email
+      }
+    });
+    await loadNotifications();
     setSupportSubmitted(true);
     triggerNotification("Message dispatched. Support agent response generated immediately!", "success");
   };
@@ -555,6 +597,7 @@ export default function App() {
                   { id: 'vip', label: 'VIP Club Benefits', icon: <Award className="h-4 w-4" /> },
                   { id: 'wallet', label: 'My Wallet', icon: <CreditCard className="h-4 w-4" /> },
                   { id: 'admin', label: 'Admin Audit', icon: <ShieldCheck className="h-4 w-4 text-[#00FF88]" /> },
+                  { id: 'inbox', label: 'Notifications', icon: <Bell className="h-4 w-4 text-yellow-400" /> },
                   { id: 'blog', label: 'Strategy Guidelines', icon: <BookOpen className="h-4 w-4" /> },
                   { id: 'support', label: 'Support center', icon: <HeartHandshake className="h-4 w-4" /> },
                   { id: 'settings', label: 'Settings', icon: <SettingsIcon className="h-4 w-4" /> }
@@ -1181,6 +1224,70 @@ export default function App() {
                     ))}
                     {adminSummary?.bonusClaims.length === 0 && <EmptyAdminRow />}
                   </AdminPanel>
+                </div>
+              </div>
+            )}
+
+            {activeCasinoTab === 'inbox' && (
+              <div className="max-w-3xl mx-auto space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-850 pb-3">
+                  <div>
+                    <h2 className="text-lg font-black uppercase text-white flex items-center gap-2">
+                      <Bell className="h-5 w-5 text-yellow-400" />
+                      Notification Inbox
+                    </h2>
+                    <p className="text-xs text-neutral-400">Persisted account messages from bonuses, support, and platform events.</p>
+                  </div>
+                  <button
+                    onClick={loadNotifications}
+                    className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-200 text-[10px] font-black uppercase px-3 py-2 rounded-lg"
+                  >
+                    {notificationsLoading ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#10101C] border border-neutral-850 p-3 rounded-lg">
+                    <span className="text-[9px] uppercase font-black text-neutral-500">Unread</span>
+                    <span className="block text-lg font-black text-yellow-400 font-mono mt-1">
+                      {notifications.filter(item => !item.readAt).length}
+                    </span>
+                  </div>
+                  <div className="bg-[#10101C] border border-neutral-850 p-3 rounded-lg">
+                    <span className="text-[9px] uppercase font-black text-neutral-500">Total</span>
+                    <span className="block text-lg font-black text-[#00FF88] font-mono mt-1">{notifications.length}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {notifications.map(notification => (
+                    <div key={notification.id} className="bg-[#10101C] border border-neutral-850 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`h-2 w-2 rounded-full ${notification.readAt ? 'bg-neutral-700' : 'bg-yellow-400'}`} />
+                          <span className="text-xs font-black uppercase text-white">{notification.title}</span>
+                          <span className="text-[9px] uppercase font-black text-neutral-500">{notification.type}</span>
+                        </div>
+                        <p className="text-xs text-neutral-400 mt-1">{notification.message}</p>
+                        <span className="block text-[10px] text-neutral-600 font-mono mt-1">
+                          {notification.createdAt.slice(0, 19).replace('T', ' ')}
+                        </span>
+                      </div>
+                      {!notification.readAt && (
+                        <button
+                          onClick={() => markInboxItemRead(notification.id)}
+                          className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-200 text-[10px] font-black uppercase px-3 py-2 rounded-lg shrink-0"
+                        >
+                          Mark read
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {notifications.length === 0 && (
+                    <div className="bg-[#10101C] border border-neutral-850 rounded-lg p-6 text-center text-xs text-neutral-500">
+                      No notifications yet.
+                    </div>
+                  )}
                 </div>
               </div>
             )}

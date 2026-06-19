@@ -275,6 +275,13 @@ curl http://localhost:3000/api/admin/summary \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Read notification inbox:
+
+```bash
+curl http://localhost:3000/api/notifications \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Current Status
 
 - React/Vite frontend prototype
@@ -287,6 +294,7 @@ curl http://localhost:3000/api/admin/summary \
 - Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
 - Bonus service supports persisted welcome and daily credit claims with ledger-linked wallet credits
 - Admin audit panel summarizes wallet, ledger, rounds, risk events, and bonus claims
+- Notification inbox persists bonus, support, admin, and system notices with unread/read state
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time

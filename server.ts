@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 
 app.use(express.json());
@@ -226,6 +226,47 @@ app.get('/api/admin/summary', async (req, res) => {
   }
 });
 
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const unreadOnly = req.query.unreadOnly === 'true';
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ notifications: await notificationService.list({ userId: user.id, unreadOnly, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/notifications', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const notification = await notificationService.create({
+      userId: user.id,
+      type: req.body.type === 'support' || req.body.type === 'admin' ? req.body.type : 'system',
+      title: String(req.body.title ?? ''),
+      message: String(req.body.message ?? ''),
+      metadata: isRecord(req.body.metadata) ? req.body.metadata : undefined
+    });
+    res.status(201).json({ notification });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/notifications/:notificationId/read', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    res.json({
+      notification: await notificationService.markRead({
+        userId: user.id,
+        notificationId: req.params.notificationId
+      })
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
   try {
     const user = await requireAuth(req);
@@ -235,6 +276,19 @@ app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
       idempotencyKey: String(req.body.idempotencyKey ?? '')
     });
     broadcastWallet(user.id, result.wallet);
+    if (result.claim.idempotencyKey === String(req.body.idempotencyKey ?? '')) {
+      await notificationService.create({
+        userId: user.id,
+        type: 'bonus',
+        title: 'Bonus credited',
+        message: `${result.campaign.title}: +$${result.claim.amount}`,
+        metadata: {
+          campaignId: result.campaign.id,
+          claimId: result.claim.id,
+          claimKey: result.claim.claimKey
+        }
+      });
+    }
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -562,4 +616,8 @@ function sanitizeLedgerEntryForApi<T extends { metadata?: Record<string, unknown
       outcome: undefined
     }
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

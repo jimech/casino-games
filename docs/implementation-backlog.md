@@ -445,6 +445,9 @@ Acceptance criteria:
 - Preferences are respected.
 - Admin notices are logged.
 
+Implementation note:
+- Current implementation persists in-app notifications, supports unread/read state, creates bonus and support notifications, and exposes an authenticated Notification Inbox. Preferences and external email adapters remain later expansions.
+
 ### T18 - Security Hardening
 
 Summary: Add platform-level security controls.
