@@ -145,6 +145,21 @@ const main = async () => {
   if (!bonusTargetAuditEvents.events.some((event: { name: string }) => event.name === 'bonus_targets_generated')) {
     throw new Error('Expected bonus targeting decision to be logged');
   }
+  const activeChurn = await postJson(`${baseUrl}/api/retention/churn-score/refresh`, adminSession.token, {});
+  assertEqual(activeChurn.score.version, 'churn-v1', 'active churn score version');
+  if (activeChurn.score.band === 'high' || activeChurn.score.band === 'critical') {
+    throw new Error('Expected active user churn score to avoid high-risk band');
+  }
+  const inactiveChurn = await postJson(`${baseUrl}/api/retention/churn-score/refresh`, userSession.token, {});
+  assertEqual(inactiveChurn.score.band, 'critical', 'inactive churn score band');
+  const churnReview = await getJson(`${baseUrl}/api/admin/churn-scores?band=critical&limit=10`, adminSession.token);
+  if (!churnReview.scores.some((score: { userId: string }) => score.userId === userSession.user.id)) {
+    throw new Error('Expected critical churn score to surface for admin review');
+  }
+  const churnAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=risk&limit=25`, userSession.token);
+  if (!churnAuditEvents.events.some((event: { name: string }) => event.name === 'churn_score_generated')) {
+    throw new Error('Expected churn score decision to be logged');
+  }
 
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {

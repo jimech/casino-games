@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -354,17 +354,52 @@ app.get('/api/bonuses/targeted', async (req, res) => {
   }
 });
 
+app.get('/api/retention/churn-score', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveModelUserId(req, user);
+    const score = await churnService.latest({ userId }) ?? await refreshChurnScore(userId);
+    res.json({ score });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/retention/churn-score/refresh', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveModelUserId(req, user);
+    const score = await refreshChurnScore(userId);
+    res.status(201).json({ score });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/churn-scores', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const band = isChurnBand(req.query.band) ? req.query.band : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ scores: await churnService.list({ userId, band, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/summary', async (req, res) => {
   try {
     const user = await requireAdmin(req);
-    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents] = await Promise.all([
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, churnScore] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
       casinoService.listRounds(user.id),
       riskService.listEvents({ userId: user.id, limit: 25 }),
       bonusService.listCampaigns(),
       bonusService.listClaims(user.id),
-      aiEventService.list({ userId: user.id, limit: 25 })
+      aiEventService.list({ userId: user.id, limit: 25 }),
+      churnService.latest({ userId: user.id })
     ]);
 
     await trackAiEventSafely({
@@ -389,7 +424,8 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusCampaigns: campaigns,
       bonusClaims: claims,
       aiEvents,
-      aiFeatureSnapshot
+      aiFeatureSnapshot,
+      churnScore
     });
   } catch (error) {
     sendApiError(res, error);
@@ -777,6 +813,10 @@ function isAiEventCategory(value: unknown): value is AiEventCategory {
     value === 'session';
 }
 
+function isChurnBand(value: unknown): value is 'low' | 'medium' | 'high' | 'critical' {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'critical';
+}
+
 async function trackAiEventSafely(input: {
   userId: string;
   category: AiEventCategory;
@@ -794,6 +834,10 @@ async function trackAiEventSafely(input: {
 }
 
 async function resolveAiProfileUserId(req: express.Request, user: AuthUser): Promise<string> {
+  return resolveModelUserId(req, user);
+}
+
+async function resolveModelUserId(req: express.Request, user: AuthUser): Promise<string> {
   const requestedUserId = typeof req.query.userId === 'string'
     ? req.query.userId
     : typeof req.body?.userId === 'string'
@@ -802,6 +846,38 @@ async function resolveAiProfileUserId(req: express.Request, user: AuthUser): Pro
   if (!requestedUserId || requestedUserId === user.id) return user.id;
   await requireAdmin(req);
   return requestedUserId;
+}
+
+async function refreshChurnScore(userId: string) {
+  const snapshot = await aiFeatureService.latest({ userId }) ?? await aiFeatureService.refresh({ userId });
+  const score = await churnService.score({ userId, snapshot });
+  await trackAiEventSafely({
+    userId,
+    category: 'risk',
+    name: 'churn_score_generated',
+    context: {
+      score: score.score,
+      band: score.band,
+      reasonCodes: score.reasonCodes,
+      recommendedActions: score.recommendedActions,
+      version: score.version
+    }
+  });
+  if (score.band === 'high' || score.band === 'critical') {
+    await riskService.recordEvent({
+      userId,
+      type: 'churn_risk_high',
+      severity: score.band === 'critical' ? 'high' : 'medium',
+      score: score.score,
+      context: {
+        churnScoreId: score.id,
+        band: score.band,
+        reasonCodes: score.reasonCodes,
+        recommendedActions: score.recommendedActions
+      }
+    });
+  }
+  return score;
 }
 
 function extractRequestToken(req: express.Request): string {

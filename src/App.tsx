@@ -1401,6 +1401,25 @@ export default function App() {
                       <EmptyAdminRow />
                     )}
                   </AdminPanel>
+
+                  <AdminPanel title="Churn Risk">
+                    {adminSummary?.churnScore ? (
+                      <>
+                        <AdminRow
+                          left={`${adminSummary.churnScore.band} / ${adminSummary.churnScore.version}`}
+                          right={String(adminSummary.churnScore.score)}
+                          detail={adminSummary.churnScore.reasonCodes.slice(0, 2).join(' / ')}
+                        />
+                        <AdminRow
+                          left="Retention action"
+                          right={adminSummary.churnScore.recommendedActions[0] ?? 'monitor'}
+                          detail={adminSummary.churnScore.createdAt.slice(0, 19).replace('T', ' ')}
+                        />
+                      </>
+                    ) : (
+                      <EmptyAdminRow />
+                    )}
+                  </AdminPanel>
                 </div>
               </div>
             )}

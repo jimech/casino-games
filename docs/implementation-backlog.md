@@ -578,6 +578,8 @@ Acceptance criteria:
 
 Summary: Score churn risk and surface retention actions.
 
+Implementation status: Complete. Churn scoring now produces persisted `churn-v1` scores with low/medium/high/critical bands, reason codes, retention actions, AI-event audit logs, and risk-queue surfacing for high-risk users.
+
 Scope:
 - Score inactivity, low engagement, and session drop-off.
 - Trigger retention prompts or outreach candidates.

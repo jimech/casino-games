@@ -282,6 +282,20 @@ export interface GameRecommendationResponseDto {
   recommendations: GameRecommendationDto[];
 }
 
+export interface ChurnScoreDto {
+  id: string;
+  userId: string;
+  version: string;
+  score: number;
+  band: 'low' | 'medium' | 'high' | 'critical';
+  reasonCodes: string[];
+  recommendedActions: string[];
+  sourceFeatureSnapshotId?: string;
+  sourceFeatureVersion?: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface AdminSummaryDto {
   user: AuthUserDto;
   wallet: WalletDto;
@@ -292,6 +306,7 @@ export interface AdminSummaryDto {
   bonusClaims: BonusClaimDto[];
   aiEvents: AiEventDto[];
   aiFeatureSnapshot?: AiFeatureSnapshotDto;
+  churnScore?: ChurnScoreDto;
 }
 
 export interface NotificationDto {
@@ -400,6 +415,27 @@ export const fetchTargetedBonuses = async (): Promise<BonusTargetingResponseDto>
     headers: authHeaders()
   });
   return parseJsonResponse<BonusTargetingResponseDto>(response);
+};
+
+export const fetchChurnScore = async (input: { userId?: string } = {}): Promise<ChurnScoreDto> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  const query = params.toString();
+  const response = await fetch(`/api/retention/churn-score${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ score: ChurnScoreDto }>(response);
+  return payload.score;
+};
+
+export const refreshChurnScore = async (input: { userId?: string } = {}): Promise<ChurnScoreDto> => {
+  const response = await fetch('/api/retention/churn-score/refresh', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ score: ChurnScoreDto }>(response);
+  return payload.score;
 };
 
 export const fetchAdminSummary = async (): Promise<AdminSummaryDto> => {

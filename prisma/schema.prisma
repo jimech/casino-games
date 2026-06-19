@@ -105,8 +105,29 @@ model User {
   notifications Notification[]
   aiEvents      AiEvent[]
   aiFeatureSnapshots AiFeatureSnapshot[]
+  churnScores   ChurnScore[]
 
   @@map("users")
+}
+
+model ChurnScore {
+  id                      String   @id @default(cuid())
+  userId                  String
+  version                 String
+  score                   Int
+  band                    String
+  reasonCodes             String[]
+  recommendedActions      String[]
+  sourceFeatureSnapshotId String?
+  sourceFeatureVersion    String?
+  details                 Json?
+  createdAt               DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([band, score, createdAt])
+  @@map("churn_scores")
 }
 
 model AiFeatureSnapshot {

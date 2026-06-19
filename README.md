@@ -198,6 +198,15 @@ curl http://localhost:3000/api/bonuses/targeted \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Refresh churn and retention scoring:
+
+```bash
+curl -X POST http://localhost:3000/api/retention/churn-score/refresh \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{}'
+```
+
 Place a bet and lock funds:
 
 ```bash
