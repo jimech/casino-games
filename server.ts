@@ -6,6 +6,7 @@ import { AiEventCategory } from './src/backend/aiEventService';
 import { extractBearerToken, AuthUser } from './src/backend/authService';
 import { GameRoundRecord } from './src/backend/casinoService';
 import { createServices } from './src/backend/serviceFactory';
+import { RecommendationGame } from './src/backend/gameRecommendationService';
 import { spinRoulette } from './src/backend/games/rouletteEngine';
 import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEngine';
 import { spinSlots } from './src/backend/games/slotsEngine';
@@ -19,9 +20,32 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+
+const RECOMMENDATION_CATALOG: RecommendationGame[] = [
+  { id: 'fruit-mania', title: 'Neon Fruit Mania', category: 'slots', provider: 'Spinfuego', rtp: '96.5%', volatility: 'Low' },
+  { id: 'cyber-jackpot', title: 'Cyber Jackpot 2077', category: 'slots', provider: 'HackerGames', rtp: '95.0%', volatility: 'High' },
+  { id: 'ancient-gold', title: "Pharaoh's Neon Gold", category: 'slots', provider: 'GizaBits', rtp: '97.2%', volatility: 'Medium' },
+  { id: 'cherry-rush', title: 'Cherry Fusion Blast', category: 'slots', provider: 'Spinfuego', rtp: '98.1%', volatility: 'Low' },
+  { id: 'laser-lines', title: 'Laser Lines Wild', category: 'slots', provider: 'NexusStudio', rtp: '94.2%', volatility: 'Extreme' },
+  { id: 'bj-standard', title: 'Blackjack Vegas Pro', category: 'blackjack', provider: 'Evolutionary', rtp: '99.5%', volatility: 'Medium' },
+  { id: 'bj-vip', title: 'Diamond VIP Blackjack', category: 'blackjack', provider: 'Evolutionary', rtp: '99.7%', volatility: 'Low' },
+  { id: 'roulette-euro', title: 'European Neon Wheel', category: 'roulette', provider: 'RND Labs', rtp: '97.3%', volatility: 'Medium' },
+  { id: 'roulette-royal', title: 'Roulette Royale', category: 'roulette', provider: 'GizaBits', rtp: '97.3%', volatility: 'High' },
+  { id: 'poker-holdem', title: "Hold'em Tournament AI", category: 'poker', provider: 'DealerPro', rtp: '98.9%', volatility: 'High' },
+  { id: 'poker-omaha', title: 'Omaha Limit Pro', category: 'poker', provider: 'DealerPro', rtp: '97.8%', volatility: 'Medium' },
+  { id: 'crash-cosmic', title: 'Cosmic Flight Rocket', category: 'crash', provider: 'NexusStudio', rtp: '96.2%', volatility: 'Extreme' },
+  { id: 'crash-zeus', title: "Zeus Thunderbolt", category: 'crash', provider: 'Athenian', rtp: '96.8%', volatility: 'High' },
+  { id: 'live-dealer-bj', title: 'Live Emerald Dealer BJ', category: 'live', provider: 'VegasStream', rtp: '99.5%', volatility: 'Medium' },
+  { id: 'live-dealer-rt', title: 'Live Sunset Casino Wheel', category: 'live', provider: 'VegasStream', rtp: '97.3%', volatility: 'High' },
+  { id: 'live-dealer-pk', title: 'Live Holdem Champions', category: 'live', provider: 'VegasStream', rtp: '98.9%', volatility: 'High' },
+  { id: 'slots-cyber-reels', title: 'Retro Byte Reels', category: 'slots', provider: 'RetroCade', rtp: '96.0%', volatility: 'Low' },
+  { id: 'slots-volcano', title: 'Neon Volcanic Hot', category: 'slots', provider: 'Spinfuego', rtp: '95.5%', volatility: 'High' },
+  { id: 'slots-aztec', title: 'Aztec Laser Pyramid', category: 'slots', provider: 'GizaBits', rtp: '96.6%', volatility: 'Medium' },
+  { id: 'slots-neon-777', title: 'Classic Wild Triple 7s', category: 'slots', provider: 'NexusStudio', rtp: '97.5%', volatility: 'Low' }
+];
 
 app.use(express.json());
 
@@ -252,6 +276,33 @@ app.post('/api/ai/profile/refresh', async (req, res) => {
       limit: typeof req.body.limit === 'number' ? req.body.limit : undefined
     });
     res.status(201).json({ snapshot });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/recommendations/games', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const snapshot = await aiFeatureService.latest({ userId: user.id });
+    const result = gameRecommendationService.rank({
+      games: RECOMMENDATION_CATALOG,
+      snapshot,
+      limit
+    });
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'game',
+      name: 'game_recommendations_generated',
+      context: {
+        source: result.source,
+        profileVersion: result.profileVersion,
+        topGameIds: result.recommendations.slice(0, 5).map(item => item.gameId),
+        scores: result.recommendations.slice(0, 5).map(item => ({ gameId: item.gameId, score: item.score, reasons: item.reasons }))
+      }
+    });
+    res.json(result);
   } catch (error) {
     sendApiError(res, error);
   }

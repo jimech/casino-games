@@ -121,6 +121,16 @@ const main = async () => {
   if (aiProfile.snapshot.features.riskSignals.highStakeRounds < 1) {
     throw new Error('Expected AI profile high-stake signal');
   }
+  const recommendations = await getJson(`${baseUrl}/api/recommendations/games?limit=5`, adminSession.token);
+  assertEqual(recommendations.source, 'profile', 'recommendation source');
+  assertArray(recommendations.recommendations, 'game recommendations array');
+  if (recommendations.recommendations[0].gameId !== 'roulette-royal') {
+    throw new Error('Expected roulette recommendation to rank first from behavior');
+  }
+  const recommendationAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=game&limit=25`, adminSession.token);
+  if (!recommendationAuditEvents.events.some((event: { name: string }) => event.name === 'game_recommendations_generated')) {
+    throw new Error('Expected recommendation output to be logged');
+  }
 
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {

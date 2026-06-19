@@ -22,8 +22,10 @@ import {
   createWalletEventSource,
   fetchAuthSession,
   fetchAdminSummary,
+  fetchGameRecommendations,
   fetchNotifications,
   fetchWallet,
+  GameRecommendationDto,
   getStoredAuthToken,
   loginAccount,
   logoutAccount,
@@ -116,6 +118,7 @@ export default function App() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
   const [authForm, setAuthForm] = useState({
     username: 'neon_private',
     email: '',
@@ -148,6 +151,10 @@ export default function App() {
 
   useEffect(() => {
     if (authSession) void loadNotifications();
+  }, [authSession?.user.id]);
+
+  useEffect(() => {
+    if (authSession) void loadGameRecommendations();
   }, [authSession?.user.id]);
 
   useEffect(() => {
@@ -259,6 +266,16 @@ export default function App() {
     }
   };
 
+  const loadGameRecommendations = async () => {
+    try {
+      const result = await fetchGameRecommendations({ limit: 20 });
+      setGameRecommendations(result.recommendations);
+    } catch (error) {
+      console.warn('Game recommendations failed', error);
+      setGameRecommendations([]);
+    }
+  };
+
   const markInboxItemRead = async (notificationId: string) => {
     try {
       const updated = await markNotificationRead(notificationId);
@@ -296,6 +313,7 @@ export default function App() {
       route
     });
     setActiveCasinoTab(route);
+    void loadGameRecommendations();
   };
 
   const syncWalletFromBackend = async () => {
@@ -528,12 +546,17 @@ export default function App() {
   };
 
   // Filter components variables
+  const recommendationRank = new Map<string, GameRecommendationDto>(gameRecommendations.map(item => [item.gameId, item]));
   const filteredGames = GAME_CATALOG_DATA.filter(g => {
     const matchesCategory = filterCategory === 'all' || g.category === filterCategory;
     const matchesVolatility = filterVolatility === 'all' || g.volatility === filterVolatility;
     const matchesSearch = g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           g.provider.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesVolatility && matchesSearch;
+  }).sort((left, right) => {
+    const leftRank = recommendationRank.get(left.id)?.rank ?? Number.MAX_SAFE_INTEGER;
+    const rightRank = recommendationRank.get(right.id)?.rank ?? Number.MAX_SAFE_INTEGER;
+    return leftRank - rightRank || left.title.localeCompare(right.title);
   });
 
   return (
@@ -870,6 +893,14 @@ export default function App() {
                             <h4 className="text-xs font-black uppercase text-white tracking-wide">{g.title}</h4>
                             <span className="text-[9px] text-[#FF0055] font-mono mt-0.5 block">{g.provider}</span>
                           </div>
+                          {recommendationRank.has(g.id) && (
+                            <div className="flex items-center justify-between bg-neutral-950 border border-neutral-850 rounded px-2 py-1">
+                              <span className="text-[9px] text-[#00FF88] font-black uppercase">Rank #{recommendationRank.get(g.id)?.rank}</span>
+                              <span className="text-[9px] text-neutral-500 font-mono truncate ml-2">
+                                {recommendationRank.get(g.id)?.reasons[0]?.replaceAll('_', ' ')}
+                              </span>
+                            </div>
+                          )}
                           <p className="text-[11px] text-neutral-400 line-clamp-2">{g.description}</p>
                           <div className="mt-1 bg-neutral-900/60 p-1.5 rounded text-[10px] text-neutral-400">
                             Win Chance: <strong className="text-yellow-500 font-mono">{g.winOdds}</strong>

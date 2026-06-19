@@ -247,6 +247,20 @@ export interface AiFeatureSnapshotDto {
   createdAt: string;
 }
 
+export interface GameRecommendationDto {
+  gameId: string;
+  rank: number;
+  score: number;
+  reasons: string[];
+}
+
+export interface GameRecommendationResponseDto {
+  generatedAt: string;
+  source: 'profile' | 'fallback';
+  profileVersion?: string;
+  recommendations: GameRecommendationDto[];
+}
+
 export interface AdminSummaryDto {
   user: AuthUserDto;
   wallet: WalletDto;
@@ -426,6 +440,16 @@ export const refreshAiFeatureProfile = async (input: {
   });
   const payload = await parseJsonResponse<{ snapshot: AiFeatureSnapshotDto }>(response);
   return payload.snapshot;
+};
+
+export const fetchGameRecommendations = async (input: { limit?: number } = {}): Promise<GameRecommendationResponseDto> => {
+  const params = new URLSearchParams();
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/recommendations/games${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<GameRecommendationResponseDto>(response);
 };
 
 export const fetchNotifications = async (input: { unreadOnly?: boolean; limit?: number } = {}): Promise<NotificationDto[]> => {

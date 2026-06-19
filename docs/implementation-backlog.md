@@ -545,6 +545,8 @@ Acceptance criteria:
 
 Summary: Rank games and lobby ordering based on behavior.
 
+Implementation status: Complete. The lobby now fetches deterministic game recommendations, ranks catalog cards from feature snapshots, falls back to RTP/volatility ordering, and logs recommendation outputs with scores and reasons.
+
 Scope:
 - Rank by category preference, volatility preference, recency, and engagement.
 - Provide fallback non-AI ranking.

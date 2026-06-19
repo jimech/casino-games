@@ -184,6 +184,13 @@ curl http://localhost:3000/api/ai/profile \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Read ranked game recommendations:
+
+```bash
+curl "http://localhost:3000/api/recommendations/games?limit=10" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 Place a bet and lock funds:
 
 ```bash
