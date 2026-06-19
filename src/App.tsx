@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle, Compass, Play, Coins, UserCheck, User, Gift, Award, CreditCard,
-  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut
+  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut, ShieldCheck
 } from 'lucide-react';
 
 import SlotsGame from './components/SlotsGame';
@@ -13,12 +13,14 @@ import { sound } from './utils/audio';
 import { UserProfile, GameCatalogItem, BlogPost } from './types';
 import {
   AuthSessionDto,
+  AdminSummaryDto,
   actBlackjackRound,
   actPokerRound,
   cashoutCrashRound,
   claimBonus,
   createWalletEventSource,
   fetchAuthSession,
+  fetchAdminSummary,
   fetchWallet,
   getStoredAuthToken,
   loginAccount,
@@ -105,6 +107,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
   const [authLoading, setAuthLoading] = useState(true);
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [adminSummary, setAdminSummary] = useState<AdminSummaryDto | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
   const [authForm, setAuthForm] = useState({
     username: 'neon_private',
     email: '',
@@ -133,6 +137,10 @@ export default function App() {
   useEffect(() => {
     if (authSession) void syncWalletFromBackend();
   }, [authSession?.user.id]);
+
+  useEffect(() => {
+    if (authSession && activeCasinoTab === 'admin') void loadAdminSummary();
+  }, [authSession?.user.id, activeCasinoTab]);
 
   useEffect(() => {
     if (!authSession) return;
@@ -209,6 +217,17 @@ export default function App() {
     setAuthSession(null);
     setActiveCasinoTab('home');
     triggerNotification('Logged out of the private casino session.', 'info');
+  };
+
+  const loadAdminSummary = async () => {
+    setAdminLoading(true);
+    try {
+      setAdminSummary(await fetchAdminSummary());
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Admin summary failed to load.", "error");
+    } finally {
+      setAdminLoading(false);
+    }
   };
 
   const syncWalletFromBackend = async () => {
@@ -535,6 +554,7 @@ export default function App() {
                   { id: 'bonuses', label: 'Bonuses & Promos', icon: <Gift className="h-4 w-4" /> },
                   { id: 'vip', label: 'VIP Club Benefits', icon: <Award className="h-4 w-4" /> },
                   { id: 'wallet', label: 'My Wallet', icon: <CreditCard className="h-4 w-4" /> },
+                  { id: 'admin', label: 'Admin Audit', icon: <ShieldCheck className="h-4 w-4 text-[#00FF88]" /> },
                   { id: 'blog', label: 'Strategy Guidelines', icon: <BookOpen className="h-4 w-4" /> },
                   { id: 'support', label: 'Support center', icon: <HeartHandshake className="h-4 w-4" /> },
                   { id: 'settings', label: 'Settings', icon: <SettingsIcon className="h-4 w-4" /> }
@@ -1101,6 +1121,70 @@ export default function App() {
               </div>
             )}
 
+            {activeCasinoTab === 'admin' && (
+              <div className="space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-850 pb-3">
+                  <div>
+                    <h2 className="text-lg font-black uppercase text-white flex items-center gap-2">
+                      <ShieldCheck className="h-5 w-5 text-[#00FF88]" />
+                      Admin Audit
+                    </h2>
+                    <p className="text-xs text-neutral-400">Operational view for wallet, ledger, rounds, risk, and bonus claims.</p>
+                  </div>
+                  <button
+                    onClick={loadAdminSummary}
+                    className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-200 text-[10px] font-black uppercase px-3 py-2 rounded-lg"
+                  >
+                    {adminLoading ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {[
+                    ['Available', `$${adminSummary?.wallet.available ?? user.walletBalance}`],
+                    ['Locked', `$${adminSummary?.wallet.locked ?? 0}`],
+                    ['Rounds', String(adminSummary?.rounds.length ?? 0)],
+                    ['Open Risk', String(adminSummary?.riskEvents.filter(event => event.status === 'open').length ?? 0)]
+                  ].map(([label, value]) => (
+                    <div key={label} className="bg-[#10101C] border border-neutral-850 p-3 rounded-lg">
+                      <span className="text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                      <span className="block text-lg font-black text-[#00FF88] font-mono mt-1">{value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                  <AdminPanel title="Recent Ledger">
+                    {(adminSummary?.ledger ?? []).slice(0, 8).map(entry => (
+                      <AdminRow key={entry.id} left={entry.type} right={`$${entry.amount}`} detail={entry.createdAt.slice(0, 19).replace('T', ' ')} />
+                    ))}
+                    {adminSummary?.ledger.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
+
+                  <AdminPanel title="Recent Rounds">
+                    {(adminSummary?.rounds ?? []).slice(0, 8).map(round => (
+                      <AdminRow key={round.id} left={`${round.gameId} / ${round.status}`} right={`$${round.stake}`} detail={`Payout $${round.payout}`} />
+                    ))}
+                    {adminSummary?.rounds.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
+
+                  <AdminPanel title="Risk Queue">
+                    {(adminSummary?.riskEvents ?? []).slice(0, 8).map(event => (
+                      <AdminRow key={event.id} left={`${event.type} / ${event.severity}`} right={String(event.score)} detail={event.createdAt.slice(0, 19).replace('T', ' ')} />
+                    ))}
+                    {adminSummary?.riskEvents.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
+
+                  <AdminPanel title="Bonus Claims">
+                    {(adminSummary?.bonusClaims ?? []).slice(0, 8).map(claim => (
+                      <AdminRow key={claim.id} left={claim.campaignId} right={`$${claim.amount}`} detail={`${claim.status} / ${claim.claimKey}`} />
+                    ))}
+                    {adminSummary?.bonusClaims.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
+                </div>
+              </div>
+            )}
+
             {activeCasinoTab === 'blog' && (
               <div className="max-w-3xl mx-auto space-y-6">
                 <div>
@@ -1344,6 +1428,35 @@ interface AuthGateProps {
   submitting: boolean;
   onSubmit: (event: React.FormEvent) => void;
 }
+
+const AdminPanel: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => {
+  return (
+    <section className="bg-[#10101C] border border-neutral-850 rounded-lg p-4 space-y-3">
+      <h3 className="text-[11px] uppercase font-black tracking-widest text-[#FF0055]">{title}</h3>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+};
+
+const AdminRow: React.FC<{ left: string; right: string; detail: string }> = ({ left, right, detail }) => {
+  return (
+    <div className="flex items-center justify-between gap-3 bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+      <div className="min-w-0">
+        <span className="block text-xs font-bold text-neutral-200 truncate">{left}</span>
+        <span className="block text-[10px] text-neutral-500 font-mono truncate">{detail}</span>
+      </div>
+      <span className="text-xs font-black text-[#00FF88] font-mono shrink-0">{right}</span>
+    </div>
+  );
+};
+
+const EmptyAdminRow: React.FC = () => {
+  return (
+    <div className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-3 text-[11px] text-neutral-500">
+      No records yet.
+    </div>
+  );
+};
 
 function AuthGate({ mode, setMode, form, setForm, submitting, onSubmit }: AuthGateProps) {
   return (

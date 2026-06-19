@@ -422,6 +422,10 @@ Scope:
 
 Acceptance criteria:
 - Admin can search users and inspect wallet history.
+- Admin can inspect risk, round, ledger, and bonus activity.
+
+Implementation note:
+- Current implementation adds `GET /api/admin/summary` and an Admin Audit tab for the authenticated account. Multi-user search, admin roles, round replay, and review workflows remain later expansions.
 - Ledger and round history are searchable.
 - Risk events are reviewable.
 - Admin actions create audit logs.

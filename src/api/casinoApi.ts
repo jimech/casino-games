@@ -168,6 +168,39 @@ interface BonusClaimResponse {
   wallet: WalletDto;
 }
 
+interface LedgerEntryDto {
+  id: string;
+  idempotencyKey: string;
+  type: string;
+  amount: number;
+  balanceBefore: WalletDto;
+  balanceAfter: WalletDto;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+interface RiskEventDto {
+  id: string;
+  userId?: string;
+  type: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'open' | 'reviewed' | 'dismissed';
+  score: number;
+  context?: Record<string, unknown>;
+  createdAt: string;
+  reviewedAt?: string;
+}
+
+export interface AdminSummaryDto {
+  user: AuthUserDto;
+  wallet: WalletDto;
+  ledger: LedgerEntryDto[];
+  rounds: RoundDto[];
+  riskEvents: RiskEventDto[];
+  bonusCampaigns: BonusCampaignDto[];
+  bonusClaims: BonusClaimDto[];
+}
+
 export const CASINO_USER_ID = 'demo';
 const AUTH_TOKEN_STORAGE_KEY = 'casino.sessionToken';
 
@@ -255,6 +288,13 @@ export const claimBonus = async (input: {
     body: JSON.stringify({ idempotencyKey: input.idempotencyKey })
   });
   return parseJsonResponse<BonusClaimResponse>(response);
+};
+
+export const fetchAdminSummary = async (): Promise<AdminSummaryDto> => {
+  const response = await fetch('/api/admin/summary', {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<AdminSummaryDto>(response);
 };
 
 export const placeBet = async (input: {

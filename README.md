@@ -268,6 +268,13 @@ curl -X POST http://localhost:3000/api/bonuses/welcome-match-500/claim \
   -d '{"idempotencyKey":"bonus-demo-welcome"}'
 ```
 
+Read admin audit summary:
+
+```bash
+curl http://localhost:3000/api/admin/summary \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Current Status
 
 - React/Vite frontend prototype
@@ -279,6 +286,7 @@ curl -X POST http://localhost:3000/api/bonuses/welcome-match-500/claim \
 - Realtime wallet updates stream through an authenticated server-sent events endpoint
 - Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
 - Bonus service supports persisted welcome and daily credit claims with ledger-linked wallet credits
+- Admin audit panel summarizes wallet, ledger, rounds, risk events, and bonus claims
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution
 - Crash has server-authoritative launch and cashout endpoints using stored crash points and server elapsed time

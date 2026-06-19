@@ -200,6 +200,32 @@ app.get('/api/bonuses', async (req, res) => {
   }
 });
 
+app.get('/api/admin/summary', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims] = await Promise.all([
+      casinoService.getWallet(user.id),
+      casinoService.getLedger(user.id),
+      casinoService.listRounds(user.id),
+      riskService.listEvents({ userId: user.id, limit: 25 }),
+      bonusService.listCampaigns(),
+      bonusService.listClaims(user.id)
+    ]);
+
+    res.json({
+      user,
+      wallet,
+      ledger: ledger.map(sanitizeLedgerEntryForApi).slice(-25).reverse(),
+      rounds: rounds.map(sanitizeRoundForApi).slice(0, 25),
+      riskEvents,
+      bonusCampaigns: campaigns,
+      bonusClaims: claims
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
   try {
     const user = await requireAuth(req);
