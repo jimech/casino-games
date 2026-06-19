@@ -506,6 +506,9 @@ Acceptance criteria:
 - Architecture and data model are documented.
 - Ticket status and dependencies are clear.
 
+Implementation note:
+- Current implementation adds architecture, rollout, and release-note docs, and links them from the README. The rollout path covers memory mode, persistent Prisma mode, quality gate, migrations, seed, smoke tests, rollback notes, and known production gaps.
+
 ### T21 - AI Event Collection
 
 Summary: Collect behavior signals for personalization and risk analysis.

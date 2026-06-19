@@ -2,7 +2,15 @@
 
 Private casino platform project built with React, TypeScript, Vite, Express, Prisma, and PostgreSQL.
 
-The current codebase is a playable prototype with a shared in-memory wallet and multiple game screens. The production roadmap is tracked in [docs/implementation-backlog.md](docs/implementation-backlog.md).
+The current codebase is a playable private platform prototype with server-authoritative game engines, wallet ledger, auth, risk, bonuses, notifications, admin audit, and a quality gate. The production roadmap is tracked in [docs/implementation-backlog.md](docs/implementation-backlog.md).
+
+Project docs:
+
+- [Architecture](docs/architecture.md)
+- [Rollout runbook](docs/rollout.md)
+- [Release notes](docs/release-notes.md)
+- [Implementation backlog](docs/implementation-backlog.md)
+- [Supabase setup](docs/supabase/setup.md)
 
 ## Prerequisites
 
@@ -313,5 +321,3 @@ curl http://localhost:3000/api/notifications \
 - Blackjack has server-authoritative deal, hit, stand, double down, split hands, dealer draw, hole-card protection, and settlement
 - Poker has server-authoritative deck control, staged board dealing, fold/check/call/raise actions, showdown evaluation, pot settlement, and hidden dealer cards
 - Domain math tests and backend settlement tests exist
-
-Start with `T00.1` in the backlog, then continue ticket by ticket.
