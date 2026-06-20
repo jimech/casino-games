@@ -207,6 +207,25 @@ const main = async () => {
     throw new Error('Expected responsible play intervention decision to be logged');
   }
 
+  const explanations = await getJson(`${baseUrl}/api/admin/ai-decision-explanations?limit=25`, adminSession.token);
+  assertArray(explanations.explanations, 'ai decision explanations array');
+  for (const decisionType of ['game_recommendations', 'bonus_targeting', 'churn_score', 'fraud_score', 'responsible_play_intervention']) {
+    if (!explanations.explanations.some((explanation: { decisionType: string }) => explanation.decisionType === decisionType)) {
+      throw new Error(`Expected AI explanation for ${decisionType}`);
+    }
+  }
+  const fraudExplanation = explanations.explanations.find((explanation: { decisionType: string; threshold?: unknown }) => explanation.decisionType === 'fraud_score');
+  if (!fraudExplanation?.threshold) {
+    throw new Error('Expected fraud explanation threshold metadata');
+  }
+  const explanationExport = await fetch(`${baseUrl}/api/admin/ai-decision-explanations/export?limit=25`, {
+    headers: { Authorization: `Bearer ${adminSession.token}` }
+  });
+  const explanationCsv = await explanationExport.text();
+  if (!explanationExport.ok || !explanationCsv.includes('decisionType') || !explanationCsv.includes('fraud_score')) {
+    throw new Error('Expected AI decision explanation CSV export');
+  }
+
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {
     throw new Error('Expected high-stake risk event to be created');

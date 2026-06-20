@@ -626,6 +626,8 @@ Acceptance criteria:
 
 Summary: Make AI decisions explainable and searchable.
 
+Implementation status: Complete. AI decision explanations now persist model version, source snapshot, input features, output, thresholds, and reason codes for recommendations, bonus targeting, churn, fraud, and responsible-play decisions, with admin review and CSV export endpoints.
+
 Scope:
 - Log model version, input features, output score, threshold, and reason code.
 - Save decision traces for recommendations and risk events.

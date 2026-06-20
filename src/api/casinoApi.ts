@@ -223,6 +223,21 @@ export interface AiEventDto {
   createdAt: string;
 }
 
+export interface AiDecisionExplanationDto {
+  id: string;
+  userId: string;
+  decisionType: string;
+  modelVersion: string;
+  sourceRecordId?: string;
+  sourceFeatureSnapshotId?: string;
+  sourceFeatureVersion?: string;
+  inputFeatures?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  threshold?: Record<string, unknown>;
+  reasonCodes: string[];
+  createdAt: string;
+}
+
 export interface AiFeatureSnapshotDto {
   id: string;
   userId: string;
@@ -338,6 +353,7 @@ export interface AdminSummaryDto {
   bonusCampaigns: BonusCampaignDto[];
   bonusClaims: BonusClaimDto[];
   aiEvents: AiEventDto[];
+  aiDecisionExplanations: AiDecisionExplanationDto[];
   aiFeatureSnapshot?: AiFeatureSnapshotDto;
   churnScore?: ChurnScoreDto;
   fraudScore?: FraudScoreDto;
@@ -551,6 +567,23 @@ export const fetchAiEvents = async (input: {
   });
   const payload = await parseJsonResponse<{ events: AiEventDto[] }>(response);
   return payload.events;
+};
+
+export const fetchAiDecisionExplanations = async (input: {
+  userId?: string;
+  decisionType?: string;
+  limit?: number;
+} = {}): Promise<AiDecisionExplanationDto[]> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  if (input.decisionType) params.set('decisionType', input.decisionType);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/ai-decision-explanations${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ explanations: AiDecisionExplanationDto[] }>(response);
+  return payload.explanations;
 };
 
 export const trackAiEvent = async (input: {

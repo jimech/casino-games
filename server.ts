@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { AiEventCategory } from './src/backend/aiEventService';
+import { explanationsToCsv } from './src/backend/aiDecisionExplanationService';
 import { extractBearerToken, AuthUser } from './src/backend/authService';
 import { GameRoundRecord } from './src/backend/casinoService';
 import { createServices } from './src/backend/serviceFactory';
@@ -20,7 +21,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiDecisionExplanationService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -291,11 +292,32 @@ app.get('/api/recommendations/games', async (req, res) => {
       snapshot,
       limit
     });
+    const explanation = await explainDecision({
+      userId: user.id,
+      decisionType: 'game_recommendations',
+      modelVersion: result.profileVersion ?? 'recommendation-fallback-v1',
+      sourceFeatureSnapshotId: snapshot?.id,
+      sourceFeatureVersion: snapshot?.version,
+      inputFeatures: {
+        requestedLimit: limit ?? null,
+        sourceEventCount: snapshot?.sourceEventCount ?? 0,
+        favoriteGameId: snapshot?.features.gameSignals.favoriteGameId,
+        favoriteRoute: snapshot?.features.gameSignals.favoriteRoute
+      },
+      output: {
+        source: result.source,
+        topGameIds: result.recommendations.slice(0, 5).map(item => item.gameId),
+        scores: result.recommendations.slice(0, 5).map(item => ({ gameId: item.gameId, score: item.score }))
+      },
+      threshold: { returnedLimit: result.recommendations.length },
+      reasonCodes: result.recommendations.flatMap(item => item.reasons).slice(0, 25)
+    });
     await trackAiEventSafely({
       userId: user.id,
       category: 'game',
       name: 'game_recommendations_generated',
       context: {
+        explanationId: explanation?.id,
         source: result.source,
         profileVersion: result.profileVersion,
         topGameIds: result.recommendations.slice(0, 5).map(item => item.gameId),
@@ -335,11 +357,36 @@ app.get('/api/bonuses/targeted', async (req, res) => {
       snapshot,
       recentTargetingEvents
     });
+    const explanation = await explainDecision({
+      userId: user.id,
+      decisionType: 'bonus_targeting',
+      modelVersion: result.profileVersion ?? 'bonus-targeting-fallback-v1',
+      sourceFeatureSnapshotId: snapshot?.id,
+      sourceFeatureVersion: snapshot?.version,
+      inputFeatures: {
+        campaignCount: campaigns.length,
+        claimCount: claims.length,
+        targetingEventCount: recentTargetingEvents.length,
+        highStakeRatio: snapshot?.features.riskSignals.highStakeRatio ?? 0,
+        bonusClaims: snapshot?.features.bonusSignals.claims ?? 0
+      },
+      output: {
+        source: result.source,
+        offerIds: result.offers.map(offer => offer.id),
+        suppressedOfferIds: result.suppressed.map(offer => offer.id)
+      },
+      threshold: { cooldownHours: 24, minimumOfferScore: 40 },
+      reasonCodes: [
+        ...result.offers.flatMap(offer => offer.reasonCodes),
+        ...result.suppressed.flatMap(offer => offer.suppressionCodes)
+      ].slice(0, 25)
+    });
     await trackAiEventSafely({
       userId: user.id,
       category: 'bonus',
       name: 'bonus_targets_generated',
       context: {
+        explanationId: explanation?.id,
         source: result.source,
         profileVersion: result.profileVersion,
         offerIds: result.offers.map(offer => offer.id),
@@ -461,10 +508,37 @@ app.get('/api/admin/responsible-play/interventions', async (req, res) => {
   }
 });
 
+app.get('/api/admin/ai-decision-explanations', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const decisionType = typeof req.query.decisionType === 'string' ? req.query.decisionType : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ explanations: await aiDecisionExplanationService.list({ userId, decisionType, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/ai-decision-explanations/export', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const decisionType = typeof req.query.decisionType === 'string' ? req.query.decisionType : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 500;
+    const explanations = await aiDecisionExplanationService.list({ userId, decisionType, limit });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="ai-decision-explanations.csv"');
+    res.send(explanationsToCsv(explanations));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/summary', async (req, res) => {
   try {
     const user = await requireAdmin(req);
-    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, churnScore, fraudScore, responsiblePlayIntervention] = await Promise.all([
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, aiDecisionExplanations, churnScore, fraudScore, responsiblePlayIntervention] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
       casinoService.listRounds(user.id),
@@ -472,6 +546,7 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusService.listCampaigns(),
       bonusService.listClaims(user.id),
       aiEventService.list({ userId: user.id, limit: 25 }),
+      aiDecisionExplanationService.list({ userId: user.id, limit: 25 }),
       churnService.latest({ userId: user.id }),
       fraudService.latest({ userId: user.id }),
       responsiblePlayService.latest({ userId: user.id })
@@ -499,6 +574,7 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusCampaigns: campaigns,
       bonusClaims: claims,
       aiEvents,
+      aiDecisionExplanations,
       aiFeatureSnapshot,
       churnScore,
       fraudScore,
@@ -948,6 +1024,26 @@ async function trackAiEventSafely(input: {
   }
 }
 
+async function explainDecision(input: {
+  userId: string;
+  decisionType: string;
+  modelVersion: string;
+  sourceRecordId?: string;
+  sourceFeatureSnapshotId?: string;
+  sourceFeatureVersion?: string;
+  inputFeatures?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  threshold?: Record<string, unknown>;
+  reasonCodes?: string[];
+}) {
+  try {
+    return await aiDecisionExplanationService.record(input);
+  } catch (error) {
+    console.warn('AI decision explanation failed', error);
+    return undefined;
+  }
+}
+
 async function resolveAiProfileUserId(req: express.Request, user: AuthUser): Promise<string> {
   return resolveModelUserId(req, user);
 }
@@ -966,11 +1062,33 @@ async function resolveModelUserId(req: express.Request, user: AuthUser): Promise
 async function refreshChurnScore(userId: string) {
   const snapshot = await aiFeatureService.latest({ userId }) ?? await aiFeatureService.refresh({ userId });
   const score = await churnService.score({ userId, snapshot });
+  const explanation = await explainDecision({
+    userId,
+    decisionType: 'churn_score',
+    modelVersion: score.version,
+    sourceRecordId: score.id,
+    sourceFeatureSnapshotId: score.sourceFeatureSnapshotId,
+    sourceFeatureVersion: score.sourceFeatureVersion,
+    inputFeatures: {
+      sourceEventCount: snapshot.sourceEventCount,
+      roundsStarted: snapshot.features.totals.roundsStarted,
+      activeSpanMinutes: snapshot.features.engagement.activeSpanMinutes,
+      bonusClaims: snapshot.features.bonusSignals.claims
+    },
+    output: {
+      score: score.score,
+      band: score.band,
+      recommendedActions: score.recommendedActions
+    },
+    threshold: { medium: 40, high: 70, critical: 85 },
+    reasonCodes: score.reasonCodes
+  });
   await trackAiEventSafely({
     userId,
     category: 'risk',
     name: 'churn_score_generated',
     context: {
+      explanationId: explanation?.id,
       score: score.score,
       band: score.band,
       reasonCodes: score.reasonCodes,
@@ -985,6 +1103,7 @@ async function refreshChurnScore(userId: string) {
       severity: score.band === 'critical' ? 'high' : 'medium',
       score: score.score,
       context: {
+        explanationId: explanation?.id,
         churnScoreId: score.id,
         band: score.band,
         reasonCodes: score.reasonCodes,
@@ -1009,11 +1128,28 @@ async function refreshFraudScore(userId: string) {
     riskEvents,
     bonusClaims
   });
+  const explanation = await explainDecision({
+    userId,
+    decisionType: 'fraud_score',
+    modelVersion: score.version,
+    sourceRecordId: score.id,
+    sourceFeatureSnapshotId: score.sourceFeatureSnapshotId,
+    sourceFeatureVersion: score.sourceFeatureVersion,
+    inputFeatures: score.details,
+    output: {
+      score: score.score,
+      band: score.band,
+      recommendedActions: score.recommendedActions
+    },
+    threshold: { medium: 40, high: 70, critical: 85 },
+    reasonCodes: score.reasonCodes
+  });
   await trackAiEventSafely({
     userId,
     category: 'risk',
     name: 'fraud_score_generated',
     context: {
+      explanationId: explanation?.id,
       score: score.score,
       band: score.band,
       reasonCodes: score.reasonCodes,
@@ -1028,6 +1164,7 @@ async function refreshFraudScore(userId: string) {
       severity: score.band === 'critical' ? 'critical' : 'high',
       score: score.score,
       context: {
+        explanationId: explanation?.id,
         fraudScoreId: score.id,
         band: score.band,
         reasonCodes: score.reasonCodes,
@@ -1054,12 +1191,30 @@ async function evaluateResponsiblePlay(input: {
     recentRounds,
     riskEvents
   });
+  const explanation = await explainDecision({
+    userId: input.userId,
+    decisionType: 'responsible_play_intervention',
+    modelVersion: intervention.version,
+    sourceRecordId: intervention.id,
+    sourceFeatureSnapshotId: intervention.sourceFeatureSnapshotId,
+    sourceFeatureVersion: intervention.sourceFeatureVersion,
+    inputFeatures: intervention.details,
+    output: {
+      level: intervention.level,
+      score: intervention.score,
+      requiresAcknowledgement: intervention.requiresAcknowledgement,
+      recommendedActions: intervention.recommendedActions
+    },
+    threshold: { notice: 30, warning: 55, cooldown: 80 },
+    reasonCodes: intervention.reasonCodes
+  });
   if (intervention.level !== 'none') {
     await trackAiEventSafely({
       userId: input.userId,
       category: 'risk',
       name: 'responsible_play_intervention',
       context: {
+        explanationId: explanation?.id,
         level: intervention.level,
         score: intervention.score,
         reasonCodes: intervention.reasonCodes,
@@ -1074,6 +1229,7 @@ async function evaluateResponsiblePlay(input: {
       severity: intervention.level === 'cooldown' ? 'high' : intervention.level === 'warning' ? 'medium' : 'low',
       score: intervention.score,
       context: {
+        explanationId: explanation?.id,
         interventionId: intervention.id,
         level: intervention.level,
         reasonCodes: intervention.reasonCodes,

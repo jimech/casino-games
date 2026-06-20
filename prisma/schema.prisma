@@ -104,12 +104,34 @@ model User {
   bonusClaims   BonusClaim[]
   notifications Notification[]
   aiEvents      AiEvent[]
+  aiDecisionExplanations AiDecisionExplanation[]
   aiFeatureSnapshots AiFeatureSnapshot[]
   churnScores   ChurnScore[]
   fraudScores   FraudScore[]
   responsiblePlayInterventions ResponsiblePlayIntervention[]
 
   @@map("users")
+}
+
+model AiDecisionExplanation {
+  id                      String   @id @default(cuid())
+  userId                  String
+  decisionType            String
+  modelVersion            String
+  sourceRecordId          String?
+  sourceFeatureSnapshotId String?
+  sourceFeatureVersion    String?
+  inputFeatures           Json?
+  output                  Json?
+  threshold               Json?
+  reasonCodes             String[]
+  createdAt               DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([decisionType, createdAt])
+  @@map("ai_decision_explanations")
 }
 
 model ResponsiblePlayIntervention {

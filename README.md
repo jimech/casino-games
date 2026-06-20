@@ -225,6 +225,21 @@ curl -X POST http://localhost:3000/api/responsible-play/interventions/evaluate \
   -d '{"gameId":"roulette","stake":5000}'
 ```
 
+Review AI decision explanations:
+
+```bash
+curl "http://localhost:3000/api/admin/ai-decision-explanations?limit=25" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Export AI decision explanations:
+
+```bash
+curl "http://localhost:3000/api/admin/ai-decision-explanations/export?limit=500" \
+  -H "Authorization: Bearer $TOKEN" \
+  -o ai-decision-explanations.csv
+```
+
 Place a bet and lock funds:
 
 ```bash

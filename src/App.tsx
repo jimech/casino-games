@@ -1385,6 +1385,18 @@ export default function App() {
                     {adminSummary?.aiEvents.length === 0 && <EmptyAdminRow />}
                   </AdminPanel>
 
+                  <AdminPanel title="AI Explanations">
+                    {(adminSummary?.aiDecisionExplanations ?? []).slice(0, 8).map(explanation => (
+                      <AdminRow
+                        key={explanation.id}
+                        left={`${explanation.decisionType} / ${explanation.modelVersion}`}
+                        right={explanation.reasonCodes[0] ?? 'trace'}
+                        detail={explanation.createdAt.slice(0, 19).replace('T', ' ')}
+                      />
+                    ))}
+                    {adminSummary?.aiDecisionExplanations.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
+
                   <AdminPanel title="AI Feature Profile">
                     {adminSummary?.aiFeatureSnapshot ? (
                       <>
