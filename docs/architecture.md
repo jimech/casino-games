@@ -46,7 +46,7 @@ Roulette, Crash, Slots, Blackjack, and Poker use backend engines for outcome gen
 - Risk service records failed logins, forbidden access, high stakes, rapid play, refunds, and high payouts.
 - Bonus service records claims and credits wallet through the ledger.
 - Notification service stores persistent inbox records with unread/read state.
-- AI event service stores page, game, bonus, admin, wallet, risk, and session telemetry. Feature snapshots aggregate those events into deterministic `behavior-v1` user profiles. Recommendation, bonus-targeting, churn, and fraud services rank outputs from those snapshots with auditable reason/suppression/action codes and log each output back to AI events. Event capture, feature refresh, recommendations, bonus targeting, churn scoring, and fraud scoring never decide outcomes or wallet movements.
+- AI event service stores page, game, bonus, admin, wallet, risk, and session telemetry. Feature snapshots aggregate those events into deterministic `behavior-v1` user profiles. Recommendation, bonus-targeting, churn, fraud, and responsible-play services rank outputs from those snapshots with auditable reason/suppression/action codes and log each output back to AI events. Event capture, feature refresh, recommendations, bonus targeting, churn scoring, fraud scoring, and responsible-play intervention logging never decide outcomes or wallet movements.
 
 ## Data Model
 
@@ -66,6 +66,7 @@ Primary tables:
 - `ai_feature_snapshots`
 - `churn_scores`
 - `fraud_scores`
+- `responsible_play_interventions`
 
 ## Quality Gate
 

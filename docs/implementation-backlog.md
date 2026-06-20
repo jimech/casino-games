@@ -610,6 +610,8 @@ Acceptance criteria:
 
 Summary: Trigger safer-play interventions from behavioral thresholds.
 
+Implementation status: Complete. Responsible-play interventions now produce persisted `responsible-play-v1` decisions with none/notice/warning/cooldown levels, reason codes, acknowledgement requirements, player-facing warning responses, AI-event audit logs, and admin-reviewable risk events.
+
 Scope:
 - Detect long sessions, rapid bet escalation, chase behavior, and self-limit conflicts.
 - Show warnings or friction.

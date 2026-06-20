@@ -107,8 +107,33 @@ model User {
   aiFeatureSnapshots AiFeatureSnapshot[]
   churnScores   ChurnScore[]
   fraudScores   FraudScore[]
+  responsiblePlayInterventions ResponsiblePlayIntervention[]
 
   @@map("users")
+}
+
+model ResponsiblePlayIntervention {
+  id                      String   @id @default(cuid())
+  userId                  String
+  version                 String
+  level                   String
+  score                   Int
+  reasonCodes             String[]
+  recommendedActions      String[]
+  message                 String
+  requiresAcknowledgement Boolean  @default(false)
+  triggerGameId           String?
+  triggerStake            BigInt?
+  sourceFeatureSnapshotId String?
+  sourceFeatureVersion    String?
+  details                 Json?
+  createdAt               DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([level, score, createdAt])
+  @@map("responsible_play_interventions")
 }
 
 model FraudScore {

@@ -34,6 +34,7 @@ import {
   NotificationDto,
   placeBet,
   registerAccount,
+  ResponsiblePlayInterventionDto,
   settleRound,
   spinSlots,
   spinRoulette,
@@ -142,6 +143,11 @@ export default function App() {
     setTimeout(() => {
       setPushNotification(null);
     }, 4000);
+  };
+
+  const notifyResponsiblePlay = (intervention?: ResponsiblePlayInterventionDto) => {
+    if (!intervention || intervention.level === 'none') return;
+    triggerNotification(intervention.message, intervention.level === 'cooldown' ? 'error' : 'info');
   };
 
   useEffect(() => {
@@ -382,6 +388,7 @@ export default function App() {
           ...(pendingRoundsRef.current[gameId] ?? []),
           response.round.id
         ];
+        notifyResponsiblePlay(response.responsiblePlayIntervention);
         setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
         return;
       }
@@ -413,6 +420,7 @@ export default function App() {
       bets,
       idempotencyKey: `roulette-spin-${crypto.randomUUID()}`
     });
+    notifyResponsiblePlay(response.responsiblePlayIntervention);
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
     return {
       outcome: response.outcome,
@@ -427,6 +435,7 @@ export default function App() {
       stake,
       idempotencyKey: `crash-start-${crypto.randomUUID()}`
     });
+    notifyResponsiblePlay(response.responsiblePlayIntervention);
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
     return {
       roundId: response.round.id,
@@ -455,6 +464,7 @@ export default function App() {
       userId: activeUserId,
       idempotencyKey: `slots-spin-${crypto.randomUUID()}`
     });
+    notifyResponsiblePlay(response.responsiblePlayIntervention);
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
     return {
       displaySymbols: response.outcome.displaySymbols,
@@ -470,6 +480,7 @@ export default function App() {
       stake,
       idempotencyKey: `blackjack-start-${crypto.randomUUID()}`
     });
+    notifyResponsiblePlay(response.responsiblePlayIntervention);
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
     return response.view;
   };
@@ -490,6 +501,7 @@ export default function App() {
       ante,
       idempotencyKey: `poker-start-${crypto.randomUUID()}`
     });
+    notifyResponsiblePlay(response.responsiblePlayIntervention);
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
     return response.view;
   };
@@ -1433,6 +1445,25 @@ export default function App() {
                           left="Review action"
                           right={adminSummary.fraudScore.recommendedActions[0] ?? 'monitor'}
                           detail={adminSummary.fraudScore.createdAt.slice(0, 19).replace('T', ' ')}
+                        />
+                      </>
+                    ) : (
+                      <EmptyAdminRow />
+                    )}
+                  </AdminPanel>
+
+                  <AdminPanel title="Responsible Play">
+                    {adminSummary?.responsiblePlayIntervention ? (
+                      <>
+                        <AdminRow
+                          left={`${adminSummary.responsiblePlayIntervention.level} / ${adminSummary.responsiblePlayIntervention.version}`}
+                          right={String(adminSummary.responsiblePlayIntervention.score)}
+                          detail={adminSummary.responsiblePlayIntervention.reasonCodes.slice(0, 2).join(' / ')}
+                        />
+                        <AdminRow
+                          left="Intervention"
+                          right={adminSummary.responsiblePlayIntervention.requiresAcknowledgement ? 'ack required' : 'notice'}
+                          detail={adminSummary.responsiblePlayIntervention.createdAt.slice(0, 19).replace('T', ' ')}
                         />
                       </>
                     ) : (

@@ -216,6 +216,15 @@ curl -X POST http://localhost:3000/api/risk/fraud-score/refresh \
   -d '{}'
 ```
 
+Evaluate responsible play intervention:
+
+```bash
+curl -X POST http://localhost:3000/api/responsible-play/interventions/evaluate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"gameId":"roulette","stake":5000}'
+```
+
 Place a bet and lock funds:
 
 ```bash

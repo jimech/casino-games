@@ -34,6 +34,7 @@ interface RoundDto {
 interface RoundResponse {
   round: RoundDto;
   wallet: WalletDto;
+  responsiblePlayIntervention?: ResponsiblePlayInterventionDto;
 }
 
 interface RouletteBetSlipDto {
@@ -310,6 +311,24 @@ export interface FraudScoreDto {
   createdAt: string;
 }
 
+export interface ResponsiblePlayInterventionDto {
+  id: string;
+  userId: string;
+  version: string;
+  level: 'none' | 'notice' | 'warning' | 'cooldown';
+  score: number;
+  reasonCodes: string[];
+  recommendedActions: string[];
+  message: string;
+  requiresAcknowledgement: boolean;
+  triggerGameId?: string;
+  triggerStake?: number;
+  sourceFeatureSnapshotId?: string;
+  sourceFeatureVersion?: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface AdminSummaryDto {
   user: AuthUserDto;
   wallet: WalletDto;
@@ -322,6 +341,7 @@ export interface AdminSummaryDto {
   aiFeatureSnapshot?: AiFeatureSnapshotDto;
   churnScore?: ChurnScoreDto;
   fraudScore?: FraudScoreDto;
+  responsiblePlayIntervention?: ResponsiblePlayInterventionDto;
 }
 
 export interface NotificationDto {
@@ -472,6 +492,37 @@ export const refreshFraudScore = async (input: { userId?: string } = {}): Promis
   });
   const payload = await parseJsonResponse<{ score: FraudScoreDto }>(response);
   return payload.score;
+};
+
+export const fetchResponsiblePlayInterventions = async (input: {
+  userId?: string;
+  level?: ResponsiblePlayInterventionDto['level'];
+  limit?: number;
+} = {}): Promise<ResponsiblePlayInterventionDto[]> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  if (input.level) params.set('level', input.level);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/responsible-play/interventions${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ interventions: ResponsiblePlayInterventionDto[] }>(response);
+  return payload.interventions;
+};
+
+export const evaluateResponsiblePlay = async (input: {
+  userId?: string;
+  gameId?: string;
+  stake?: number;
+} = {}): Promise<ResponsiblePlayInterventionDto> => {
+  const response = await fetch('/api/responsible-play/interventions/evaluate', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ intervention: ResponsiblePlayInterventionDto }>(response);
+  return payload.intervention;
 };
 
 export const fetchAdminSummary = async (): Promise<AdminSummaryDto> => {

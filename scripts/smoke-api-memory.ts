@@ -187,12 +187,35 @@ const main = async () => {
     throw new Error('Expected fraud score decision to be logged');
   }
 
+  const responsiblePlay = await postJson(`${baseUrl}/api/responsible-play/interventions/evaluate`, adminSession.token, {
+    gameId: 'roulette',
+    stake: 5000
+  });
+  assertEqual(responsiblePlay.intervention.version, 'responsible-play-v1', 'responsible play version');
+  if (responsiblePlay.intervention.level !== 'warning' && responsiblePlay.intervention.level !== 'cooldown') {
+    throw new Error('Expected responsible play warning or cooldown intervention');
+  }
+  if (!responsiblePlay.intervention.requiresAcknowledgement) {
+    throw new Error('Expected responsible play intervention to require acknowledgement');
+  }
+  const responsiblePlayReview = await getJson(`${baseUrl}/api/admin/responsible-play/interventions?limit=10`, adminSession.token);
+  if (!responsiblePlayReview.interventions.some((intervention: { userId: string }) => intervention.userId === adminSession.user.id)) {
+    throw new Error('Expected responsible play intervention to surface for admin review');
+  }
+  const responsiblePlayAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=risk&limit=25`, adminSession.token);
+  if (!responsiblePlayAuditEvents.events.some((event: { name: string }) => event.name === 'responsible_play_intervention')) {
+    throw new Error('Expected responsible play intervention decision to be logged');
+  }
+
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {
     throw new Error('Expected high-stake risk event to be created');
   }
   if (!risks.events.some((event: { type: string }) => event.type === 'fraud_anomaly_high')) {
     throw new Error('Expected fraud anomaly risk event to be created');
+  }
+  if (!risks.events.some((event: { type: string }) => event.type === 'responsible_play_intervention')) {
+    throw new Error('Expected responsible play risk event to be created');
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);

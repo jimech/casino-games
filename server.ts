@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -422,10 +422,49 @@ app.get('/api/admin/fraud-scores', async (req, res) => {
   }
 });
 
+app.get('/api/responsible-play/interventions', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveModelUserId(req, user);
+    const level = isResponsiblePlayLevel(req.query.level) ? req.query.level : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ interventions: await responsiblePlayService.list({ userId, level, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/responsible-play/interventions/evaluate', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const userId = await resolveModelUserId(req, user);
+    const intervention = await evaluateResponsiblePlay({
+      userId,
+      triggerGameId: typeof req.body.gameId === 'string' ? req.body.gameId : undefined,
+      triggerStake: Number(req.body.stake ?? 0)
+    });
+    res.status(201).json({ intervention });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/responsible-play/interventions', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const level = isResponsiblePlayLevel(req.query.level) ? req.query.level : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ interventions: await responsiblePlayService.list({ userId, level, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/summary', async (req, res) => {
   try {
     const user = await requireAdmin(req);
-    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, churnScore, fraudScore] = await Promise.all([
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, churnScore, fraudScore, responsiblePlayIntervention] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
       casinoService.listRounds(user.id),
@@ -434,7 +473,8 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusService.listClaims(user.id),
       aiEventService.list({ userId: user.id, limit: 25 }),
       churnService.latest({ userId: user.id }),
-      fraudService.latest({ userId: user.id })
+      fraudService.latest({ userId: user.id }),
+      responsiblePlayService.latest({ userId: user.id })
     ]);
 
     await trackAiEventSafely({
@@ -461,7 +501,8 @@ app.get('/api/admin/summary', async (req, res) => {
       aiEvents,
       aiFeatureSnapshot,
       churnScore,
-      fraudScore
+      fraudScore,
+      responsiblePlayIntervention
     });
   } catch (error) {
     sendApiError(res, error);
@@ -551,6 +592,11 @@ app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
 app.post('/api/bets', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const intervention = await evaluateResponsiblePlay({
+      userId: user.id,
+      triggerGameId: String(req.body.gameId ?? ''),
+      triggerStake: Number(req.body.stake)
+    });
     const round = await casinoService.placeBet({
       userId: user.id,
       gameId: String(req.body.gameId ?? ''),
@@ -560,7 +606,7 @@ app.post('/api/bets', async (req, res) => {
     const wallet = await casinoService.getWallet(round.userId);
     broadcastWallet(round.userId, wallet);
     await assessRoundStarted(round);
-    res.status(201).json({ round, wallet });
+    res.status(201).json(withResponsiblePlay({ round, wallet }, intervention));
   } catch (error) {
     sendApiError(res, error);
   }
@@ -611,10 +657,15 @@ app.post('/api/games/roulette/spin', async (req, res) => {
       bets: req.body.bets,
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
     });
+    const intervention = await evaluateResponsiblePlay({
+      userId: user.id,
+      triggerGameId: 'roulette',
+      triggerStake: result.stake
+    });
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
     await riskService.assessRoundSettled(result.round);
-    res.status(201).json(result);
+    res.status(201).json(withResponsiblePlay(result, intervention));
   } catch (error) {
     sendApiError(res, error);
   }
@@ -623,6 +674,11 @@ app.post('/api/games/roulette/spin', async (req, res) => {
 app.post('/api/games/crash/start', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const intervention = await evaluateResponsiblePlay({
+      userId: user.id,
+      triggerGameId: 'crash',
+      triggerStake: Number(req.body.stake)
+    });
     const result = await startCrashRound(casinoService, {
       userId: user.id,
       stake: Number(req.body.stake),
@@ -630,7 +686,7 @@ app.post('/api/games/crash/start', async (req, res) => {
     });
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
-    res.status(201).json(result);
+    res.status(201).json(withResponsiblePlay(result, intervention));
   } catch (error) {
     sendApiError(res, error);
   }
@@ -656,6 +712,11 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
 app.post('/api/games/slots/spin', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const intervention = await evaluateResponsiblePlay({
+      userId: user.id,
+      triggerGameId: 'slots',
+      triggerStake: Boolean(req.body.freeSpin) ? 0 : Number(req.body.bet)
+    });
     const result = await spinSlots(casinoService, {
       userId: user.id,
       machineId: String(req.body.machineId ?? ''),
@@ -667,7 +728,7 @@ app.post('/api/games/slots/spin', async (req, res) => {
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
     await riskService.assessRoundSettled(result.round);
-    res.status(201).json(result);
+    res.status(201).json(withResponsiblePlay(result, intervention));
   } catch (error) {
     sendApiError(res, error);
   }
@@ -676,6 +737,11 @@ app.post('/api/games/slots/spin', async (req, res) => {
 app.post('/api/games/blackjack/start', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const intervention = await evaluateResponsiblePlay({
+      userId: user.id,
+      triggerGameId: 'blackjack',
+      triggerStake: Number(req.body.stake)
+    });
     const result = await startBlackjackRound(casinoService, {
       userId: user.id,
       stake: Number(req.body.stake),
@@ -684,7 +750,7 @@ app.post('/api/games/blackjack/start', async (req, res) => {
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
     if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
-    res.status(201).json(result);
+    res.status(201).json(withResponsiblePlay(result, intervention));
   } catch (error) {
     sendApiError(res, error);
   }
@@ -710,6 +776,11 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
 app.post('/api/games/poker/start', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const intervention = await evaluateResponsiblePlay({
+      userId: user.id,
+      triggerGameId: 'poker',
+      triggerStake: Number(req.body.ante)
+    });
     const result = await startPokerRound(casinoService, {
       userId: user.id,
       ante: Number(req.body.ante),
@@ -717,7 +788,7 @@ app.post('/api/games/poker/start', async (req, res) => {
     });
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
-    res.status(201).json(result);
+    res.status(201).json(withResponsiblePlay(result, intervention));
   } catch (error) {
     sendApiError(res, error);
   }
@@ -857,6 +928,10 @@ function isFraudBand(value: unknown): value is 'low' | 'medium' | 'high' | 'crit
   return value === 'low' || value === 'medium' || value === 'high' || value === 'critical';
 }
 
+function isResponsiblePlayLevel(value: unknown): value is 'none' | 'notice' | 'warning' | 'cooldown' {
+  return value === 'none' || value === 'notice' || value === 'warning' || value === 'cooldown';
+}
+
 async function trackAiEventSafely(input: {
   userId: string;
   category: AiEventCategory;
@@ -961,6 +1036,60 @@ async function refreshFraudScore(userId: string) {
     });
   }
   return score;
+}
+
+async function evaluateResponsiblePlay(input: {
+  userId: string;
+  triggerGameId?: string;
+  triggerStake?: number;
+}) {
+  const [snapshot, recentRounds, riskEvents] = await Promise.all([
+    aiFeatureService.latest({ userId: input.userId }),
+    casinoService.listRounds(input.userId),
+    riskService.listEvents({ userId: input.userId, limit: 100 })
+  ]);
+  const intervention = await responsiblePlayService.evaluate({
+    ...input,
+    snapshot,
+    recentRounds,
+    riskEvents
+  });
+  if (intervention.level !== 'none') {
+    await trackAiEventSafely({
+      userId: input.userId,
+      category: 'risk',
+      name: 'responsible_play_intervention',
+      context: {
+        level: intervention.level,
+        score: intervention.score,
+        reasonCodes: intervention.reasonCodes,
+        recommendedActions: intervention.recommendedActions,
+        requiresAcknowledgement: intervention.requiresAcknowledgement,
+        version: intervention.version
+      }
+    });
+    await riskService.recordEvent({
+      userId: input.userId,
+      type: 'responsible_play_intervention',
+      severity: intervention.level === 'cooldown' ? 'high' : intervention.level === 'warning' ? 'medium' : 'low',
+      score: intervention.score,
+      context: {
+        interventionId: intervention.id,
+        level: intervention.level,
+        reasonCodes: intervention.reasonCodes,
+        recommendedActions: intervention.recommendedActions
+      }
+    });
+  }
+  return intervention;
+}
+
+function withResponsiblePlay<T extends object>(payload: T, intervention: Awaited<ReturnType<typeof evaluateResponsiblePlay>>): T & { responsiblePlayIntervention?: typeof intervention } {
+  if (intervention.level === 'none') return payload;
+  return {
+    ...payload,
+    responsiblePlayIntervention: intervention
+  };
 }
 
 function extractRequestToken(req: express.Request): string {
