@@ -1397,6 +1397,28 @@ export default function App() {
                     {adminSummary?.aiDecisionExplanations.length === 0 && <EmptyAdminRow />}
                   </AdminPanel>
 
+                  <AdminPanel title="AI Model Health">
+                    {adminSummary?.aiModelHealth ? (
+                      <>
+                        <AdminRow
+                          left="Overall status"
+                          right={adminSummary.aiModelHealth.status}
+                          detail={adminSummary.aiModelHealth.generatedAt.slice(0, 19).replace('T', ' ')}
+                        />
+                        {adminSummary.aiModelHealth.metrics.slice(0, 3).map(metric => (
+                          <AdminRow
+                            key={metric.modelKey}
+                            left={`${metric.modelKey} / ${metric.status}`}
+                            right={`${Math.round(metric.fallbackRatio * 100)}% fallback`}
+                            detail={metric.reasonCodes.slice(0, 2).join(' / ')}
+                          />
+                        ))}
+                      </>
+                    ) : (
+                      <EmptyAdminRow />
+                    )}
+                  </AdminPanel>
+
                   <AdminPanel title="AI Feature Profile">
                     {adminSummary?.aiFeatureSnapshot ? (
                       <>

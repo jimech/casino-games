@@ -642,6 +642,8 @@ Acceptance criteria:
 
 Summary: Monitor model health, drift, failures, and alert fatigue.
 
+Implementation status: Complete. AI model monitoring now reports per-decision-path fallback and stale-input health, supports admin disable controls with fallback-version explanation records, surfaces metrics in Admin Audit, and creates operational risk/notification alerts when degraded.
+
 Scope:
 - Track accuracy, false positives, false negatives, drift, stale models, and degraded service behavior.
 - Add model disable/fallback controls.

@@ -225,6 +225,21 @@ const main = async () => {
   if (!explanationExport.ok || !explanationCsv.includes('decisionType') || !explanationCsv.includes('fraud_score')) {
     throw new Error('Expected AI decision explanation CSV export');
   }
+  const modelControl = await postJson(`${baseUrl}/api/admin/ai-model-controls/fraud_score`, adminSession.token, {
+    disabled: true,
+    reason: 'smoke fallback verification'
+  });
+  assertEqual(modelControl.control.disabled, true, 'fraud model disabled control');
+  await postJson(`${baseUrl}/api/risk/fraud-score/refresh`, adminSession.token, {});
+  const fallbackExplanations = await getJson(`${baseUrl}/api/admin/ai-decision-explanations?decisionType=fraud_score&limit=5`, adminSession.token);
+  if (!fallbackExplanations.explanations.some((explanation: { modelVersion: string }) => explanation.modelVersion === 'fraud-fallback-v1')) {
+    throw new Error('Expected disabled fraud model to record fallback explanation');
+  }
+  const modelHealth = await getJson(`${baseUrl}/api/admin/ai-model-health`, adminSession.token);
+  assertEqual(modelHealth.report.status, 'disabled', 'ai model health disabled status');
+  if (!modelHealth.report.metrics.some((metric: { modelKey: string; disabled: boolean }) => metric.modelKey === 'fraud_score' && metric.disabled)) {
+    throw new Error('Expected fraud model health metric to show disabled control');
+  }
 
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {
@@ -235,6 +250,9 @@ const main = async () => {
   }
   if (!risks.events.some((event: { type: string }) => event.type === 'responsible_play_intervention')) {
     throw new Error('Expected responsible play risk event to be created');
+  }
+  if (!risks.events.some((event: { type: string }) => event.type === 'ai_model_degraded')) {
+    throw new Error('Expected AI model degradation risk event to be created');
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);

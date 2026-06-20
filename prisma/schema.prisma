@@ -105,12 +105,28 @@ model User {
   notifications Notification[]
   aiEvents      AiEvent[]
   aiDecisionExplanations AiDecisionExplanation[]
+  aiModelControls AiModelControl[]
   aiFeatureSnapshots AiFeatureSnapshot[]
   churnScores   ChurnScore[]
   fraudScores   FraudScore[]
   responsiblePlayInterventions ResponsiblePlayIntervention[]
 
   @@map("users")
+}
+
+model AiModelControl {
+  id          String   @id @default(cuid())
+  userId      String?
+  modelKey    String   @unique
+  disabled    Boolean  @default(false)
+  reason      String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([disabled, updatedAt])
+  @@map("ai_model_controls")
 }
 
 model AiDecisionExplanation {

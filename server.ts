@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { AiEventCategory } from './src/backend/aiEventService';
 import { explanationsToCsv } from './src/backend/aiDecisionExplanationService';
+import { evaluateAiModelHealth } from './src/backend/aiModelMonitoringService';
 import { extractBearerToken, AuthUser } from './src/backend/authService';
 import { GameRoundRecord } from './src/backend/casinoService';
 import { createServices } from './src/backend/serviceFactory';
@@ -21,7 +22,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiDecisionExplanationService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
+const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
@@ -295,7 +296,7 @@ app.get('/api/recommendations/games', async (req, res) => {
     const explanation = await explainDecision({
       userId: user.id,
       decisionType: 'game_recommendations',
-      modelVersion: result.profileVersion ?? 'recommendation-fallback-v1',
+      modelVersion: await monitoredModelVersion('game_recommendations', result.profileVersion ?? 'recommendation-v1', 'recommendation-fallback-v1'),
       sourceFeatureSnapshotId: snapshot?.id,
       sourceFeatureVersion: snapshot?.version,
       inputFeatures: {
@@ -360,7 +361,7 @@ app.get('/api/bonuses/targeted', async (req, res) => {
     const explanation = await explainDecision({
       userId: user.id,
       decisionType: 'bonus_targeting',
-      modelVersion: result.profileVersion ?? 'bonus-targeting-fallback-v1',
+      modelVersion: await monitoredModelVersion('bonus_targeting', result.profileVersion ?? 'bonus-targeting-v1', 'bonus-targeting-fallback-v1'),
       sourceFeatureSnapshotId: snapshot?.id,
       sourceFeatureVersion: snapshot?.version,
       inputFeatures: {
@@ -535,10 +536,46 @@ app.get('/api/admin/ai-decision-explanations/export', async (req, res) => {
   }
 });
 
+app.get('/api/admin/ai-model-health', async (req, res) => {
+  try {
+    const user = await requireAdmin(req);
+    const report = await buildAiModelHealthReport();
+    await alertOnAiModelHealth(user.id, report);
+    res.json({ report });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/ai-model-controls/:modelKey', async (req, res) => {
+  try {
+    const user = await requireAdmin(req);
+    const control = await aiModelMonitoringService.setControl({
+      userId: user.id,
+      modelKey: req.params.modelKey,
+      disabled: Boolean(req.body.disabled),
+      reason: typeof req.body.reason === 'string' ? req.body.reason : undefined
+    });
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'admin',
+      name: 'ai_model_control_updated',
+      context: {
+        modelKey: control.modelKey,
+        disabled: control.disabled,
+        reason: control.reason
+      }
+    });
+    res.status(201).json({ control });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/summary', async (req, res) => {
   try {
     const user = await requireAdmin(req);
-    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, aiDecisionExplanations, churnScore, fraudScore, responsiblePlayIntervention] = await Promise.all([
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, aiDecisionExplanations, churnScore, fraudScore, responsiblePlayIntervention, aiModelControls] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
       casinoService.listRounds(user.id),
@@ -549,7 +586,8 @@ app.get('/api/admin/summary', async (req, res) => {
       aiDecisionExplanationService.list({ userId: user.id, limit: 25 }),
       churnService.latest({ userId: user.id }),
       fraudService.latest({ userId: user.id }),
-      responsiblePlayService.latest({ userId: user.id })
+      responsiblePlayService.latest({ userId: user.id }),
+      aiModelMonitoringService.listControls()
     ]);
 
     await trackAiEventSafely({
@@ -564,6 +602,10 @@ app.get('/api/admin/summary', async (req, res) => {
       }
     });
     const aiFeatureSnapshot = await aiFeatureService.latest({ userId: user.id });
+    const aiModelHealth = evaluateAiModelHealth({
+      explanations: aiDecisionExplanations,
+      controls: aiModelControls
+    });
 
     res.json({
       user,
@@ -575,6 +617,7 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusClaims: claims,
       aiEvents,
       aiDecisionExplanations,
+      aiModelHealth,
       aiFeatureSnapshot,
       churnScore,
       fraudScore,
@@ -1044,6 +1087,45 @@ async function explainDecision(input: {
   }
 }
 
+async function monitoredModelVersion(modelKey: string, primaryVersion: string, fallbackVersion: string) {
+  return await aiModelMonitoringService.isDisabled(modelKey) ? fallbackVersion : primaryVersion;
+}
+
+async function buildAiModelHealthReport() {
+  const [explanations, controls] = await Promise.all([
+    aiDecisionExplanationService.list({ limit: 500 }),
+    aiModelMonitoringService.listControls()
+  ]);
+  return evaluateAiModelHealth({ explanations, controls });
+}
+
+async function alertOnAiModelHealth(userId: string, report: Awaited<ReturnType<typeof buildAiModelHealthReport>>) {
+  if (report.status === 'healthy') return;
+  const openModelAlerts = await riskService.listEvents({ status: 'open', limit: 100 });
+  if (openModelAlerts.some(event => event.type === 'ai_model_degraded')) return;
+  await riskService.recordEvent({
+    userId,
+    type: 'ai_model_degraded',
+    severity: report.status === 'disabled' ? 'high' : 'medium',
+    score: report.status === 'disabled' ? 80 : 60,
+    context: {
+      status: report.status,
+      modelKeys: report.metrics.filter(metric => metric.status !== 'healthy').map(metric => metric.modelKey),
+      generatedAt: report.generatedAt
+    }
+  });
+  await notificationService.create({
+    userId,
+    type: 'admin',
+    title: 'AI model health alert',
+    message: `AI model health is ${report.status}. Review monitoring before relying on model-assisted decisions.`,
+    metadata: {
+      status: report.status,
+      generatedAt: report.generatedAt
+    }
+  });
+}
+
 async function resolveAiProfileUserId(req: express.Request, user: AuthUser): Promise<string> {
   return resolveModelUserId(req, user);
 }
@@ -1065,7 +1147,7 @@ async function refreshChurnScore(userId: string) {
   const explanation = await explainDecision({
     userId,
     decisionType: 'churn_score',
-    modelVersion: score.version,
+    modelVersion: await monitoredModelVersion('churn_score', score.version, 'churn-fallback-v1'),
     sourceRecordId: score.id,
     sourceFeatureSnapshotId: score.sourceFeatureSnapshotId,
     sourceFeatureVersion: score.sourceFeatureVersion,
@@ -1131,7 +1213,7 @@ async function refreshFraudScore(userId: string) {
   const explanation = await explainDecision({
     userId,
     decisionType: 'fraud_score',
-    modelVersion: score.version,
+    modelVersion: await monitoredModelVersion('fraud_score', score.version, 'fraud-fallback-v1'),
     sourceRecordId: score.id,
     sourceFeatureSnapshotId: score.sourceFeatureSnapshotId,
     sourceFeatureVersion: score.sourceFeatureVersion,
@@ -1194,7 +1276,7 @@ async function evaluateResponsiblePlay(input: {
   const explanation = await explainDecision({
     userId: input.userId,
     decisionType: 'responsible_play_intervention',
-    modelVersion: intervention.version,
+    modelVersion: await monitoredModelVersion('responsible_play_intervention', intervention.version, 'responsible-play-fallback-v1'),
     sourceRecordId: intervention.id,
     sourceFeatureSnapshotId: intervention.sourceFeatureSnapshotId,
     sourceFeatureVersion: intervention.sourceFeatureVersion,

@@ -238,6 +238,33 @@ export interface AiDecisionExplanationDto {
   createdAt: string;
 }
 
+export interface AiModelControlDto {
+  id: string;
+  userId?: string;
+  modelKey: string;
+  disabled: boolean;
+  reason?: string;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface AiModelHealthReportDto {
+  status: 'healthy' | 'degraded' | 'disabled';
+  generatedAt: string;
+  metrics: Array<{
+    modelKey: string;
+    decisionCount: number;
+    fallbackCount: number;
+    staleInputCount: number;
+    fallbackRatio: number;
+    staleInputRatio: number;
+    disabled: boolean;
+    status: 'healthy' | 'degraded' | 'disabled';
+    reasonCodes: string[];
+  }>;
+  controls: AiModelControlDto[];
+}
+
 export interface AiFeatureSnapshotDto {
   id: string;
   userId: string;
@@ -354,6 +381,7 @@ export interface AdminSummaryDto {
   bonusClaims: BonusClaimDto[];
   aiEvents: AiEventDto[];
   aiDecisionExplanations: AiDecisionExplanationDto[];
+  aiModelHealth?: AiModelHealthReportDto;
   aiFeatureSnapshot?: AiFeatureSnapshotDto;
   churnScore?: ChurnScoreDto;
   fraudScore?: FraudScoreDto;
@@ -584,6 +612,31 @@ export const fetchAiDecisionExplanations = async (input: {
   });
   const payload = await parseJsonResponse<{ explanations: AiDecisionExplanationDto[] }>(response);
   return payload.explanations;
+};
+
+export const fetchAiModelHealth = async (): Promise<AiModelHealthReportDto> => {
+  const response = await fetch('/api/admin/ai-model-health', {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ report: AiModelHealthReportDto }>(response);
+  return payload.report;
+};
+
+export const updateAiModelControl = async (input: {
+  modelKey: string;
+  disabled: boolean;
+  reason?: string;
+}): Promise<AiModelControlDto> => {
+  const response = await fetch(`/api/admin/ai-model-controls/${encodeURIComponent(input.modelKey)}`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      disabled: input.disabled,
+      reason: input.reason
+    })
+  });
+  const payload = await parseJsonResponse<{ control: AiModelControlDto }>(response);
+  return payload.control;
 };
 
 export const trackAiEvent = async (input: {

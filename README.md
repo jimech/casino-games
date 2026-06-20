@@ -240,6 +240,22 @@ curl "http://localhost:3000/api/admin/ai-decision-explanations/export?limit=500"
   -o ai-decision-explanations.csv
 ```
 
+Review AI model health:
+
+```bash
+curl http://localhost:3000/api/admin/ai-model-health \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Disable a model-assisted decision path into fallback mode:
+
+```bash
+curl -X POST http://localhost:3000/api/admin/ai-model-controls/fraud_score \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"disabled":true,"reason":"manual review"}'
+```
+
 Place a bet and lock funds:
 
 ```bash
