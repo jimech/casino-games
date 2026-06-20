@@ -108,4 +108,51 @@ describe('auth service', () => {
       process.env.ADMIN_INVITE_CODE = previousCode;
     }
   });
+
+  it('searches public account records for admin review', async () => {
+    const previousCode = process.env.ADMIN_INVITE_CODE;
+    process.env.ADMIN_INVITE_CODE = 'private-admin-code';
+    const authService = new MemoryAuthService(new CasinoService({}));
+
+    const userSession = await authService.register({
+      username: 'roulette_review',
+      email: 'review@example.com',
+      password: 'very-secret-pass',
+      displayName: 'Roulette Review',
+      acceptAgeGate: true,
+      acceptTerms: true,
+      acceptPrivacy: true
+    });
+    await authService.register({
+      username: 'review_admin',
+      password: 'very-secret-pass',
+      adminInviteCode: 'private-admin-code',
+      acceptAgeGate: true,
+      acceptTerms: true,
+      acceptPrivacy: true
+    });
+
+    const matchingUsers = await authService.searchUsers({ query: 'roulette', limit: 10 });
+    expect(matchingUsers).toHaveLength(1);
+    expect(matchingUsers[0]).toMatchObject({
+      id: userSession.user.id,
+      username: 'roulette_review',
+      role: 'user'
+    });
+    expect(matchingUsers[0]).not.toHaveProperty('passwordHash');
+
+    const admins = await authService.searchUsers({ role: 'admin', limit: 10 });
+    expect(admins).toHaveLength(1);
+    expect(admins[0].username).toBe('review_admin');
+
+    const loaded = await authService.getUserById({ userId: userSession.user.id });
+    expect(loaded?.email).toBe('review@example.com');
+    await expect(authService.getUserById({ userId: 'missing-user' })).resolves.toBeUndefined();
+
+    if (previousCode === undefined) {
+      delete process.env.ADMIN_INVITE_CODE;
+    } else {
+      process.env.ADMIN_INVITE_CODE = previousCode;
+    }
+  });
 });

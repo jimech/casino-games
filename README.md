@@ -425,6 +425,20 @@ curl http://localhost:3000/api/admin/summary \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Search users as an admin:
+
+```bash
+curl "http://localhost:3000/api/admin/users?query=quality&limit=10" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Read an account review packet as an admin:
+
+```bash
+curl http://localhost:3000/api/admin/users/USER_ID \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 Read notification inbox:
 
 ```bash

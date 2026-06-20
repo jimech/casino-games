@@ -13,6 +13,8 @@ import { sound } from './utils/audio';
 import { UserProfile, GameCatalogItem, BlogPost } from './types';
 import {
   AuthSessionDto,
+  AuthUserDto,
+  AdminUserDetailDto,
   AdminSummaryDto,
   actBlackjackRound,
   actPokerRound,
@@ -21,6 +23,7 @@ import {
   createNotification,
   createWalletEventSource,
   fetchAuthSession,
+  fetchAdminUserDetail,
   fetchAdminSummary,
   fetchGameRecommendations,
   fetchNotifications,
@@ -35,6 +38,7 @@ import {
   placeBet,
   registerAccount,
   ResponsiblePlayInterventionDto,
+  searchAdminUsers,
   settleRound,
   spinSlots,
   spinRoulette,
@@ -119,6 +123,11 @@ export default function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [adminSummary, setAdminSummary] = useState<AdminSummaryDto | null>(null);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [adminUserQuery, setAdminUserQuery] = useState('');
+  const [adminUserResults, setAdminUserResults] = useState<AuthUserDto[]>([]);
+  const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetailDto | null>(null);
+  const [adminUserSearchLoading, setAdminUserSearchLoading] = useState(false);
+  const [adminUserDetailLoading, setAdminUserDetailLoading] = useState(false);
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
@@ -182,7 +191,10 @@ export default function App() {
   }, [authSession?.user.id]);
 
   useEffect(() => {
-    if (authSession && activeCasinoTab === 'admin') void loadAdminSummary();
+    if (authSession && activeCasinoTab === 'admin') {
+      void loadAdminSummary();
+      void loadAdminUsers();
+    }
   }, [authSession?.user.id, activeCasinoTab]);
 
   useEffect(() => {
@@ -276,6 +288,30 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Admin summary failed to load.", "error");
     } finally {
       setAdminLoading(false);
+    }
+  };
+
+  const loadAdminUsers = async () => {
+    setAdminUserSearchLoading(true);
+    try {
+      const users = await searchAdminUsers({ query: adminUserQuery, limit: 12 });
+      setAdminUserResults(users);
+      if (!adminUserDetail && users[0]) void loadAdminUserDetail(users[0].id);
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Admin user search failed.", "error");
+    } finally {
+      setAdminUserSearchLoading(false);
+    }
+  };
+
+  const loadAdminUserDetail = async (userId: string) => {
+    setAdminUserDetailLoading(true);
+    try {
+      setAdminUserDetail(await fetchAdminUserDetail(userId));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Admin user detail failed to load.", "error");
+    } finally {
+      setAdminUserDetailLoading(false);
     }
   };
 
@@ -1366,6 +1402,92 @@ export default function App() {
                       <span className="block text-lg font-black text-[#00FF88] font-mono mt-1">{value}</span>
                     </div>
                   ))}
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-5">
+                  <AdminPanel title="User Search">
+                    <form
+                      onSubmit={event => {
+                        event.preventDefault();
+                        void loadAdminUsers();
+                      }}
+                      className="flex gap-2"
+                    >
+                      <input
+                        value={adminUserQuery}
+                        onChange={event => setAdminUserQuery(event.target.value)}
+                        placeholder="username, email, display name, id"
+                        className="min-w-0 flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#00FF88]"
+                      />
+                      <button
+                        type="submit"
+                        className="bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 text-[10px] font-black uppercase px-3 py-2 rounded-lg"
+                      >
+                        {adminUserSearchLoading ? 'Searching' : 'Search'}
+                      </button>
+                    </form>
+                    {(adminUserResults ?? []).map(account => (
+                      <button
+                        key={account.id}
+                        type="button"
+                        onClick={() => void loadAdminUserDetail(account.id)}
+                        className={`w-full text-left rounded-md ${adminUserDetail?.user.id === account.id ? 'ring-1 ring-[#00FF88]' : ''}`}
+                      >
+                        <AdminRow
+                          left={`${account.displayName ?? account.username} / ${account.role}`}
+                          right={account.username}
+                          detail={`${account.email ?? 'no email'} / ${account.createdAt.slice(0, 10)}`}
+                        />
+                      </button>
+                    ))}
+                    {adminUserResults.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
+
+                  <AdminPanel title="User Detail">
+                    {adminUserDetail ? (
+                      <>
+                        <AdminRow
+                          left={`${adminUserDetail.user.displayName ?? adminUserDetail.user.username} / ${adminUserDetail.user.role}`}
+                          right={`$${adminUserDetail.wallet.available}`}
+                          detail={`${adminUserDetail.user.id} / locked $${adminUserDetail.wallet.locked}`}
+                        />
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            ['Ledger', adminUserDetail.ledger.length],
+                            ['Rounds', adminUserDetail.rounds.length],
+                            ['Risk', adminUserDetail.riskEvents.length],
+                            ['Cases', adminUserDetail.complianceCases.length]
+                          ].map(([label, value]) => (
+                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                              <span className="block text-sm font-black font-mono text-[#00FF88]">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <AdminRow
+                          left="Latest risk"
+                          right={adminUserDetail.riskEvents[0]?.severity ?? 'none'}
+                          detail={adminUserDetail.riskEvents[0]?.type ?? 'No risk events recorded'}
+                        />
+                        <AdminRow
+                          left="Latest AI decision"
+                          right={adminUserDetail.aiDecisionExplanations[0]?.decisionType ?? 'none'}
+                          detail={safeReasonList(adminUserDetail.aiDecisionExplanations[0]?.reasonCodes ?? [], 2)}
+                        />
+                        <AdminRow
+                          left="Latest notification"
+                          right={adminUserDetail.notifications[0]?.type ?? 'none'}
+                          detail={adminUserDetail.notifications[0]?.title ?? 'No notifications recorded'}
+                        />
+                      </>
+                    ) : (
+                      <AdminRow
+                        left={adminUserDetailLoading ? 'Loading account' : 'No account selected'}
+                        right="review"
+                        detail="Search for a user to load wallet, risk, compliance, and AI evidence"
+                      />
+                    )}
+                  </AdminPanel>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">

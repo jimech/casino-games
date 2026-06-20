@@ -62,6 +62,8 @@ export interface AuthService {
   logout(token: string): Promise<void>;
   updateConsent(input: UpdateConsentInput): Promise<AuthSession>;
   updateProfile(input: UpdateProfileInput): Promise<AuthSession>;
+  searchUsers(input: { query?: string; role?: 'user' | 'admin'; limit?: number }): Promise<AuthUser[]>;
+  getUserById(input: { userId: string }): Promise<AuthUser | undefined>;
   verifyPassword(input: { userId: string; password: string }): Promise<boolean>;
 }
 
@@ -174,6 +176,22 @@ export class MemoryAuthService implements AuthService {
   async verifyPassword(input: { userId: string; password: string }): Promise<boolean> {
     const user = this.users.get(input.userId);
     return Boolean(user && verifyPassword(input.password, user.passwordHash));
+  }
+
+  async searchUsers(input: { query?: string; role?: 'user' | 'admin'; limit?: number }): Promise<AuthUser[]> {
+    const query = normalizeSearchQuery(input.query);
+    const limit = normalizeSearchLimit(input.limit);
+    return Array.from(this.users.values())
+      .filter(user => !input.role || user.role === input.role)
+      .filter(user => !query || userMatchesQuery(user, query))
+      .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
+      .slice(0, limit)
+      .map(publicUser);
+  }
+
+  async getUserById(input: { userId: string }): Promise<AuthUser | undefined> {
+    const user = this.users.get(input.userId);
+    return user ? publicUser(user) : undefined;
   }
 
   private createSession(user: StoredUser, input: { userAgent?: string; ipAddress?: string }): AuthSession {
@@ -295,6 +313,31 @@ export class PrismaAuthService implements AuthService {
     return Boolean(user?.passwordHash && verifyPassword(input.password, user.passwordHash));
   }
 
+  async searchUsers(input: { query?: string; role?: 'user' | 'admin'; limit?: number }): Promise<AuthUser[]> {
+    const query = normalizeSearchQuery(input.query);
+    const users = await this.prisma.user.findMany({
+      where: {
+        role: input.role,
+        ...(query ? {
+          OR: [
+            { id: { contains: query, mode: 'insensitive' } },
+            { username: { contains: query, mode: 'insensitive' } },
+            { email: { contains: query, mode: 'insensitive' } },
+            { displayName: { contains: query, mode: 'insensitive' } }
+          ]
+        } : {})
+      },
+      orderBy: { createdAt: 'desc' },
+      take: normalizeSearchLimit(input.limit)
+    });
+    return users.map(prismaUserToAuthUser);
+  }
+
+  async getUserById(input: { userId: string }): Promise<AuthUser | undefined> {
+    const user = await this.prisma.user.findUnique({ where: { id: input.userId } });
+    return user ? prismaUserToAuthUser(user) : undefined;
+  }
+
   private async createSession(userId: string, input: { userAgent?: string; ipAddress?: string }): Promise<AuthSession> {
     const token = randomBytes(32).toString('base64url');
     const session = await this.prisma.authSession.create({
@@ -364,6 +407,25 @@ const normalizeIdentity = (value: string): string => value.trim().toLowerCase();
 const cleanOptionalText = (value: string | undefined): string | undefined => {
   const cleaned = value?.trim();
   return cleaned ? cleaned.slice(0, 80) : undefined;
+};
+
+const normalizeSearchQuery = (value: string | undefined): string | undefined => {
+  const cleaned = value?.trim().toLowerCase();
+  return cleaned ? cleaned.slice(0, 120) : undefined;
+};
+
+const normalizeSearchLimit = (value: number | undefined): number => {
+  if (!Number.isFinite(value)) return 25;
+  return Math.max(1, Math.min(100, Math.trunc(Number(value))));
+};
+
+const userMatchesQuery = (user: AuthUser, query: string): boolean => {
+  return [
+    user.id,
+    user.username,
+    user.email,
+    user.displayName
+  ].some(value => value?.toLowerCase().includes(query));
 };
 
 const sessionExpiry = (): Date => {

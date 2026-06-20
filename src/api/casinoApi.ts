@@ -424,6 +424,23 @@ export interface AdminSummaryDto {
   responsiblePlayIntervention?: ResponsiblePlayInterventionDto;
 }
 
+export interface AdminUserDetailDto {
+  user: AuthUserDto;
+  wallet: WalletDto;
+  ledger: LedgerEntryDto[];
+  rounds: RoundDto[];
+  riskEvents: RiskEventDto[];
+  bonusClaims: BonusClaimDto[];
+  notifications: NotificationDto[];
+  aiEvents: AiEventDto[];
+  aiDecisionExplanations: AiDecisionExplanationDto[];
+  complianceCases: ComplianceCaseDto[];
+  aiFeatureSnapshot?: AiFeatureSnapshotDto;
+  churnScore?: ChurnScoreDto;
+  fraudScore?: FraudScoreDto;
+  responsiblePlayIntervention?: ResponsiblePlayInterventionDto;
+}
+
 export interface NotificationDto {
   id: string;
   userId: string;
@@ -622,6 +639,30 @@ export const fetchAdminSummary = async (): Promise<AdminSummaryDto> => {
     headers: authHeaders()
   });
   return parseJsonResponse<AdminSummaryDto>(response);
+};
+
+export const searchAdminUsers = async (input: {
+  query?: string;
+  role?: AuthUserDto['role'];
+  limit?: number;
+} = {}): Promise<AuthUserDto[]> => {
+  const params = new URLSearchParams();
+  if (input.query) params.set('query', input.query);
+  if (input.role) params.set('role', input.role);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/users${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ users: AuthUserDto[] }>(response);
+  return payload.users;
+};
+
+export const fetchAdminUserDetail = async (userId: string): Promise<AdminUserDetailDto> => {
+  const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<AdminUserDetailDto>(response);
 };
 
 export const fetchAiEvents = async (input: {

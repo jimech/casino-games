@@ -711,6 +711,52 @@ Acceptance criteria:
 - Fallback UI appears when AI services fail.
 - AI UI changes never block wallet or game operations.
 
+### T33 - Admin User Search and Account Review
+
+Summary: Let admins find accounts and inspect account-level wallet, risk, compliance, notification, and AI evidence.
+
+Implementation status: Complete. Admins now have role-protected `/api/admin/users` search and `/api/admin/users/:userId` account-review endpoints, public-only account results, detailed wallet/ledger/round/risk/compliance/AI evidence packets, auditable admin AI events for searches and detail views, UI account review panels, and smoke coverage for forbidden regular-user access.
+
+Scope:
+- Search account records by username, email, display name, id, and role.
+- Load a selected account review packet.
+- Include wallet, ledger, rounds, risk events, bonus claims, notifications, AI events, AI explanations, compliance cases, and latest model scores.
+- Audit admin searches and account detail views.
+
+Acceptance criteria:
+- Regular users cannot search or review other accounts.
+- Admin search returns public account fields only.
+- Admin detail includes account evidence without exposing password or session secrets.
+- Admin review actions are visible in audit telemetry.
+
+### T34 - Admin Round Replay and Evidence Pack
+
+Summary: Add a deeper round-review view for disputed or risky game rounds.
+
+Scope:
+- Load one round with ledger entries, game outcome, risk events, AI signals, and compliance links.
+- Export an evidence packet for a case.
+- Preserve deterministic replay data where the game engine supports it.
+
+Acceptance criteria:
+- Admins can inspect a round from account detail.
+- Evidence export is stable and timestamped.
+- Replay never mutates wallet state.
+
+### T35 - Notification Preferences and Delivery Controls
+
+Summary: Add user notification preferences and admin delivery visibility.
+
+Scope:
+- User opt-in and opt-out preferences.
+- Category-level notification controls.
+- Admin delivery status review.
+
+Acceptance criteria:
+- Users can control optional notification categories.
+- Required security/compliance notices cannot be disabled.
+- Admins can see delivery attempts and failures.
+
 ## First Working Sequence
 
 Start here:

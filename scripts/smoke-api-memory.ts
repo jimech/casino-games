@@ -75,6 +75,25 @@ const main = async () => {
   const adminSummary = await getJson(`${baseUrl}/api/admin/summary`, adminSession.token);
   assertArray(adminSummary.ledger, 'admin ledger array');
 
+  const blockedUserSearch = await fetch(`${baseUrl}/api/admin/users`, {
+    headers: { Authorization: `Bearer ${userSession.token}` }
+  });
+  assertEqual(blockedUserSearch.status, 403, 'regular user admin search access');
+
+  const adminUserSearch = await getJson(`${baseUrl}/api/admin/users?query=quality&limit=10`, adminSession.token);
+  assertArray(adminUserSearch.users, 'admin user search array');
+  if (!adminUserSearch.users.some((account: { id: string }) => account.id === userSession.user.id)) {
+    throw new Error('Expected regular user to appear in admin search');
+  }
+  if (!adminUserSearch.users.some((account: { id: string }) => account.id === adminSession.user.id)) {
+    throw new Error('Expected admin user to appear in admin search');
+  }
+
+  const adminUserDetail = await getJson(`${baseUrl}/api/admin/users/${userSession.user.id}`, adminSession.token);
+  assertEqual(adminUserDetail.user.id, userSession.user.id, 'admin user detail id');
+  assertArray(adminUserDetail.ledger, 'admin user detail ledger array');
+  assertArray(adminUserDetail.riskEvents, 'admin user detail risk array');
+
   const bonus = await postJson(`${baseUrl}/api/bonuses/welcome-match-500/claim`, adminSession.token, {
     idempotencyKey: 'quality-bonus-welcome'
   });

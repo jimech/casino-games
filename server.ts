@@ -746,6 +746,89 @@ app.get('/api/admin/summary', async (req, res) => {
   }
 });
 
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const query = typeof req.query.query === 'string' ? req.query.query : undefined;
+    const role = req.query.role === 'user' || req.query.role === 'admin' ? req.query.role : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const users = await authService.searchUsers({ query, role, limit });
+
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'admin_user_search_performed',
+      context: {
+        query: query?.slice(0, 120),
+        role,
+        resultCount: users.length
+      }
+    });
+
+    res.json({ users });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/users/:userId', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const reviewedUser = await authService.getUserById({ userId: req.params.userId });
+    if (!reviewedUser) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const [wallet, ledger, rounds, riskEvents, bonusClaims, notifications, aiEvents, aiDecisionExplanations, complianceCases, aiFeatureSnapshot, churnScore, fraudScore, responsiblePlayIntervention] = await Promise.all([
+      casinoService.getWallet(reviewedUser.id),
+      casinoService.getLedger(reviewedUser.id),
+      casinoService.listRounds(reviewedUser.id),
+      riskService.listEvents({ userId: reviewedUser.id, limit: 50 }),
+      bonusService.listClaims(reviewedUser.id),
+      notificationService.list({ userId: reviewedUser.id, limit: 50 }),
+      aiEventService.list({ userId: reviewedUser.id, limit: 50 }),
+      aiDecisionExplanationService.list({ userId: reviewedUser.id, limit: 50 }),
+      complianceCaseService.list({ subjectUserId: reviewedUser.id, limit: 50 }),
+      aiFeatureService.latest({ userId: reviewedUser.id }),
+      churnService.latest({ userId: reviewedUser.id }),
+      fraudService.latest({ userId: reviewedUser.id }),
+      responsiblePlayService.latest({ userId: reviewedUser.id })
+    ]);
+
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'admin_user_detail_viewed',
+      context: {
+        subjectUserId: reviewedUser.id,
+        roundCount: rounds.length,
+        riskEventCount: riskEvents.length,
+        complianceCaseCount: complianceCases.length
+      }
+    });
+
+    res.json({
+      user: reviewedUser,
+      wallet,
+      ledger: ledger.map(sanitizeLedgerEntryForApi).slice(-50).reverse(),
+      rounds: rounds.map(sanitizeRoundForApi).slice(0, 50),
+      riskEvents,
+      bonusClaims,
+      notifications,
+      aiEvents,
+      aiDecisionExplanations,
+      complianceCases,
+      aiFeatureSnapshot,
+      churnScore,
+      fraudScore,
+      responsiblePlayIntervention
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/notifications', async (req, res) => {
   try {
     const user = await requireAuth(req);
