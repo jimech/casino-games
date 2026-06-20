@@ -62,6 +62,7 @@ export interface AuthService {
   logout(token: string): Promise<void>;
   updateConsent(input: UpdateConsentInput): Promise<AuthSession>;
   updateProfile(input: UpdateProfileInput): Promise<AuthSession>;
+  verifyPassword(input: { userId: string; password: string }): Promise<boolean>;
 }
 
 interface WalletCreator {
@@ -168,6 +169,11 @@ export class MemoryAuthService implements AuthService {
       this.emailIndex.set(emailKey, user.id);
     }
     return { token: session.token, expiresAt: session.expiresAt, user: publicUser(user) };
+  }
+
+  async verifyPassword(input: { userId: string; password: string }): Promise<boolean> {
+    const user = this.users.get(input.userId);
+    return Boolean(user && verifyPassword(input.password, user.passwordHash));
   }
 
   private createSession(user: StoredUser, input: { userAgent?: string; ipAddress?: string }): AuthSession {
@@ -279,6 +285,14 @@ export class PrismaAuthService implements AuthService {
       }
     });
     return this.getSession(input.token);
+  }
+
+  async verifyPassword(input: { userId: string; password: string }): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { passwordHash: true }
+    });
+    return Boolean(user?.passwordHash && verifyPassword(input.password, user.passwordHash));
   }
 
   private async createSession(userId: string, input: { userAgent?: string; ipAddress?: string }): Promise<AuthSession> {

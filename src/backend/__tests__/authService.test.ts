@@ -59,6 +59,8 @@ describe('auth service', () => {
       password: 'very-secret-pass'
     });
     expect(session.user.username).toBe('login_player');
+    await expect(authService.verifyPassword({ userId: session.user.id, password: 'very-secret-pass' })).resolves.toBe(true);
+    await expect(authService.verifyPassword({ userId: session.user.id, password: 'wrong-password' })).resolves.toBe(false);
   });
 
   it('revokes a session on logout', async () => {

@@ -657,6 +657,8 @@ Acceptance criteria:
 
 Summary: Extend identity and API protections across the platform.
 
+Implementation status: Complete. Sensitive admin mutations now require password-backed step-up authentication plus `X-Request-Id` replay protection, with failures recorded as searchable risk events and client helpers for step-up/control flows.
+
 Scope:
 - JWT or session hardening.
 - MFA.

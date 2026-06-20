@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createHash, randomBytes } from 'node:crypto';
 import dotenv from 'dotenv';
 import { AiEventCategory } from './src/backend/aiEventService';
 import { explanationsToCsv } from './src/backend/aiDecisionExplanationService';
@@ -25,6 +26,10 @@ const port = Number(process.env.PORT ?? 3000);
 const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
+const replayKeys = new Map<string, number>();
+const STEP_UP_TTL_MS = 10 * 60 * 1000;
+const REPLAY_WINDOW_MS = 10 * 60 * 1000;
 
 const RECOMMENDATION_CATALOG: RecommendationGame[] = [
   { id: 'fruit-mania', title: 'Neon Fruit Mania', category: 'slots', provider: 'Spinfuego', rtp: '96.5%', volatility: 'Low' },
@@ -145,6 +150,42 @@ app.post('/api/auth/consent', async (req, res) => {
       acceptTerms: Boolean(req.body.acceptTerms),
       acceptPrivacy: Boolean(req.body.acceptPrivacy)
     }));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/auth/step-up', async (req, res) => {
+  try {
+    await enforceRateLimit(req, 'auth_step_up', 8, 60_000);
+    const user = await requireAuth(req);
+    const password = String(req.body.password ?? '');
+    const scope = typeof req.body.scope === 'string' ? req.body.scope : 'admin:sensitive';
+    const valid = await authService.verifyPassword({ userId: user.id, password });
+    if (!valid) {
+      await riskService.recordEvent({
+        userId: user.id,
+        type: 'step_up_failed',
+        severity: 'medium',
+        score: 50,
+        context: { scope, path: req.path, ipAddress: req.ip }
+      });
+      throw new Error('Invalid step-up credentials');
+    }
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = Date.now() + STEP_UP_TTL_MS;
+    stepUpSessions.set(hashSecurityToken(token), { userId: user.id, expiresAt, scope });
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'admin',
+      name: 'step_up_authenticated',
+      context: { scope, expiresAt: new Date(expiresAt).toISOString() }
+    });
+    res.status(201).json({
+      stepUpToken: token,
+      expiresAt: new Date(expiresAt).toISOString(),
+      scope
+    });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -550,6 +591,8 @@ app.get('/api/admin/ai-model-health', async (req, res) => {
 app.post('/api/admin/ai-model-controls/:modelKey', async (req, res) => {
   try {
     const user = await requireAdmin(req);
+    await requireRequestId(req, user.id, 'ai_model_control');
+    await requireStepUp(req, user, 'admin:sensitive');
     const control = await aiModelMonitoringService.setControl({
       userId: user.id,
       modelKey: req.params.modelKey,
@@ -953,7 +996,7 @@ app.listen(port, '0.0.0.0', () => {
 
 function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
-  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|consent/i.test(message) ? 400 : 500;
+  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|consent|replay/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
 }
 
@@ -975,6 +1018,51 @@ async function requireAdmin(req: express.Request): Promise<AuthUser> {
     throw new Error('Forbidden admin access');
   }
   return user;
+}
+
+async function requireStepUp(req: express.Request, user: AuthUser, scope: string): Promise<void> {
+  const token = req.get('x-step-up-token');
+  const session = token ? stepUpSessions.get(hashSecurityToken(token)) : undefined;
+  if (!session || session.userId !== user.id || session.scope !== scope || session.expiresAt <= Date.now()) {
+    await riskService.recordEvent({
+      userId: user.id,
+      type: 'step_up_required',
+      severity: 'medium',
+      score: 55,
+      context: { scope, path: req.path, method: req.method }
+    });
+    throw new Error('Step-up authentication required');
+  }
+}
+
+async function requireRequestId(req: express.Request, userId: string, scope: string): Promise<void> {
+  const requestId = req.get('x-request-id');
+  if (!requestId || requestId.length < 8 || requestId.length > 120) {
+    await riskService.recordEvent({
+      userId,
+      type: 'request_id_required',
+      severity: 'low',
+      score: 25,
+      context: { scope, path: req.path, method: req.method }
+    });
+    throw new Error('X-Request-Id is required');
+  }
+  const now = Date.now();
+  for (const [key, expiresAt] of replayKeys.entries()) {
+    if (expiresAt <= now) replayKeys.delete(key);
+  }
+  const replayKey = `${userId}:${scope}:${requestId}`;
+  if (replayKeys.has(replayKey)) {
+    await riskService.recordEvent({
+      userId,
+      type: 'replay_request_blocked',
+      severity: 'high',
+      score: 80,
+      context: { scope, requestId, path: req.path, method: req.method }
+    });
+    throw new Error('Replay request blocked');
+  }
+  replayKeys.set(replayKey, now + REPLAY_WINDOW_MS);
 }
 
 async function requireOwnUser(req: express.Request, userId: string): Promise<AuthUser> {
@@ -1333,6 +1421,10 @@ function withResponsiblePlay<T extends object>(payload: T, intervention: Awaited
 function extractRequestToken(req: express.Request): string {
   if (typeof req.query.token === 'string' && req.query.token) return req.query.token;
   return extractBearerToken(req.get('authorization'));
+}
+
+function hashSecurityToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 function addWalletClient(userId: string, res: express.Response) {

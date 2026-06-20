@@ -247,12 +247,23 @@ curl http://localhost:3000/api/admin/ai-model-health \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Create a step-up token for sensitive admin actions:
+
+```bash
+STEP_UP_TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/step-up \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"password":"your-password","scope":"admin:sensitive"}' | jq -r .stepUpToken)
+```
+
 Disable a model-assisted decision path into fallback mode:
 
 ```bash
 curl -X POST http://localhost:3000/api/admin/ai-model-controls/fraud_score \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
+  -H "X-Step-Up-Token: $STEP_UP_TOKEN" \
+  -H "X-Request-Id: model-control-$(uuidgen)" \
   -d '{"disabled":true,"reason":"manual review"}'
 ```
 

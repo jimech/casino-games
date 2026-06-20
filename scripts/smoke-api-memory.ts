@@ -225,11 +225,43 @@ const main = async () => {
   if (!explanationExport.ok || !explanationCsv.includes('decisionType') || !explanationCsv.includes('fraud_score')) {
     throw new Error('Expected AI decision explanation CSV export');
   }
+  const blockedModelControl = await fetch(`${baseUrl}/api/admin/ai-model-controls/fraud_score`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminSession.token}`,
+      'X-Request-Id': 'smoke-model-control-blocked'
+    },
+    body: JSON.stringify({ disabled: true })
+  });
+  assertEqual(blockedModelControl.status, 403, 'model control requires step-up');
+  const stepUp = await postJson(`${baseUrl}/api/auth/step-up`, adminSession.token, {
+    password: 'very-secret-pass',
+    scope: 'admin:sensitive'
+  });
+  if (typeof stepUp.stepUpToken !== 'string' || stepUp.stepUpToken.length < 20) {
+    throw new Error('Expected step-up token to be issued');
+  }
+  const modelControlRequestId = 'smoke-model-control-1';
   const modelControl = await postJson(`${baseUrl}/api/admin/ai-model-controls/fraud_score`, adminSession.token, {
     disabled: true,
     reason: 'smoke fallback verification'
+  }, {
+    'X-Step-Up-Token': stepUp.stepUpToken,
+    'X-Request-Id': modelControlRequestId
   });
   assertEqual(modelControl.control.disabled, true, 'fraud model disabled control');
+  const replayedModelControl = await fetch(`${baseUrl}/api/admin/ai-model-controls/fraud_score`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminSession.token}`,
+      'X-Step-Up-Token': stepUp.stepUpToken,
+      'X-Request-Id': modelControlRequestId
+    },
+    body: JSON.stringify({ disabled: false })
+  });
+  assertEqual(replayedModelControl.status, 400, 'model control replay blocked');
   await postJson(`${baseUrl}/api/risk/fraud-score/refresh`, adminSession.token, {});
   const fallbackExplanations = await getJson(`${baseUrl}/api/admin/ai-decision-explanations?decisionType=fraud_score&limit=5`, adminSession.token);
   if (!fallbackExplanations.explanations.some((explanation: { modelVersion: string }) => explanation.modelVersion === 'fraud-fallback-v1')) {
@@ -253,6 +285,12 @@ const main = async () => {
   }
   if (!risks.events.some((event: { type: string }) => event.type === 'ai_model_degraded')) {
     throw new Error('Expected AI model degradation risk event to be created');
+  }
+  if (!risks.events.some((event: { type: string }) => event.type === 'step_up_required')) {
+    throw new Error('Expected missing step-up risk event to be searchable');
+  }
+  if (!risks.events.some((event: { type: string }) => event.type === 'replay_request_blocked')) {
+    throw new Error('Expected replay request risk event to be searchable');
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);
@@ -311,12 +349,13 @@ const getJson = async (url: string, token: string) => {
   return payload;
 };
 
-const postJson = async (url: string, token: string, body: Record<string, unknown>) => {
+const postJson = async (url: string, token: string, body: Record<string, unknown>, headers: Record<string, string> = {}) => {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
+      ...headers
     },
     body: JSON.stringify(body)
   });

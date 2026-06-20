@@ -22,6 +22,12 @@ export interface AuthSessionDto {
   user: AuthUserDto;
 }
 
+export interface StepUpAuthDto {
+  stepUpToken: string;
+  expiresAt: string;
+  scope: string;
+}
+
 interface RoundDto {
   id: string;
   userId: string;
@@ -464,6 +470,18 @@ export const logoutAccount = async (): Promise<void> => {
   setStoredAuthToken(null);
 };
 
+export const createStepUpAuth = async (input: {
+  password: string;
+  scope?: string;
+}): Promise<StepUpAuthDto> => {
+  const response = await fetch('/api/auth/step-up', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  return parseJsonResponse<StepUpAuthDto>(response);
+};
+
 export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> => {
   const response = await fetch(`/api/wallet/${encodeURIComponent(userId)}`, {
     headers: authHeaders()
@@ -626,10 +644,16 @@ export const updateAiModelControl = async (input: {
   modelKey: string;
   disabled: boolean;
   reason?: string;
+  stepUpToken?: string;
+  requestId?: string;
 }): Promise<AiModelControlDto> => {
   const response = await fetch(`/api/admin/ai-model-controls/${encodeURIComponent(input.modelKey)}`, {
     method: 'POST',
-    headers: jsonHeaders(),
+    headers: {
+      ...jsonHeaders(),
+      'X-Request-Id': input.requestId ?? crypto.randomUUID(),
+      ...(input.stepUpToken ? { 'X-Step-Up-Token': input.stepUpToken } : {})
+    },
     body: JSON.stringify({
       disabled: input.disabled,
       reason: input.reason
