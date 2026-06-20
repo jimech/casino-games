@@ -267,6 +267,24 @@ curl -X POST http://localhost:3000/api/admin/ai-model-controls/fraud_score \
   -d '{"disabled":true,"reason":"manual review"}'
 ```
 
+Create a compliance review case:
+
+```bash
+curl -X POST http://localhost:3000/api/admin/compliance/cases \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"subjectUserId":"USER_ID","type":"fraud","priority":"high","title":"Fraud anomaly review","evidence":{"fraudScoreId":"FRAUD_SCORE_ID"}}'
+```
+
+Add a review note or close a case:
+
+```bash
+curl -X POST http://localhost:3000/api/admin/compliance/cases/CASE_ID/notes \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"note":"Reviewed evidence.","action":"closed","status":"closed","outcome":"no_action_needed"}'
+```
+
 Place a bet and lock funds:
 
 ```bash

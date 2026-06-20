@@ -377,6 +377,35 @@ export interface ResponsiblePlayInterventionDto {
   createdAt: string;
 }
 
+export interface ComplianceCaseNoteDto {
+  id: string;
+  caseId: string;
+  authorId: string;
+  note: string;
+  action: string;
+  status?: 'open' | 'in_review' | 'closed';
+  outcome?: string;
+  evidence?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ComplianceCaseDto {
+  id: string;
+  subjectUserId: string;
+  type: 'fraud' | 'responsible_play' | 'security' | 'retention' | 'general';
+  status: 'open' | 'in_review' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  title: string;
+  description?: string;
+  evidence?: Record<string, unknown>;
+  assignedToUserId?: string;
+  outcome?: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string;
+  notes: ComplianceCaseNoteDto[];
+}
+
 export interface AdminSummaryDto {
   user: AuthUserDto;
   wallet: WalletDto;
@@ -387,6 +416,7 @@ export interface AdminSummaryDto {
   bonusClaims: BonusClaimDto[];
   aiEvents: AiEventDto[];
   aiDecisionExplanations: AiDecisionExplanationDto[];
+  complianceCases: ComplianceCaseDto[];
   aiModelHealth?: AiModelHealthReportDto;
   aiFeatureSnapshot?: AiFeatureSnapshotDto;
   churnScore?: ChurnScoreDto;
@@ -661,6 +691,68 @@ export const updateAiModelControl = async (input: {
   });
   const payload = await parseJsonResponse<{ control: AiModelControlDto }>(response);
   return payload.control;
+};
+
+export const fetchComplianceCases = async (input: {
+  subjectUserId?: string;
+  status?: ComplianceCaseDto['status'];
+  type?: ComplianceCaseDto['type'];
+  limit?: number;
+} = {}): Promise<ComplianceCaseDto[]> => {
+  const params = new URLSearchParams();
+  if (input.subjectUserId) params.set('subjectUserId', input.subjectUserId);
+  if (input.status) params.set('status', input.status);
+  if (input.type) params.set('type', input.type);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/compliance/cases${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ cases: ComplianceCaseDto[] }>(response);
+  return payload.cases;
+};
+
+export const createComplianceCase = async (input: {
+  subjectUserId: string;
+  type: ComplianceCaseDto['type'];
+  priority?: ComplianceCaseDto['priority'];
+  title: string;
+  description?: string;
+  evidence?: Record<string, unknown>;
+  assignedToUserId?: string;
+}): Promise<ComplianceCaseDto> => {
+  const response = await fetch('/api/admin/compliance/cases', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ case: ComplianceCaseDto }>(response);
+  return payload.case;
+};
+
+export const addComplianceCaseNote = async (input: {
+  caseId: string;
+  note: string;
+  action?: string;
+  status?: ComplianceCaseDto['status'];
+  assignedToUserId?: string;
+  outcome?: string;
+  evidence?: Record<string, unknown>;
+}): Promise<ComplianceCaseDto> => {
+  const response = await fetch(`/api/admin/compliance/cases/${encodeURIComponent(input.caseId)}/notes`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      note: input.note,
+      action: input.action,
+      status: input.status,
+      assignedToUserId: input.assignedToUserId,
+      outcome: input.outcome,
+      evidence: input.evidence
+    })
+  });
+  const payload = await parseJsonResponse<{ case: ComplianceCaseDto }>(response);
+  return payload.case;
 };
 
 export const trackAiEvent = async (input: {

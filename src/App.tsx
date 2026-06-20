@@ -1366,6 +1366,18 @@ export default function App() {
                     {adminSummary?.riskEvents.length === 0 && <EmptyAdminRow />}
                   </AdminPanel>
 
+                  <AdminPanel title="Compliance Cases">
+                    {(adminSummary?.complianceCases ?? []).slice(0, 8).map(caseRecord => (
+                      <AdminRow
+                        key={caseRecord.id}
+                        left={`${caseRecord.type} / ${caseRecord.status}`}
+                        right={caseRecord.priority}
+                        detail={`${caseRecord.title} / ${caseRecord.notes.length} notes`}
+                      />
+                    ))}
+                    {adminSummary?.complianceCases.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
+
                   <AdminPanel title="Bonus Claims">
                     {(adminSummary?.bonusClaims ?? []).slice(0, 8).map(claim => (
                       <AdminRow key={claim.id} left={claim.campaignId} right={`$${claim.amount}`} detail={`${claim.status} / ${claim.claimKey}`} />

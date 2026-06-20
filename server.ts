@@ -8,6 +8,7 @@ import { explanationsToCsv } from './src/backend/aiDecisionExplanationService';
 import { evaluateAiModelHealth } from './src/backend/aiModelMonitoringService';
 import { extractBearerToken, AuthUser } from './src/backend/authService';
 import { GameRoundRecord } from './src/backend/casinoService';
+import { isComplianceCasePriority, isComplianceCaseStatus, isComplianceCaseType } from './src/backend/complianceCaseService';
 import { createServices } from './src/backend/serviceFactory';
 import { RecommendationGame } from './src/backend/gameRecommendationService';
 import { spinRoulette } from './src/backend/games/rouletteEngine';
@@ -23,7 +24,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
+const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
@@ -615,10 +616,82 @@ app.post('/api/admin/ai-model-controls/:modelKey', async (req, res) => {
   }
 });
 
+app.get('/api/admin/compliance/cases', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const subjectUserId = typeof req.query.subjectUserId === 'string' ? req.query.subjectUserId : undefined;
+    const status = isComplianceCaseStatus(req.query.status) ? req.query.status : undefined;
+    const type = isComplianceCaseType(req.query.type) ? req.query.type : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ cases: await complianceCaseService.list({ subjectUserId, status, type, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/compliance/cases', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const caseRecord = await complianceCaseService.create({
+      subjectUserId: String(req.body.subjectUserId ?? ''),
+      authorId: admin.id,
+      type: isComplianceCaseType(req.body.type) ? req.body.type : 'general',
+      priority: isComplianceCasePriority(req.body.priority) ? req.body.priority : 'medium',
+      title: String(req.body.title ?? ''),
+      description: typeof req.body.description === 'string' ? req.body.description : undefined,
+      assignedToUserId: typeof req.body.assignedToUserId === 'string' ? req.body.assignedToUserId : undefined,
+      evidence: isRecord(req.body.evidence) ? req.body.evidence : undefined
+    });
+    await auditComplianceCaseAction(admin.id, caseRecord.subjectUserId, caseRecord.id, 'created', {
+      type: caseRecord.type,
+      priority: caseRecord.priority,
+      evidence: caseRecord.evidence
+    });
+    res.status(201).json({ case: caseRecord });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/compliance/cases/:caseId', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const caseRecord = await complianceCaseService.get({ caseId: req.params.caseId });
+    if (!caseRecord) throw new Error('Compliance case not found');
+    res.json({ case: caseRecord });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/compliance/cases/:caseId/notes', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const caseRecord = await complianceCaseService.addNote({
+      caseId: req.params.caseId,
+      authorId: admin.id,
+      note: String(req.body.note ?? ''),
+      action: typeof req.body.action === 'string' ? req.body.action : undefined,
+      status: isComplianceCaseStatus(req.body.status) ? req.body.status : undefined,
+      assignedToUserId: typeof req.body.assignedToUserId === 'string' ? req.body.assignedToUserId : undefined,
+      outcome: typeof req.body.outcome === 'string' ? req.body.outcome : undefined,
+      evidence: isRecord(req.body.evidence) ? req.body.evidence : undefined
+    });
+    await auditComplianceCaseAction(admin.id, caseRecord.subjectUserId, caseRecord.id, caseRecord.notes[0]?.action ?? 'note_added', {
+      status: caseRecord.status,
+      outcome: caseRecord.outcome,
+      evidence: caseRecord.notes[0]?.evidence
+    });
+    res.status(201).json({ case: caseRecord });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/summary', async (req, res) => {
   try {
     const user = await requireAdmin(req);
-    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, aiDecisionExplanations, churnScore, fraudScore, responsiblePlayIntervention, aiModelControls] = await Promise.all([
+    const [wallet, ledger, rounds, riskEvents, campaigns, claims, aiEvents, aiDecisionExplanations, complianceCases, churnScore, fraudScore, responsiblePlayIntervention, aiModelControls] = await Promise.all([
       casinoService.getWallet(user.id),
       casinoService.getLedger(user.id),
       casinoService.listRounds(user.id),
@@ -627,6 +700,7 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusService.listClaims(user.id),
       aiEventService.list({ userId: user.id, limit: 25 }),
       aiDecisionExplanationService.list({ userId: user.id, limit: 25 }),
+      complianceCaseService.list({ limit: 25 }),
       churnService.latest({ userId: user.id }),
       fraudService.latest({ userId: user.id }),
       responsiblePlayService.latest({ userId: user.id }),
@@ -660,6 +734,7 @@ app.get('/api/admin/summary', async (req, res) => {
       bonusClaims: claims,
       aiEvents,
       aiDecisionExplanations,
+      complianceCases,
       aiModelHealth,
       aiFeatureSnapshot,
       churnScore,
@@ -1210,6 +1285,32 @@ async function alertOnAiModelHealth(userId: string, report: Awaited<ReturnType<t
     metadata: {
       status: report.status,
       generatedAt: report.generatedAt
+    }
+  });
+}
+
+async function auditComplianceCaseAction(adminUserId: string, subjectUserId: string, caseId: string, action: string, context: Record<string, unknown>) {
+  await trackAiEventSafely({
+    userId: adminUserId,
+    category: 'admin',
+    name: 'compliance_case_action',
+    context: {
+      caseId,
+      subjectUserId,
+      action,
+      ...context
+    }
+  });
+  await riskService.recordEvent({
+    userId: subjectUserId,
+    type: 'compliance_case_action',
+    severity: action === 'closed' ? 'low' : 'medium',
+    score: action === 'closed' ? 20 : 45,
+    context: {
+      caseId,
+      adminUserId,
+      action,
+      ...context
     }
   });
 }

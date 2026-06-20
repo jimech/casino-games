@@ -677,6 +677,8 @@ Acceptance criteria:
 
 Summary: Build review workflows for compliance, fraud, and responsible-play cases.
 
+Implementation status: Complete. Compliance cases now support queue creation, assignment, status changes, permanent review notes, structured evidence links, admin UI visibility, and audit/risk-event trails for case actions.
+
 Scope:
 - Case queues.
 - Assignment.

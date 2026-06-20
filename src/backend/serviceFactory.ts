@@ -6,6 +6,7 @@ import { MemoryAiModelMonitoringService, PrismaAiModelMonitoringService } from '
 import { MemoryAiFeatureService, PrismaAiFeatureService } from './aiFeatureService';
 import { MemoryAuthService, PrismaAuthService } from './authService';
 import { MemoryBonusService, PrismaBonusService } from './bonusService';
+import { MemoryComplianceCaseService, PrismaComplianceCaseService } from './complianceCaseService';
 import { MemoryNotificationService, PrismaNotificationService } from './notificationService';
 import { MemoryRiskService, PrismaRiskService } from './riskService';
 import { DeterministicGameRecommendationService } from './gameRecommendationService';
@@ -41,6 +42,9 @@ export const createServices = () => {
   const bonusService = driver === 'prisma'
     ? new PrismaBonusService(prisma, casinoService)
     : new MemoryBonusService(casinoService);
+  const complianceCaseService = driver === 'prisma'
+    ? new PrismaComplianceCaseService(prisma)
+    : new MemoryComplianceCaseService();
   const notificationService = driver === 'prisma'
     ? new PrismaNotificationService(prisma)
     : new MemoryNotificationService();
@@ -68,5 +72,5 @@ export const createServices = () => {
     ? new PrismaResponsiblePlayService(prisma)
     : new MemoryResponsiblePlayService();
 
-  return { casinoService, authService, riskService, bonusService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService };
+  return { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService };
 };

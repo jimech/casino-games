@@ -272,6 +272,42 @@ const main = async () => {
   if (!modelHealth.report.metrics.some((metric: { modelKey: string; disabled: boolean }) => metric.modelKey === 'fraud_score' && metric.disabled)) {
     throw new Error('Expected fraud model health metric to show disabled control');
   }
+  const complianceCase = await postJson(`${baseUrl}/api/admin/compliance/cases`, adminSession.token, {
+    subjectUserId: adminSession.user.id,
+    type: 'fraud',
+    priority: 'high',
+    title: 'Smoke fraud anomaly review',
+    description: 'Review fraud score and model health evidence.',
+    evidence: {
+      fraudScoreId: fraudScore.score.id,
+      decisionType: 'fraud_score'
+    }
+  });
+  assertEqual(complianceCase.case.status, 'open', 'compliance case open status');
+  if (complianceCase.case.notes.length < 1 || complianceCase.case.evidence.fraudScoreId !== fraudScore.score.id) {
+    throw new Error('Expected compliance case evidence and opening note');
+  }
+  const complianceQueue = await getJson(`${baseUrl}/api/admin/compliance/cases?status=open&limit=10`, adminSession.token);
+  if (!complianceQueue.cases.some((caseRecord: { id: string }) => caseRecord.id === complianceCase.case.id)) {
+    throw new Error('Expected compliance case to appear in open queue');
+  }
+  const complianceCaseLoaded = await getJson(`${baseUrl}/api/admin/compliance/cases/${complianceCase.case.id}`, adminSession.token);
+  assertEqual(complianceCaseLoaded.case.id, complianceCase.case.id, 'compliance case detail load');
+  const closedComplianceCase = await postJson(`${baseUrl}/api/admin/compliance/cases/${complianceCase.case.id}/notes`, adminSession.token, {
+    note: 'Smoke review completed with no further action.',
+    action: 'closed',
+    status: 'closed',
+    outcome: 'no_action_needed',
+    evidence: {
+      explanationId: fraudExplanation.id
+    }
+  });
+  assertEqual(closedComplianceCase.case.status, 'closed', 'compliance case closed status');
+  assertEqual(closedComplianceCase.case.outcome, 'no_action_needed', 'compliance case outcome');
+  const complianceAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=admin&limit=25`, adminSession.token);
+  if (!complianceAuditEvents.events.some((event: { name: string; context?: { caseId?: string } }) => event.name === 'compliance_case_action' && event.context?.caseId === complianceCase.case.id)) {
+    throw new Error('Expected compliance case actions in audit events');
+  }
 
   const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {
@@ -291,6 +327,9 @@ const main = async () => {
   }
   if (!risks.events.some((event: { type: string }) => event.type === 'replay_request_blocked')) {
     throw new Error('Expected replay request risk event to be searchable');
+  }
+  if (!risks.events.some((event: { type: string }) => event.type === 'compliance_case_action')) {
+    throw new Error('Expected compliance case action risk event to be searchable');
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);

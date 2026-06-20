@@ -110,8 +110,55 @@ model User {
   churnScores   ChurnScore[]
   fraudScores   FraudScore[]
   responsiblePlayInterventions ResponsiblePlayIntervention[]
+  subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
+  assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
+  complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
 
   @@map("users")
+}
+
+model ComplianceCase {
+  id               String   @id @default(cuid())
+  subjectUserId    String
+  type             String
+  status           String   @default("open")
+  priority         String   @default("medium")
+  title            String
+  description      String?
+  evidence         Json?
+  assignedToUserId String?
+  outcome          String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  closedAt         DateTime?
+
+  subject    User @relation("ComplianceCaseSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
+  assignedTo User? @relation("ComplianceCaseAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  notes      ComplianceCaseNote[]
+
+  @@index([subjectUserId, createdAt])
+  @@index([status, priority, createdAt])
+  @@index([type, createdAt])
+  @@map("compliance_cases")
+}
+
+model ComplianceCaseNote {
+  id        String   @id @default(cuid())
+  caseId    String
+  authorId  String
+  note      String
+  action    String
+  status    String?
+  outcome   String?
+  evidence  Json?
+  createdAt DateTime @default(now())
+
+  case   ComplianceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User @relation("ComplianceCaseNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@index([authorId, createdAt])
+  @@map("compliance_case_notes")
 }
 
 model AiModelControl {
