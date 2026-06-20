@@ -697,6 +697,8 @@ Acceptance criteria:
 
 Summary: Connect AI outputs to the UI with safe fallback behavior.
 
+Implementation status: Complete. AI-driven lobby rankings, targeted offers, responsible-play messages, and admin AI panels now sanitize incoming data, render fallback notices, and keep standard catalog/promotions/admin surfaces usable when AI responses fail or arrive incomplete.
+
 Scope:
 - Render recommendations.
 - Render bonus banners.

@@ -123,6 +123,7 @@ export default function App() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
+  const [aiUiFallbacks, setAiUiFallbacks] = useState<Record<string, string>>({});
   const [authForm, setAuthForm] = useState({
     username: 'neon_private',
     email: '',
@@ -147,7 +148,17 @@ export default function App() {
 
   const notifyResponsiblePlay = (intervention?: ResponsiblePlayInterventionDto) => {
     if (!intervention || intervention.level === 'none') return;
-    triggerNotification(intervention.message, intervention.level === 'cooldown' ? 'error' : 'info');
+    triggerNotification(safeText(intervention.message, 'Responsible play check triggered.'), intervention.level === 'cooldown' ? 'error' : 'info');
+  };
+
+  const setAiFallback = (key: string, message?: string) => {
+    setAiUiFallbacks(prev => {
+      if (!message) {
+        const { [key]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [key]: message };
+    });
   };
 
   useEffect(() => {
@@ -282,9 +293,12 @@ export default function App() {
   const loadGameRecommendations = async () => {
     try {
       const result = await fetchGameRecommendations({ limit: 20 });
-      setGameRecommendations(result.recommendations);
+      const recommendations = sanitizeGameRecommendations(result.recommendations);
+      setGameRecommendations(recommendations);
+      setAiFallback('recommendations', recommendations.length ? undefined : 'Recommendation ranking is unavailable, showing the standard catalog order.');
     } catch (error) {
       console.warn('Game recommendations failed', error);
+      setAiFallback('recommendations', 'Recommendation service is unavailable, showing the standard catalog order.');
       setGameRecommendations([]);
     }
   };
@@ -292,9 +306,12 @@ export default function App() {
   const loadTargetedBonuses = async () => {
     try {
       const result = await fetchTargetedBonuses();
-      setTargetedBonuses(result.offers);
+      const offers = sanitizeTargetedOffers(result.offers);
+      setTargetedBonuses(offers);
+      setAiFallback('bonuses', offers.length ? undefined : 'Targeted offers are unavailable, showing standard promotions.');
     } catch (error) {
       console.warn('Targeted bonuses failed', error);
+      setAiFallback('bonuses', 'Targeted offers are unavailable, showing standard promotions.');
       setTargetedBonuses([]);
     }
   };
@@ -916,6 +933,9 @@ export default function App() {
                 </div>
 
                 {/* Grid */}
+                {aiUiFallbacks.recommendations && (
+                  <AiFallbackNotice message={aiUiFallbacks.recommendations} />
+                )}
                 {filteredGames.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
                     {filteredGames.slice(0, 20).map(g => (
@@ -940,7 +960,7 @@ export default function App() {
                             <div className="flex items-center justify-between bg-neutral-950 border border-neutral-850 rounded px-2 py-1">
                               <span className="text-[9px] text-[#00FF88] font-black uppercase">Rank #{recommendationRank.get(g.id)?.rank}</span>
                               <span className="text-[9px] text-neutral-500 font-mono truncate ml-2">
-                                {recommendationRank.get(g.id)?.reasons[0]?.replaceAll('_', ' ')}
+                                {safeReason(recommendationRank.get(g.id)?.reasons[0])}
                               </span>
                             </div>
                           )}
@@ -1145,6 +1165,10 @@ export default function App() {
                   <p className="text-xs text-neutral-400">Claim match rewards and non-deposit credits to play.</p>
                 </div>
 
+                {aiUiFallbacks.bonuses && (
+                  <AiFallbackNotice message={aiUiFallbacks.bonuses} />
+                )}
+
                 {targetedBonuses.length > 0 && (
                   <div className="bg-[#10101C] border border-[#00FF88]/20 rounded-2xl p-4 space-y-3">
                     <div className="flex items-center justify-between gap-3">
@@ -1165,13 +1189,13 @@ export default function App() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <span className="text-[9px] uppercase font-black text-[#FF0055]">{offer.segment}</span>
-                              <h4 className="text-xs font-black uppercase text-white">{offer.title}</h4>
+                              <h4 className="text-xs font-black uppercase text-white">{safeText(offer.title, 'Targeted offer')}</h4>
                             </div>
-                            <span className="text-xs font-black font-mono text-[#00FF88]">${offer.amount}</span>
+                            <span className="text-xs font-black font-mono text-[#00FF88]">${safeMoney(offer.amount)}</span>
                           </div>
-                          <p className="text-[10px] text-neutral-400 leading-relaxed">{offer.description}</p>
+                          <p className="text-[10px] text-neutral-400 leading-relaxed">{safeText(offer.description, 'Offer details unavailable.')}</p>
                           <div className="text-[9px] text-neutral-500 font-mono truncate">
-                            {offer.reasonCodes.join(' / ').replaceAll('_', ' ')}
+                            {safeReasonList(offer.reasonCodes)}
                           </div>
                           <button
                             onClick={() => void claimTargetedBonus(offer)}
@@ -1401,9 +1425,9 @@ export default function App() {
                     {(adminSummary?.aiDecisionExplanations ?? []).slice(0, 8).map(explanation => (
                       <AdminRow
                         key={explanation.id}
-                        left={`${explanation.decisionType} / ${explanation.modelVersion}`}
-                        right={explanation.reasonCodes[0] ?? 'trace'}
-                        detail={explanation.createdAt.slice(0, 19).replace('T', ' ')}
+                        left={`${safeText(explanation.decisionType, 'decision')} / ${safeText(explanation.modelVersion, 'version')}`}
+                        right={safeReason(explanation.reasonCodes[0])}
+                        detail={safeDateTime(explanation.createdAt)}
                       />
                     ))}
                     {adminSummary?.aiDecisionExplanations.length === 0 && <EmptyAdminRow />}
@@ -1414,20 +1438,23 @@ export default function App() {
                       <>
                         <AdminRow
                           left="Overall status"
-                          right={adminSummary.aiModelHealth.status}
-                          detail={adminSummary.aiModelHealth.generatedAt.slice(0, 19).replace('T', ' ')}
+                          right={safeText(adminSummary.aiModelHealth.status, 'unknown')}
+                          detail={safeDateTime(adminSummary.aiModelHealth.generatedAt)}
                         />
                         {adminSummary.aiModelHealth.metrics.slice(0, 3).map(metric => (
                           <AdminRow
                             key={metric.modelKey}
-                            left={`${metric.modelKey} / ${metric.status}`}
-                            right={`${Math.round(metric.fallbackRatio * 100)}% fallback`}
-                            detail={metric.reasonCodes.slice(0, 2).join(' / ')}
+                            left={`${safeText(metric.modelKey, 'model')} / ${safeText(metric.status, 'unknown')}`}
+                            right={`${safePercent(metric.fallbackRatio)} fallback`}
+                            detail={safeReasonList(metric.reasonCodes, 2)}
                           />
                         ))}
+                        {adminSummary.aiModelHealth.metrics.length === 0 && (
+                          <AdminRow left="No model activity" right="fallback ready" detail="No model-assisted decisions have been recorded yet" />
+                        )}
                       </>
                     ) : (
-                      <EmptyAdminRow />
+                      <AdminRow left="Health unavailable" right="fallback ready" detail="AI monitoring data did not load" />
                     )}
                   </AdminPanel>
 
@@ -1466,12 +1493,12 @@ export default function App() {
                         <AdminRow
                           left={`${adminSummary.churnScore.band} / ${adminSummary.churnScore.version}`}
                           right={String(adminSummary.churnScore.score)}
-                          detail={adminSummary.churnScore.reasonCodes.slice(0, 2).join(' / ')}
+                          detail={safeReasonList(adminSummary.churnScore.reasonCodes, 2)}
                         />
                         <AdminRow
                           left="Retention action"
                           right={adminSummary.churnScore.recommendedActions[0] ?? 'monitor'}
-                          detail={adminSummary.churnScore.createdAt.slice(0, 19).replace('T', ' ')}
+                          detail={safeDateTime(adminSummary.churnScore.createdAt)}
                         />
                       </>
                     ) : (
@@ -1485,12 +1512,12 @@ export default function App() {
                         <AdminRow
                           left={`${adminSummary.fraudScore.band} / ${adminSummary.fraudScore.version}`}
                           right={String(adminSummary.fraudScore.score)}
-                          detail={adminSummary.fraudScore.reasonCodes.slice(0, 2).join(' / ')}
+                          detail={safeReasonList(adminSummary.fraudScore.reasonCodes, 2)}
                         />
                         <AdminRow
                           left="Review action"
                           right={adminSummary.fraudScore.recommendedActions[0] ?? 'monitor'}
-                          detail={adminSummary.fraudScore.createdAt.slice(0, 19).replace('T', ' ')}
+                          detail={safeDateTime(adminSummary.fraudScore.createdAt)}
                         />
                       </>
                     ) : (
@@ -1504,12 +1531,12 @@ export default function App() {
                         <AdminRow
                           left={`${adminSummary.responsiblePlayIntervention.level} / ${adminSummary.responsiblePlayIntervention.version}`}
                           right={String(adminSummary.responsiblePlayIntervention.score)}
-                          detail={adminSummary.responsiblePlayIntervention.reasonCodes.slice(0, 2).join(' / ')}
+                          detail={safeReasonList(adminSummary.responsiblePlayIntervention.reasonCodes, 2)}
                         />
                         <AdminRow
                           left="Intervention"
                           right={adminSummary.responsiblePlayIntervention.requiresAcknowledgement ? 'ack required' : 'notice'}
-                          detail={adminSummary.responsiblePlayIntervention.createdAt.slice(0, 19).replace('T', ' ')}
+                          detail={safeDateTime(adminSummary.responsiblePlayIntervention.createdAt)}
                         />
                       </>
                     ) : (
@@ -1857,6 +1884,75 @@ const EmptyAdminRow: React.FC = () => {
     </div>
   );
 };
+
+const AiFallbackNotice: React.FC<{ message: string }> = ({ message }) => (
+  <div className="bg-neutral-950 border border-yellow-500/25 rounded-lg px-3 py-2 text-[11px] text-yellow-300">
+    {message}
+  </div>
+);
+
+const sanitizeGameRecommendations = (value: unknown): GameRecommendationDto[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is GameRecommendationDto =>
+      typeof item?.gameId === 'string' &&
+      Number.isFinite(item.rank) &&
+      Number.isFinite(item.score) &&
+      Array.isArray(item.reasons)
+    )
+    .map(item => ({
+      gameId: item.gameId,
+      rank: Math.max(1, Math.floor(item.rank)),
+      score: Math.max(0, Math.min(100, Math.round(item.score))),
+      reasons: item.reasons.filter((reason): reason is string => typeof reason === 'string')
+    }));
+};
+
+const sanitizeTargetedOffers = (value: unknown): TargetedBonusOfferDto[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is TargetedBonusOfferDto =>
+      typeof item?.id === 'string' &&
+      typeof item.campaignId === 'string' &&
+      typeof item.title === 'string' &&
+      typeof item.description === 'string'
+    )
+    .map(item => ({
+      ...item,
+      score: Number.isFinite(item.score) ? item.score : 0,
+      amount: Number.isFinite(item.amount) ? item.amount : 0,
+      reasonCodes: Array.isArray(item.reasonCodes) ? item.reasonCodes.filter((reason): reason is string => typeof reason === 'string') : [],
+      suppressionCodes: Array.isArray(item.suppressionCodes) ? item.suppressionCodes.filter((reason): reason is string => typeof reason === 'string') : []
+    }));
+};
+
+const safeText = (value: unknown, fallback: string) =>
+  typeof value === 'string' && value.trim() ? value.trim() : fallback;
+
+const safeReason = (value: unknown) =>
+  safeText(value, 'fallback').replaceAll('_', ' ');
+
+const safeReasonList = (value: unknown, limit = 3) => {
+  if (!Array.isArray(value)) return 'fallback';
+  const reasons = value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .slice(0, limit)
+    .map(reason => reason.replaceAll('_', ' '));
+  return reasons.length ? reasons.join(' / ') : 'fallback';
+};
+
+const safeDateTime = (value: unknown) => {
+  if (typeof value !== 'string') return 'time unavailable';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'time unavailable';
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+const safeMoney = (value: unknown) =>
+  Number.isFinite(value) ? Math.max(0, Math.round(Number(value))) : 0;
+
+const safePercent = (value: unknown) =>
+  `${Math.max(0, Math.min(100, Math.round((Number.isFinite(value) ? Number(value) : 0) * 100)))}%`;
 
 function AuthGate({ mode, setMode, form, setForm, submitting, onSubmit }: AuthGateProps) {
   return (
