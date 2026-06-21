@@ -868,17 +868,53 @@ app.get('/api/notifications', async (req, res) => {
   }
 });
 
+app.get('/api/notifications/preferences', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    res.json({ preferences: await notificationService.getPreferences({ userId: user.id }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/notifications/preferences/:type', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const type = parseNotificationType(req.params.type);
+    const preference = await notificationService.updatePreference({
+      userId: user.id,
+      type,
+      enabled: Boolean(req.body.enabled)
+    });
+    res.json({ preference });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/notifications/deliveries', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const status = req.query.status === 'delivered' || req.query.status === 'suppressed' ? req.query.status : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ deliveries: await notificationService.listDeliveries({ userId, status, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/notifications', async (req, res) => {
   try {
     const user = await requireAuth(req);
-    const notification = await notificationService.create({
+    const result = await notificationService.create({
       userId: user.id,
       type: req.body.type === 'support' || req.body.type === 'admin' ? req.body.type : 'system',
       title: String(req.body.title ?? ''),
       message: String(req.body.message ?? ''),
       metadata: isRecord(req.body.metadata) ? req.body.metadata : undefined
     });
-    res.status(201).json({ notification });
+    res.status(result.notification ? 201 : 202).json(result);
   } catch (error) {
     sendApiError(res, error);
   }
@@ -1323,6 +1359,20 @@ function isFraudBand(value: unknown): value is 'low' | 'medium' | 'high' | 'crit
 
 function isResponsiblePlayLevel(value: unknown): value is 'none' | 'notice' | 'warning' | 'cooldown' {
   return value === 'none' || value === 'notice' || value === 'warning' || value === 'cooldown';
+}
+
+function parseNotificationType(value: unknown) {
+  if (
+    value === 'system' ||
+    value === 'bonus' ||
+    value === 'wallet' ||
+    value === 'risk' ||
+    value === 'support' ||
+    value === 'admin'
+  ) {
+    return value;
+  }
+  throw new Error('Unsupported notification type');
 }
 
 async function trackAiEventSafely(input: {

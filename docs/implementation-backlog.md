@@ -749,6 +749,8 @@ Acceptance criteria:
 
 Summary: Add user notification preferences and admin delivery visibility.
 
+Implementation status: Complete. Notification preferences are now persisted for memory and Prisma drivers, optional categories can be muted, mandatory system/risk/admin notices stay enabled, every notification attempt records a delivered or suppressed in-app delivery decision, admins can review delivery outcomes, and the inbox UI exposes preference toggles.
+
 Scope:
 - User opt-in and opt-out preferences.
 - Category-level notification controls.

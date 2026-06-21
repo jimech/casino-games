@@ -110,6 +110,8 @@ model User {
   churnScores   ChurnScore[]
   fraudScores   FraudScore[]
   responsiblePlayInterventions ResponsiblePlayIntervention[]
+  notificationPreferences NotificationPreference[]
+  notificationDeliveries NotificationDelivery[]
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
@@ -307,6 +309,40 @@ model Notification {
 
   @@index([userId, readAt, createdAt])
   @@map("notifications")
+}
+
+model NotificationPreference {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  enabled   Boolean          @default(true)
+  updatedAt DateTime         @updatedAt
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId, enabled])
+  @@map("notification_preferences")
+}
+
+model NotificationDelivery {
+  id                 String           @id @default(cuid())
+  userId             String
+  notificationId     String?
+  type               NotificationType
+  channel            String
+  status             String
+  reason             String?
+  preferenceSnapshot Json?
+  createdAt          DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([notificationId])
+  @@index([status, createdAt])
+  @@map("notification_deliveries")
 }
 
 model BonusCampaign {

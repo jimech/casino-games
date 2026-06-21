@@ -103,6 +103,35 @@ const main = async () => {
   if (!notificationList.notifications.some((notification: { type: string }) => notification.type === 'bonus')) {
     throw new Error('Expected bonus notification to be created');
   }
+  const preferences = await getJson(`${baseUrl}/api/notifications/preferences`, adminSession.token);
+  assertArray(preferences.preferences, 'notification preferences array');
+  if (!preferences.preferences.some((preference: { type: string; mandatory: boolean }) => preference.type === 'risk' && preference.mandatory)) {
+    throw new Error('Expected risk notification preference to be mandatory');
+  }
+  const mutedSupport = await postJson(`${baseUrl}/api/notifications/preferences/support`, adminSession.token, {
+    enabled: false
+  });
+  assertEqual(mutedSupport.preference.enabled, false, 'support notification preference muted');
+  const suppressedSupport = await postJson(`${baseUrl}/api/notifications`, adminSession.token, {
+    type: 'support',
+    title: 'Muted support note',
+    message: 'This should be suppressed by preference.'
+  });
+  assertEqual(suppressedSupport.delivery.status, 'suppressed', 'support notification suppressed');
+  const forcedRiskPreference = await postJson(`${baseUrl}/api/notifications/preferences/risk`, adminSession.token, {
+    enabled: false
+  });
+  assertEqual(forcedRiskPreference.preference.enabled, true, 'mandatory risk preference forced enabled');
+  const deliveredSystem = await postJson(`${baseUrl}/api/notifications`, adminSession.token, {
+    type: 'system',
+    title: 'Required system note',
+    message: 'This required note must be delivered.'
+  });
+  assertEqual(deliveredSystem.delivery.status, 'delivered', 'mandatory system notification delivered');
+  const notificationDeliveries = await getJson(`${baseUrl}/api/admin/notifications/deliveries?limit=20`, adminSession.token);
+  if (!notificationDeliveries.deliveries.some((delivery: { status: string; type: string }) => delivery.status === 'suppressed' && delivery.type === 'support')) {
+    throw new Error('Expected suppressed support delivery to appear for admin review');
+  }
 
   const bet = await postJson(`${baseUrl}/api/bets`, adminSession.token, {
     gameId: 'roulette',

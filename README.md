@@ -461,6 +461,29 @@ curl http://localhost:3000/api/notifications \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Read notification preferences:
+
+```bash
+curl http://localhost:3000/api/notifications/preferences \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Mute an optional notification category:
+
+```bash
+curl -X POST http://localhost:3000/api/notifications/preferences/support \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"enabled":false}'
+```
+
+Review notification delivery decisions as an admin:
+
+```bash
+curl "http://localhost:3000/api/admin/notifications/deliveries?limit=25" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Current Status
 
 - React/Vite frontend prototype
@@ -474,7 +497,7 @@ curl http://localhost:3000/api/notifications \
 - Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
 - Bonus service supports persisted welcome and daily credit claims with ledger-linked wallet credits
 - Admin audit panel summarizes wallet, ledger, rounds, risk events, and bonus claims
-- Notification inbox persists bonus, support, admin, and system notices with unread/read state
+- Notification inbox persists bonus, support, admin, and system notices with unread/read state, category preferences, and admin-visible delivery decisions
 - Quality gate and GitHub Actions workflow cover schema validation, TypeScript, tests, build, and memory API smoke
 - Frontend game wallet actions mirrored to backend bet and settlement APIs
 - Roulette has a server-authoritative spin endpoint using backend RNG and payout resolution

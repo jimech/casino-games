@@ -24,10 +24,12 @@ import {
   createNotification,
   createWalletEventSource,
   exportAdminRoundEvidence,
+  fetchAdminNotificationDeliveries,
   fetchAuthSession,
   fetchAdminRoundEvidence,
   fetchAdminUserDetail,
   fetchAdminSummary,
+  fetchNotificationPreferences,
   fetchGameRecommendations,
   fetchNotifications,
   fetchTargetedBonuses,
@@ -37,7 +39,9 @@ import {
   loginAccount,
   logoutAccount,
   markNotificationRead,
+  NotificationDeliveryDto,
   NotificationDto,
+  NotificationPreferenceDto,
   placeBet,
   registerAccount,
   ResponsiblePlayInterventionDto,
@@ -49,7 +53,8 @@ import {
   startCrashRound,
   startPokerRound,
   TargetedBonusOfferDto,
-  trackAiEvent
+  trackAiEvent,
+  updateNotificationPreference
 } from './api/casinoApi';
 
 // Complete 20-Game Catalog Pre-designed nodes
@@ -135,6 +140,8 @@ export default function App() {
   const [adminRoundEvidenceLoading, setAdminRoundEvidenceLoading] = useState(false);
   const [adminRoundExportPreview, setAdminRoundExportPreview] = useState('');
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferenceDto[]>([]);
+  const [adminNotificationDeliveries, setAdminNotificationDeliveries] = useState<NotificationDeliveryDto[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
@@ -185,7 +192,10 @@ export default function App() {
   }, [authSession?.user.id]);
 
   useEffect(() => {
-    if (authSession) void loadNotifications();
+    if (authSession) {
+      void loadNotifications();
+      void loadNotificationPreferences();
+    }
   }, [authSession?.user.id]);
 
   useEffect(() => {
@@ -200,6 +210,7 @@ export default function App() {
     if (authSession && activeCasinoTab === 'admin') {
       void loadAdminSummary();
       void loadAdminUsers();
+      void loadAdminNotificationDeliveries();
     }
   }, [authSession?.user.id, activeCasinoTab]);
 
@@ -355,6 +366,32 @@ export default function App() {
       console.warn('Notification load failed', error);
     } finally {
       setNotificationsLoading(false);
+    }
+  };
+
+  const loadNotificationPreferences = async () => {
+    try {
+      setNotificationPreferences(await fetchNotificationPreferences());
+    } catch (error) {
+      console.warn('Notification preferences load failed', error);
+    }
+  };
+
+  const toggleNotificationPreference = async (type: NotificationDto['type'], enabled: boolean) => {
+    try {
+      const preference = await updateNotificationPreference({ type, enabled });
+      setNotificationPreferences(prev => prev.map(item => item.type === preference.type ? preference : item));
+      triggerNotification(`${preference.type} notifications ${preference.enabled ? 'enabled' : 'muted'}.`, 'info');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Notification preference update failed.", "error");
+    }
+  };
+
+  const loadAdminNotificationDeliveries = async () => {
+    try {
+      setAdminNotificationDeliveries(await fetchAdminNotificationDeliveries({ limit: 25 }));
+    } catch (error) {
+      console.warn('Notification delivery load failed', error);
     }
   };
 
@@ -1764,6 +1801,18 @@ export default function App() {
                       <EmptyAdminRow />
                     )}
                   </AdminPanel>
+
+                  <AdminPanel title="Notification Delivery">
+                    {adminNotificationDeliveries.slice(0, 8).map(delivery => (
+                      <AdminRow
+                        key={delivery.id}
+                        left={`${delivery.type} / ${delivery.status}`}
+                        right={delivery.channel}
+                        detail={`${delivery.reason ?? 'delivered'} / ${safeDateTime(delivery.createdAt)}`}
+                      />
+                    ))}
+                    {adminNotificationDeliveries.length === 0 && <EmptyAdminRow />}
+                  </AdminPanel>
                 </div>
               </div>
             )}
@@ -1796,6 +1845,29 @@ export default function App() {
                   <div className="bg-[#10101C] border border-neutral-850 p-3 rounded-lg">
                     <span className="text-[9px] uppercase font-black text-neutral-500">Total</span>
                     <span className="block text-lg font-black text-[#00FF88] font-mono mt-1">{notifications.length}</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#10101C] border border-neutral-850 rounded-lg p-4 space-y-3">
+                  <h3 className="text-[11px] uppercase font-black tracking-widest text-yellow-400">Delivery Preferences</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {notificationPreferences.map(preference => (
+                      <label key={preference.type} className="flex items-center justify-between gap-3 bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                        <span className="min-w-0">
+                          <span className="block text-xs font-bold text-neutral-200 uppercase">{preference.type}</span>
+                          <span className="block text-[10px] text-neutral-500 font-mono">
+                            {preference.mandatory ? 'required delivery' : preference.enabled ? 'optional active' : 'optional muted'}
+                          </span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={preference.enabled}
+                          disabled={preference.mandatory}
+                          onChange={event => void toggleNotificationPreference(preference.type, event.target.checked)}
+                          className="h-4 w-4 accent-[#00FF88] disabled:opacity-40"
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
 

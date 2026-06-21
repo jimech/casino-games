@@ -477,6 +477,26 @@ export interface NotificationDto {
   createdAt: string;
 }
 
+export interface NotificationPreferenceDto {
+  userId: string;
+  type: NotificationDto['type'];
+  enabled: boolean;
+  mandatory: boolean;
+  updatedAt: string;
+}
+
+export interface NotificationDeliveryDto {
+  id: string;
+  userId: string;
+  notificationId?: string;
+  type: NotificationDto['type'];
+  channel: 'in_app';
+  status: 'delivered' | 'suppressed';
+  reason?: string;
+  preferenceSnapshot?: Record<string, unknown>;
+  createdAt: string;
+}
+
 export const CASINO_USER_ID = 'demo';
 const AUTH_TOKEN_STORAGE_KEY = 'casino.sessionToken';
 
@@ -898,19 +918,56 @@ export const fetchNotifications = async (input: { unreadOnly?: boolean; limit?: 
   return payload.notifications;
 };
 
+export const fetchNotificationPreferences = async (): Promise<NotificationPreferenceDto[]> => {
+  const response = await fetch('/api/notifications/preferences', {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ preferences: NotificationPreferenceDto[] }>(response);
+  return payload.preferences;
+};
+
+export const updateNotificationPreference = async (input: {
+  type: NotificationDto['type'];
+  enabled: boolean;
+}): Promise<NotificationPreferenceDto> => {
+  const response = await fetch(`/api/notifications/preferences/${encodeURIComponent(input.type)}`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ enabled: input.enabled })
+  });
+  const payload = await parseJsonResponse<{ preference: NotificationPreferenceDto }>(response);
+  return payload.preference;
+};
+
+export const fetchAdminNotificationDeliveries = async (input: {
+  userId?: string;
+  status?: NotificationDeliveryDto['status'];
+  limit?: number;
+} = {}): Promise<NotificationDeliveryDto[]> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  if (input.status) params.set('status', input.status);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/notifications/deliveries${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ deliveries: NotificationDeliveryDto[] }>(response);
+  return payload.deliveries;
+};
+
 export const createNotification = async (input: {
   type: 'support' | 'admin' | 'system';
   title: string;
   message: string;
   metadata?: Record<string, unknown>;
-}): Promise<NotificationDto> => {
+}): Promise<{ notification?: NotificationDto; delivery: NotificationDeliveryDto }> => {
   const response = await fetch('/api/notifications', {
     method: 'POST',
     headers: jsonHeaders(),
     body: JSON.stringify(input)
   });
-  const payload = await parseJsonResponse<{ notification: NotificationDto }>(response);
-  return payload.notification;
+  return parseJsonResponse<{ notification?: NotificationDto; delivery: NotificationDeliveryDto }>(response);
 };
 
 export const markNotificationRead = async (notificationId: string): Promise<NotificationDto> => {
