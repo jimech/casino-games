@@ -14,6 +14,7 @@ import { UserProfile, GameCatalogItem, BlogPost } from './types';
 import {
   AuthSessionDto,
   AuthUserDto,
+  AdminRoundEvidenceDto,
   AdminUserDetailDto,
   AdminSummaryDto,
   actBlackjackRound,
@@ -22,7 +23,9 @@ import {
   claimBonus,
   createNotification,
   createWalletEventSource,
+  exportAdminRoundEvidence,
   fetchAuthSession,
+  fetchAdminRoundEvidence,
   fetchAdminUserDetail,
   fetchAdminSummary,
   fetchGameRecommendations,
@@ -126,8 +129,11 @@ export default function App() {
   const [adminUserQuery, setAdminUserQuery] = useState('');
   const [adminUserResults, setAdminUserResults] = useState<AuthUserDto[]>([]);
   const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetailDto | null>(null);
+  const [adminRoundEvidence, setAdminRoundEvidence] = useState<AdminRoundEvidenceDto | null>(null);
   const [adminUserSearchLoading, setAdminUserSearchLoading] = useState(false);
   const [adminUserDetailLoading, setAdminUserDetailLoading] = useState(false);
+  const [adminRoundEvidenceLoading, setAdminRoundEvidenceLoading] = useState(false);
+  const [adminRoundExportPreview, setAdminRoundExportPreview] = useState('');
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
@@ -307,11 +313,37 @@ export default function App() {
   const loadAdminUserDetail = async (userId: string) => {
     setAdminUserDetailLoading(true);
     try {
-      setAdminUserDetail(await fetchAdminUserDetail(userId));
+      const detail = await fetchAdminUserDetail(userId);
+      setAdminUserDetail(detail);
+      setAdminRoundEvidence(null);
+      setAdminRoundExportPreview('');
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Admin user detail failed to load.", "error");
     } finally {
       setAdminUserDetailLoading(false);
+    }
+  };
+
+  const loadAdminRoundEvidence = async (roundId: string) => {
+    setAdminRoundEvidenceLoading(true);
+    try {
+      setAdminRoundEvidence(await fetchAdminRoundEvidence(roundId));
+      setAdminRoundExportPreview('');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Round evidence failed to load.", "error");
+    } finally {
+      setAdminRoundEvidenceLoading(false);
+    }
+  };
+
+  const previewAdminRoundEvidenceExport = async () => {
+    if (!adminRoundEvidence) return;
+    try {
+      const exported = await exportAdminRoundEvidence(adminRoundEvidence.round.id);
+      setAdminRoundExportPreview(exported.slice(0, 360));
+      triggerNotification('Round evidence export generated.', 'success');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Round evidence export failed.", "error");
     }
   };
 
@@ -1479,12 +1511,79 @@ export default function App() {
                           right={adminUserDetail.notifications[0]?.type ?? 'none'}
                           detail={adminUserDetail.notifications[0]?.title ?? 'No notifications recorded'}
                         />
+                        {adminUserDetail.rounds.slice(0, 4).map(round => (
+                          <button
+                            key={round.id}
+                            type="button"
+                            onClick={() => void loadAdminRoundEvidence(round.id)}
+                            className={`w-full text-left rounded-md ${adminRoundEvidence?.round.id === round.id ? 'ring-1 ring-[#00FF88]' : ''}`}
+                          >
+                            <AdminRow
+                              left={`${round.gameId} / ${round.status}`}
+                              right={`$${round.stake}`}
+                              detail={`${round.id} / payout $${round.payout}`}
+                            />
+                          </button>
+                        ))}
                       </>
                     ) : (
                       <AdminRow
                         left={adminUserDetailLoading ? 'Loading account' : 'No account selected'}
                         right="review"
                         detail="Search for a user to load wallet, risk, compliance, and AI evidence"
+                      />
+                    )}
+                  </AdminPanel>
+
+                  <AdminPanel title="Round Evidence">
+                    {adminRoundEvidence ? (
+                      <>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-neutral-200 truncate">{adminRoundEvidence.round.gameId} / {adminRoundEvidence.round.status}</p>
+                            <p className="text-[10px] text-neutral-500 font-mono truncate">{adminRoundEvidence.round.id}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void previewAdminRoundEvidenceExport()}
+                            className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-[#00FF88] text-[10px] font-black uppercase px-3 py-2 rounded-lg"
+                          >
+                            Export JSON
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                          {[
+                            ['Ledger', adminRoundEvidence.integrity.ledgerEntryCount],
+                            ['Risk', adminRoundEvidence.integrity.riskEventCount],
+                            ['AI Events', adminRoundEvidence.integrity.aiEventCount],
+                            ['AI Decisions', adminRoundEvidence.integrity.aiDecisionExplanationCount],
+                            ['Cases', adminRoundEvidence.integrity.complianceCaseCount]
+                          ].map(([label, value]) => (
+                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                              <span className="block text-sm font-black font-mono text-[#00FF88]">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {adminRoundEvidence.replayTimeline.slice(0, 5).map((event, index) => (
+                          <AdminRow
+                            key={`${event.type}-${event.at}-${index}`}
+                            left={event.type}
+                            right={event.at.slice(11, 19)}
+                            detail={event.summary}
+                          />
+                        ))}
+                        {adminRoundExportPreview && (
+                          <pre className="max-h-32 overflow-hidden whitespace-pre-wrap break-words bg-neutral-950 border border-neutral-850 rounded-md p-3 text-[10px] text-neutral-400">
+                            {adminRoundExportPreview}
+                          </pre>
+                        )}
+                      </>
+                    ) : (
+                      <AdminRow
+                        left={adminRoundEvidenceLoading ? 'Loading round' : 'No round selected'}
+                        right="read only"
+                        detail="Select a round from User Detail to inspect ledger, risk, AI, and case evidence"
                       />
                     )}
                   </AdminPanel>

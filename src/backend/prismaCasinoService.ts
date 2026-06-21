@@ -108,6 +108,12 @@ export class PrismaCasinoService {
     return rounds.map(roundToRecord);
   }
 
+  async getRoundById(roundId: string): Promise<GameRoundRecord | undefined> {
+    assertText(roundId, 'roundId');
+    const round = await this.prisma.gameRound.findUnique({ where: { id: roundId } });
+    return round ? roundToRecord(round) : undefined;
+  }
+
   async placeBet(input: PlaceBetInput): Promise<GameRoundRecord> {
     assertText(input.userId, 'userId');
     assertText(input.gameId, 'gameId');

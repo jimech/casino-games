@@ -829,6 +829,34 @@ app.get('/api/admin/users/:userId', async (req, res) => {
   }
 });
 
+app.get('/api/admin/rounds/:roundId', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const evidence = await buildAdminRoundEvidence(req.params.roundId, admin.id);
+    res.json(evidence);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/rounds/:roundId/evidence-export', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const evidence = await buildAdminRoundEvidence(req.params.roundId, admin.id);
+    const generatedAt = new Date().toISOString();
+    const packet = {
+      exportedAt: generatedAt,
+      exportVersion: 'round-evidence-v1',
+      ...evidence
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="round-evidence-${evidence.round.id}.json"`);
+    res.send(JSON.stringify(packet, null, 2));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/notifications', async (req, res) => {
   try {
     const user = await requireAuth(req);
@@ -1396,6 +1424,139 @@ async function auditComplianceCaseAction(adminUserId: string, subjectUserId: str
       ...context
     }
   });
+}
+
+async function buildAdminRoundEvidence(roundId: string, adminUserId: string) {
+  const round = await casinoService.getRoundById(roundId);
+  if (!round) throw new Error(`Round not found: ${roundId}`);
+  const [user, ledger, riskEvents, aiEvents, aiDecisionExplanations, complianceCases] = await Promise.all([
+    authService.getUserById({ userId: round.userId }),
+    casinoService.getLedger(round.userId),
+    riskService.listEvents({ userId: round.userId, limit: 200 }),
+    aiEventService.list({ userId: round.userId, limit: 200 }),
+    aiDecisionExplanationService.list({ userId: round.userId, limit: 200 }),
+    complianceCaseService.list({ subjectUserId: round.userId, limit: 100 })
+  ]);
+
+  if (!user) throw new Error(`User not found: ${round.userId}`);
+  const linkedLedger = ledger
+    .filter(entry => recordReferencesRound(entry.metadata, round.id))
+    .map(sanitizeLedgerEntryForApi);
+  const linkedRiskEvents = riskEvents.filter(event => recordReferencesRound(event.context, round.id));
+  const linkedAiEvents = aiEvents.filter(event => recordReferencesRound(event.context, round.id));
+  const linkedAiDecisionExplanations = aiDecisionExplanations.filter(explanation =>
+    explanation.sourceRecordId === round.id ||
+    recordReferencesRound(explanation.inputFeatures, round.id) ||
+    recordReferencesRound(explanation.output, round.id)
+  );
+  const linkedComplianceCases = complianceCases.filter(caseRecord =>
+    recordReferencesRound(caseRecord.evidence, round.id) ||
+    caseRecord.notes.some(note => recordReferencesRound(note.evidence, round.id))
+  );
+  const replayTimeline = buildRoundReplayTimeline(round, linkedLedger, linkedRiskEvents, linkedAiEvents);
+
+  await trackAiEventSafely({
+    userId: adminUserId,
+    category: 'admin',
+    name: 'admin_round_evidence_viewed',
+    context: {
+      roundId: round.id,
+      subjectUserId: round.userId,
+      gameId: round.gameId,
+      status: round.status,
+      ledgerCount: linkedLedger.length,
+      riskEventCount: linkedRiskEvents.length,
+      complianceCaseCount: linkedComplianceCases.length
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    replayMode: 'read_only' as const,
+    round,
+    user,
+    ledger: linkedLedger,
+    riskEvents: linkedRiskEvents,
+    aiEvents: linkedAiEvents,
+    aiDecisionExplanations: linkedAiDecisionExplanations,
+    complianceCases: linkedComplianceCases,
+    replayTimeline,
+    integrity: {
+      ledgerEntryCount: linkedLedger.length,
+      riskEventCount: linkedRiskEvents.length,
+      aiEventCount: linkedAiEvents.length,
+      aiDecisionExplanationCount: linkedAiDecisionExplanations.length,
+      complianceCaseCount: linkedComplianceCases.length
+    }
+  };
+}
+
+function buildRoundReplayTimeline(
+  round: GameRoundRecord,
+  ledger: Array<{ type: string; amount: number; createdAt: string; idempotencyKey: string }>,
+  riskEvents: Array<{ type: string; severity: string; score: number; createdAt: string }>,
+  aiEvents: Array<{ category: string; name: string; createdAt: string }>
+) {
+  return [
+    {
+      type: 'round_created',
+      at: round.createdAt,
+      summary: `${round.gameId} round opened with stake ${round.stake}`,
+      data: {
+        roundId: round.id,
+        status: round.status,
+        lockIdempotencyKey: round.lockIdempotencyKey
+      }
+    },
+    ...ledger.map(entry => ({
+      type: `ledger_${entry.type}`,
+      at: entry.createdAt,
+      summary: `${entry.type} ${entry.amount}`,
+      data: {
+        idempotencyKey: entry.idempotencyKey,
+        amount: entry.amount
+      }
+    })),
+    ...riskEvents.map(event => ({
+      type: `risk_${event.type}`,
+      at: event.createdAt,
+      summary: `${event.severity} risk score ${event.score}`,
+      data: {
+        riskType: event.type,
+        severity: event.severity,
+        score: event.score
+      }
+    })),
+    ...aiEvents.map(event => ({
+      type: `ai_${event.category}_${event.name}`,
+      at: event.createdAt,
+      summary: `${event.category} / ${event.name}`,
+      data: {
+        category: event.category,
+        name: event.name
+      }
+    })),
+    ...(round.settledAt ? [{
+      type: 'round_closed',
+      at: round.settledAt,
+      summary: `${round.status} with payout ${round.payout}`,
+      data: {
+        status: round.status,
+        payout: round.payout,
+        settlementIdempotencyKey: round.settlementIdempotencyKey
+      }
+    }] : [])
+  ].sort((first, second) => new Date(first.at).getTime() - new Date(second.at).getTime());
+}
+
+function recordReferencesRound(value: unknown, roundId: string): boolean {
+  if (value === roundId) return true;
+  if (Array.isArray(value)) return value.some(item => recordReferencesRound(item, roundId));
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, nested]) =>
+    (key === 'roundId' && nested === roundId) ||
+    recordReferencesRound(nested, roundId)
+  );
 }
 
 async function resolveAiProfileUserId(req: express.Request, user: AuthUser): Promise<string> {

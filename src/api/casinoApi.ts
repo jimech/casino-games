@@ -441,6 +441,31 @@ export interface AdminUserDetailDto {
   responsiblePlayIntervention?: ResponsiblePlayInterventionDto;
 }
 
+export interface AdminRoundEvidenceDto {
+  generatedAt: string;
+  replayMode: 'read_only';
+  round: RoundDto;
+  user: AuthUserDto;
+  ledger: LedgerEntryDto[];
+  riskEvents: RiskEventDto[];
+  aiEvents: AiEventDto[];
+  aiDecisionExplanations: AiDecisionExplanationDto[];
+  complianceCases: ComplianceCaseDto[];
+  replayTimeline: Array<{
+    type: string;
+    at: string;
+    summary: string;
+    data?: Record<string, unknown>;
+  }>;
+  integrity: {
+    ledgerEntryCount: number;
+    riskEventCount: number;
+    aiEventCount: number;
+    aiDecisionExplanationCount: number;
+    complianceCaseCount: number;
+  };
+}
+
 export interface NotificationDto {
   id: string;
   userId: string;
@@ -663,6 +688,21 @@ export const fetchAdminUserDetail = async (userId: string): Promise<AdminUserDet
     headers: authHeaders()
   });
   return parseJsonResponse<AdminUserDetailDto>(response);
+};
+
+export const fetchAdminRoundEvidence = async (roundId: string): Promise<AdminRoundEvidenceDto> => {
+  const response = await fetch(`/api/admin/rounds/${encodeURIComponent(roundId)}`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<AdminRoundEvidenceDto>(response);
+};
+
+export const exportAdminRoundEvidence = async (roundId: string): Promise<string> => {
+  const response = await fetch(`/api/admin/rounds/${encodeURIComponent(roundId)}/evidence-export`, {
+    headers: authHeaders()
+  });
+  if (!response.ok) await parseJsonResponse(response);
+  return response.text();
 };
 
 export const fetchAiEvents = async (input: {

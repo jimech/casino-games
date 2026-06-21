@@ -439,6 +439,21 @@ curl http://localhost:3000/api/admin/users/USER_ID \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Read a round evidence packet as an admin:
+
+```bash
+curl http://localhost:3000/api/admin/rounds/ROUND_ID \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Export round evidence as JSON:
+
+```bash
+curl http://localhost:3000/api/admin/rounds/ROUND_ID/evidence-export \
+  -H "Authorization: Bearer $TOKEN" \
+  -o round-evidence.json
+```
+
 Read notification inbox:
 
 ```bash

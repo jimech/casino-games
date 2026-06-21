@@ -129,6 +129,11 @@ export class CasinoService {
     return userId ? rounds.filter(round => round.userId === userId) : rounds;
   }
 
+  getRoundById(roundId: string): GameRoundRecord | undefined {
+    this.assertText(roundId, 'roundId');
+    return this.rounds.get(roundId);
+  }
+
   placeBet(input: PlaceBetInput): GameRoundRecord {
     this.assertText(input.userId, 'userId');
     this.assertText(input.gameId, 'gameId');

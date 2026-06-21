@@ -733,6 +733,8 @@ Acceptance criteria:
 
 Summary: Add a deeper round-review view for disputed or risky game rounds.
 
+Implementation status: Complete. Admins can now open `/api/admin/rounds/:roundId` for a read-only round evidence packet and `/api/admin/rounds/:roundId/evidence-export` for a timestamped JSON export. Packets include the round, public account fields, linked ledger entries, risk events, AI events, AI decision explanations, compliance cases, replay timeline, and integrity counts. The Admin Audit UI can load a selected account round and preview the export without mutating wallet or round state.
+
 Scope:
 - Load one round with ledger entries, game outcome, risk events, AI signals, and compliance links.
 - Export an evidence packet for a case.

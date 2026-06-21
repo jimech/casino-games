@@ -111,6 +111,27 @@ const main = async () => {
   });
   assertEqual(bet.wallet.available, 99000, 'high-stake bet wallet lock');
 
+  const roundEvidence = await getJson(`${baseUrl}/api/admin/rounds/${bet.round.id}`, adminSession.token);
+  assertEqual(roundEvidence.round.id, bet.round.id, 'admin round evidence id');
+  assertEqual(roundEvidence.replayMode, 'read_only', 'round evidence replay mode');
+  if (roundEvidence.ledger.length < 1 || roundEvidence.integrity.ledgerEntryCount < 1) {
+    throw new Error('Expected round evidence to include linked ledger entries');
+  }
+  if (!roundEvidence.riskEvents.some((event: { type: string }) => event.type === 'high_stake_round')) {
+    throw new Error('Expected round evidence to include high-stake risk event');
+  }
+  if (!roundEvidence.replayTimeline.some((event: { type: string }) => event.type === 'round_created')) {
+    throw new Error('Expected round evidence replay timeline to include round creation');
+  }
+
+  const roundEvidenceExport = await fetch(`${baseUrl}/api/admin/rounds/${bet.round.id}/evidence-export`, {
+    headers: { Authorization: `Bearer ${adminSession.token}` }
+  });
+  assertEqual(roundEvidenceExport.status, 200, 'round evidence export status');
+  const exportedRoundEvidence = await roundEvidenceExport.json();
+  assertEqual(exportedRoundEvidence.exportVersion, 'round-evidence-v1', 'round evidence export version');
+  assertEqual(exportedRoundEvidence.round.id, bet.round.id, 'round evidence export round id');
+
   await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
     category: 'page',
     name: 'tab_viewed',
