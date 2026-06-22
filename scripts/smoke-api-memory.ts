@@ -79,6 +79,10 @@ const main = async () => {
     headers: { Authorization: `Bearer ${userSession.token}` }
   });
   assertEqual(blockedUserSearch.status, 403, 'regular user admin search access');
+  const blockedRewardsReview = await fetch(`${baseUrl}/api/admin/rewards/review`, {
+    headers: { Authorization: `Bearer ${userSession.token}` }
+  });
+  assertEqual(blockedRewardsReview.status, 403, 'regular user admin rewards review access');
 
   const adminUserSearch = await getJson(`${baseUrl}/api/admin/users?query=quality&limit=10`, adminSession.token);
   assertArray(adminUserSearch.users, 'admin user search array');
@@ -181,6 +185,10 @@ const main = async () => {
   }
   const vipStatusAfterClaim = await getJson(`${baseUrl}/api/vip/status`, adminSession.token);
   assertEqual(vipStatusAfterClaim.status.availableCashback, 0, 'vip cashback only once per week');
+  const rewardsReview = await getJson(`${baseUrl}/api/admin/rewards/review?query=quality&limit=10`, adminSession.token);
+  if (!rewardsReview.accounts.some((account: { user: { id: string }; cashbackClaimedThisWeek: boolean }) => account.user.id === adminSession.user.id && account.cashbackClaimedThisWeek)) {
+    throw new Error('Expected admin rewards review to show claimed VIP cashback');
+  }
 
   await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
     category: 'page',

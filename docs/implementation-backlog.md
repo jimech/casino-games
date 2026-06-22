@@ -781,6 +781,25 @@ Acceptance criteria:
 - Duplicate weekly claims do not credit the wallet again.
 - UI shows real tier, progress, and claim availability.
 
+### T37 - Admin Rewards Review
+
+Summary: Add an admin review surface for bonus claims and VIP cashback controls.
+
+Implementation status: Complete. Admins can now open `/api/admin/rewards/review` to inspect account-level VIP status, bonus claim totals, current-week cashback claim state, cashback ledger credits, and duplicate-claim guard status. The Admin Audit UI adds a rewards panel fed by the same endpoint, and smoke coverage confirms claimed VIP cashback appears in the admin review packet.
+
+Scope:
+- Review bonus claims across searched accounts.
+- Include live VIP status and current-week cashback availability.
+- Show ledger-linked cashback credits.
+- Surface duplicate weekly cashback protection.
+- Add UI and smoke coverage.
+
+Acceptance criteria:
+- Regular users cannot access rewards review.
+- Admins can see bonus totals and VIP status per account.
+- Cashback review includes claim state and ledger credit evidence.
+- Duplicate weekly cashback protection is visible in the review payload.
+
 ## First Working Sequence
 
 Start here:

@@ -492,6 +492,26 @@ export interface AdminRoundEvidenceDto {
   };
 }
 
+export interface AdminRewardsReviewDto {
+  generatedAt: string;
+  summary: {
+    accountCount: number;
+    totalBonusClaimed: number;
+    totalAvailableCashback: number;
+    cashbackClaimsThisWeek: number;
+    duplicateCashbackBlockedCount: number;
+  };
+  accounts: Array<{
+    user: AuthUserDto;
+    vipStatus: VipStatusDto;
+    bonusClaims: BonusClaimDto[];
+    bonusTotal: number;
+    cashbackClaimedThisWeek: boolean;
+    cashbackLedgerEntries: LedgerEntryDto[];
+    duplicateCashbackBlocked: boolean;
+  }>;
+}
+
 export interface NotificationDto {
   id: string;
   userId: string;
@@ -760,6 +780,20 @@ export const fetchAdminRoundEvidence = async (roundId: string): Promise<AdminRou
     headers: authHeaders()
   });
   return parseJsonResponse<AdminRoundEvidenceDto>(response);
+};
+
+export const fetchAdminRewardsReview = async (input: {
+  query?: string;
+  limit?: number;
+} = {}): Promise<AdminRewardsReviewDto> => {
+  const params = new URLSearchParams();
+  if (input.query) params.set('query', input.query);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/rewards/review${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<AdminRewardsReviewDto>(response);
 };
 
 export const exportAdminRoundEvidence = async (roundId: string): Promise<string> => {

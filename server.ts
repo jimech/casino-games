@@ -857,6 +857,67 @@ app.get('/api/admin/rounds/:roundId/evidence-export', async (req, res) => {
   }
 });
 
+app.get('/api/admin/rewards/review', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const query = typeof req.query.query === 'string' ? req.query.query : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 12;
+    const users = await authService.searchUsers({ query, limit });
+    const accounts = await Promise.all(users.map(async account => {
+      const [vipStatus, bonusClaims, ledger] = await Promise.all([
+        vipService.getStatus({ userId: account.id }),
+        bonusService.listClaims(account.id),
+        casinoService.getLedger(account.id)
+      ]);
+      const cashbackLedgerEntries = ledger
+        .filter(entry => entry.metadata?.source === 'vip_cashback' && entry.metadata?.weekKey === vipStatus.weekKey)
+        .map(sanitizeLedgerEntryForApi)
+        .reverse();
+      const cashbackClaimsThisWeek = bonusClaims.filter(claim =>
+        claim.campaignId === 'vip-weekly-cashback' &&
+        claim.claimKey === vipStatus.weekKey &&
+        claim.status === 'claimed'
+      );
+      return {
+        user: account,
+        vipStatus,
+        bonusClaims,
+        bonusTotal: bonusClaims.reduce((sum, claim) => sum + claim.amount, 0),
+        cashbackClaimedThisWeek: cashbackClaimsThisWeek.length > 0,
+        cashbackLedgerEntries,
+        duplicateCashbackBlocked: cashbackClaimsThisWeek.length <= 1 && cashbackLedgerEntries.length <= 1
+      };
+    }));
+    const summary = {
+      accountCount: accounts.length,
+      totalBonusClaimed: accounts.reduce((sum, account) => sum + account.bonusTotal, 0),
+      totalAvailableCashback: accounts.reduce((sum, account) => sum + account.vipStatus.availableCashback, 0),
+      cashbackClaimsThisWeek: accounts.filter(account => account.cashbackClaimedThisWeek).length,
+      duplicateCashbackBlockedCount: accounts.filter(account => account.duplicateCashbackBlocked).length
+    };
+
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'admin_rewards_review_viewed',
+      context: {
+        query: query?.slice(0, 120),
+        accountCount: accounts.length,
+        totalAvailableCashback: summary.totalAvailableCashback,
+        cashbackClaimsThisWeek: summary.cashbackClaimsThisWeek
+      }
+    });
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      summary,
+      accounts
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/notifications', async (req, res) => {
   try {
     const user = await requireAuth(req);
