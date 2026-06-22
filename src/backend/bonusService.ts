@@ -36,6 +36,13 @@ export interface BonusService {
   listCampaigns(): Promise<BonusCampaignRecord[]> | BonusCampaignRecord[];
   listClaims(userId: string): Promise<BonusClaimRecord[]> | BonusClaimRecord[];
   claimBonus(input: { userId: string; campaignId: string; idempotencyKey: string }): Promise<BonusClaimResult> | BonusClaimResult;
+  recordCashbackClaim(input: {
+    userId: string;
+    amount: number;
+    claimKey: string;
+    idempotencyKey: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<BonusClaimRecord> | BonusClaimRecord;
 }
 
 interface WalletCreditor {
@@ -66,6 +73,15 @@ const DEFAULT_CAMPAIGNS: BonusCampaignRecord[] = [
     amount: 100,
     active: true,
     metadata: { freeSpins: 50 }
+  },
+  {
+    id: 'vip-weekly-cashback',
+    type: 'cashback',
+    title: 'VIP Weekly Cashback',
+    description: 'Weekly cashback based on settled net losses and VIP tier.',
+    amount: 0,
+    active: true,
+    metadata: { claimRule: 'weekly_net_loss_cashback' }
   }
 ];
 
@@ -128,6 +144,40 @@ export class MemoryBonusService implements BonusService {
     this.claims.set(claim.id, claim);
     this.claimByUserCampaignKey.set(userCampaignClaimKey(input.userId, input.campaignId, claimKey), claim.id);
     return { campaign, claim, wallet };
+  }
+
+  async recordCashbackClaim(input: {
+    userId: string;
+    amount: number;
+    claimKey: string;
+    idempotencyKey: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<BonusClaimRecord> {
+    assertText(input.userId, 'userId');
+    assertText(input.claimKey, 'claimKey');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = asMoney(input.amount);
+    const campaign = this.campaigns.get('vip-weekly-cashback');
+    if (!campaign?.active) throw new Error('VIP cashback campaign not found');
+    const existingClaimId = this.claimByUserCampaignKey.get(userCampaignClaimKey(input.userId, campaign.id, input.claimKey));
+    if (existingClaimId) return this.claims.get(existingClaimId)!;
+    const claim: BonusClaimRecord = {
+      id: `bonus_claim_${(++this.sequence).toString().padStart(8, '0')}`,
+      userId: input.userId,
+      campaignId: campaign.id,
+      amount,
+      status: 'claimed',
+      claimKey: input.claimKey,
+      idempotencyKey: input.idempotencyKey,
+      metadata: {
+        ...input.metadata,
+        campaignType: campaign.type
+      },
+      createdAt: new Date().toISOString()
+    };
+    this.claims.set(claim.id, claim);
+    this.claimByUserCampaignKey.set(userCampaignClaimKey(input.userId, campaign.id, input.claimKey), claim.id);
+    return claim;
   }
 }
 
@@ -204,6 +254,41 @@ export class PrismaBonusService implements BonusService {
       claim: claimToRecord(claim),
       wallet
     };
+  }
+
+  async recordCashbackClaim(input: {
+    userId: string;
+    amount: number;
+    claimKey: string;
+    idempotencyKey: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<BonusClaimRecord> {
+    assertText(input.userId, 'userId');
+    assertText(input.claimKey, 'claimKey');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    await this.ensureDefaultCampaigns();
+    const campaign = await this.prisma.bonusCampaign.findFirst({
+      where: { id: 'vip-weekly-cashback', active: true }
+    });
+    if (!campaign) throw new Error('VIP cashback campaign not found');
+    const existing = await this.prisma.bonusClaim.findUnique({
+      where: { userId_campaignId_claimKey: { userId: input.userId, campaignId: campaign.id, claimKey: input.claimKey } }
+    });
+    if (existing) return claimToRecord(existing);
+    const claim = await this.prisma.bonusClaim.create({
+      data: {
+        userId: input.userId,
+        campaignId: campaign.id,
+        amount: BigInt(asMoney(input.amount)),
+        claimKey: input.claimKey,
+        idempotencyKey: input.idempotencyKey,
+        metadata: {
+          ...input.metadata,
+          campaignType: campaign.type
+        } as Prisma.InputJsonValue
+      }
+    });
+    return claimToRecord(claim);
   }
 
   private async ensureDefaultCampaigns() {

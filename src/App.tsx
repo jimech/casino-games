@@ -20,6 +20,7 @@ import {
   actBlackjackRound,
   actPokerRound,
   cashoutCrashRound,
+  claimVipCashback,
   claimBonus,
   createNotification,
   createWalletEventSource,
@@ -33,6 +34,7 @@ import {
   fetchGameRecommendations,
   fetchNotifications,
   fetchTargetedBonuses,
+  fetchVipStatus,
   fetchWallet,
   GameRecommendationDto,
   getStoredAuthToken,
@@ -54,7 +56,8 @@ import {
   startPokerRound,
   TargetedBonusOfferDto,
   trackAiEvent,
-  updateNotificationPreference
+  updateNotificationPreference,
+  VipStatusDto
 } from './api/casinoApi';
 
 // Complete 20-Game Catalog Pre-designed nodes
@@ -145,6 +148,8 @@ export default function App() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
+  const [vipStatus, setVipStatus] = useState<VipStatusDto | null>(null);
+  const [vipLoading, setVipLoading] = useState(false);
   const [aiUiFallbacks, setAiUiFallbacks] = useState<Record<string, string>>({});
   const [authForm, setAuthForm] = useState({
     username: 'neon_private',
@@ -200,6 +205,10 @@ export default function App() {
 
   useEffect(() => {
     if (authSession) void loadTargetedBonuses();
+  }, [authSession?.user.id]);
+
+  useEffect(() => {
+    if (authSession) void loadVipStatus();
   }, [authSession?.user.id]);
 
   useEffect(() => {
@@ -421,6 +430,19 @@ export default function App() {
     }
   };
 
+  const loadVipStatus = async () => {
+    setVipLoading(true);
+    try {
+      const status = await fetchVipStatus();
+      setVipStatus(status);
+      setUser(prev => ({ ...prev, vipTier: status.tier.label, isVip: status.tier.id !== 'bronze' }));
+    } catch (error) {
+      console.warn('VIP status load failed', error);
+    } finally {
+      setVipLoading(false);
+    }
+  };
+
   const markInboxItemRead = async (notificationId: string) => {
     try {
       const updated = await markNotificationRead(notificationId);
@@ -529,6 +551,7 @@ export default function App() {
         outcome: { source: 'frontend-game' }
       });
       setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+      void loadVipStatus();
     } catch (error) {
       console.error('Backend settlement sync failed', error);
       triggerNotification("Backend settlement sync failed. Refreshing wallet from database.", "error");
@@ -544,6 +567,7 @@ export default function App() {
     });
     notifyResponsiblePlay(response.responsiblePlayIntervention);
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    void loadVipStatus();
     return {
       outcome: response.outcome,
       stake: response.stake,
@@ -573,6 +597,7 @@ export default function App() {
       idempotencyKey: `crash-cashout-${roundId}-${crypto.randomUUID()}`
     });
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    void loadVipStatus();
     return {
       payout: response.payout,
       cashoutMultiplier: response.cashoutMultiplier,
@@ -588,6 +613,7 @@ export default function App() {
     });
     notifyResponsiblePlay(response.responsiblePlayIntervention);
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    void loadVipStatus();
     return {
       displaySymbols: response.outcome.displaySymbols,
       payout: response.outcome.payout,
@@ -614,6 +640,7 @@ export default function App() {
       idempotencyKey: `blackjack-${action}-${roundId}-${crypto.randomUUID()}`
     });
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    void loadVipStatus();
     return response.view;
   };
 
@@ -635,6 +662,7 @@ export default function App() {
       idempotencyKey: `poker-${action}-${roundId}-${crypto.randomUUID()}`
     });
     setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+    void loadVipStatus();
     return response.view;
   };
 
@@ -649,6 +677,7 @@ export default function App() {
       setUser(prev => ({ ...prev, freeSpinsLeft: 0, walletBalance: response.wallet.available, lastDailyClaim: response.claim.createdAt }));
       await loadNotifications();
       await loadTargetedBonuses();
+      await loadVipStatus();
       sound.playBigWin();
       triggerNotification(`Daily bonus claimed: +$${response.claim.amount}`, "success");
     } catch (error) {
@@ -667,6 +696,7 @@ export default function App() {
       setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
       await loadNotifications();
       await loadTargetedBonuses();
+      await loadVipStatus();
       sound.playBigWin();
       triggerNotification(`Welcome bonus credited: +$${response.claim.amount}`, "success");
     } catch (error) {
@@ -685,6 +715,32 @@ export default function App() {
       return;
     }
     triggerNotification(`Targeted offer unavailable: ${offer.title}`, 'error');
+  };
+
+  const handleClaimVipCashback = async () => {
+    sound.playClick();
+    try {
+      const response = await claimVipCashback({
+        idempotencyKey: `vip-cashback-${activeUserId}-${crypto.randomUUID()}`
+      });
+      setVipStatus(response.status);
+      setUser(prev => ({
+        ...prev,
+        walletBalance: response.wallet.available,
+        vipTier: response.status.tier.label,
+        isVip: response.status.tier.id !== 'bronze'
+      }));
+      await loadNotifications();
+      if (response.claim) {
+        sound.playBigWin();
+        triggerNotification(`VIP cashback credited: +$${response.claim.amount}`, 'success');
+      } else {
+        triggerNotification('No VIP cashback available for the current week yet.', 'info');
+      }
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : "VIP cashback claim failed.", "error");
+    }
   };
 
   // Support Validation Handler
@@ -723,6 +779,11 @@ export default function App() {
     const rightRank = recommendationRank.get(right.id)?.rank ?? Number.MAX_SAFE_INTEGER;
     return leftRank - rightRank || left.title.localeCompare(right.title);
   });
+  const currentVipTier = vipStatus?.tier.label ?? user.vipTier;
+  const vipProgressPercent = vipStatus?.nextTier
+    ? Math.min(100, Math.round((vipStatus.settledStake / vipStatus.nextTier.minSettledStake) * 100))
+    : 100;
+  const vipCashbackAvailable = safeMoney(vipStatus?.availableCashback ?? 0);
 
   return (
     <div className="min-h-screen bg-[#0B0B14] text-neutral-100 flex flex-col font-sans select-none antialiased overflow-x-hidden">
@@ -956,9 +1017,9 @@ export default function App() {
                 <div className="bg-gradient-to-r from-purple-900/10 via-neutral-950 to-purple-900/10 border border-purple-500/20 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-5 shadow-lg">
                   <div className="space-y-1.5">
                     <span className="text-[9px] uppercase font-black tracking-widest text-purple-400 block">VIP CLUBS PROGRESSION</span>
-                    <h4 className="text-md font-black text-white uppercase tracking-tight">PROGRESS CORRIDORS: GOLD TIER ACTIVE</h4>
+                    <h4 className="text-md font-black text-white uppercase tracking-tight">PROGRESS CORRIDORS: {currentVipTier} TIER ACTIVE</h4>
                     <p className="text-xs text-neutral-450 leading-relaxed">
-                      Collect Cashback of 15% weekly. Claim rewards to progress onto Elite Diamond status.
+                      Weekly cashback is calculated from settled net losses and your active VIP tier.
                     </p>
                   </div>
                   <button
@@ -1207,7 +1268,7 @@ export default function App() {
                     <h3 className="text-md font-black uppercase text-white tracking-wide">{user.username}</h3>
                     <div className="flex gap-2 items-center mt-1">
                       <span className="bg-yellow-500 text-neutral-950 font-bold text-[9px] uppercase px-2 py-0.5 rounded">
-                        VIP {user.vipTier}
+                        VIP {currentVipTier}
                       </span>
                       <span className="text-xs text-neutral-400 font-mono">Joined: {user.joinedDate}</span>
                     </div>
@@ -1349,24 +1410,87 @@ export default function App() {
             )}
 
             {activeCasinoTab === 'vip' && (
-              <div className="max-w-xl mx-auto bg-[#10101C] border border-[#FF0055]/10 p-6 rounded-2xl space-y-6">
-                <div className="text-center space-y-1">
-                  <span className="text-[9px] font-black uppercase text-purple-400 tracking-widest block">VIP CLUB LEVEL</span>
-                  <h3 className="text-lg font-black text-white uppercase tracking-tight">Bronze &rarr; Silver &rarr; Gold (Active) &rarr; Diamond</h3>
-                  <div className="h-2 w-full bg-neutral-900 rounded-full mt-2 overflow-hidden border border-neutral-800">
-                    <div className="h-full w-2/3 bg-gradient-to-r from-purple-500 to-indigo-500" />
+              <div className="max-w-4xl mx-auto space-y-6">
+                <div className="bg-[#10101C] border border-[#FF0055]/10 p-6 rounded-2xl space-y-5">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                    <div>
+                      <span className="text-[9px] font-black uppercase text-purple-400 tracking-widest block">VIP CLUB LEVEL</span>
+                      <h3 className="text-lg font-black text-white uppercase tracking-tight">
+                        {vipLoading ? 'Loading VIP status' : `${currentVipTier} tier active`}
+                      </h3>
+                      <p className="text-xs text-neutral-400 mt-1">
+                        Status is calculated from settled stake, weekly net loss, and recorded cashback claims.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => void loadVipStatus()}
+                      className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-300 text-[10px] font-black uppercase px-3 py-2 rounded-lg"
+                    >
+                      Refresh status
+                    </button>
                   </div>
-                  <span className="text-[10px] text-neutral-500 mt-1 block">Level Progress (68/100 points to Platinum VIP level)</span>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    {[
+                      { label: 'Settled stake', value: `$${safeMoney(vipStatus?.settledStake ?? 0)}` },
+                      { label: 'Net loss basis', value: `$${safeMoney(vipStatus?.netLoss ?? 0)}` },
+                      { label: 'Cashback rate', value: safePercent(vipStatus?.cashbackRate ?? 0) },
+                      { label: 'Available cashback', value: `$${vipCashbackAvailable}` },
+                      { label: 'Week key', value: vipStatus?.weekKey ?? 'pending' }
+                    ].map(item => (
+                      <div key={item.label} className="bg-neutral-950 border border-neutral-850 rounded-lg p-3">
+                        <span className="text-[9px] text-neutral-500 uppercase font-black block">{item.label}</span>
+                        <span className="text-sm text-white font-black font-mono block mt-1 truncate">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3 text-[10px] uppercase font-black text-neutral-400">
+                      <span>{currentVipTier}</span>
+                      <span>{vipStatus?.nextTier ? `${safeMoney(vipStatus.nextTierStakeRemaining)} stake to ${vipStatus.nextTier.label}` : 'Top tier reached'}</span>
+                    </div>
+                    <div className="h-2.5 w-full bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+                      <div
+                        className="h-full bg-gradient-to-r from-[#00FF88] via-yellow-400 to-[#FF0055]"
+                        style={{ width: `${vipProgressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => void handleClaimVipCashback()}
+                    disabled={vipCashbackAvailable <= 0}
+                    className={`w-full font-black uppercase text-xs py-2.5 rounded-lg transition-all ${
+                      vipCashbackAvailable > 0
+                        ? 'bg-[#00FF88] hover:bg-emerald-400 text-neutral-950'
+                        : 'bg-neutral-900 text-neutral-500 border border-neutral-800 cursor-not-allowed'
+                    }`}
+                  >
+                    Claim weekly cashback
+                  </button>
                 </div>
 
-                <div className="border-t border-neutral-850/40 pt-4 space-y-3">
-                  <h4 className="text-xs font-black uppercase text-neutral-300">Active High-Roller Perks:</h4>
-                  <ul className="space-y-2 text-xs text-neutral-450 list-disc list-inside">
-                    <li>15% Weekly Cashbacks credited on Mondays</li>
-                    <li>Advanced RNG analyzer true metrics limits unlocked</li>
-                    <li>Exclusive access to live high limit Blackjack and Holdem suites</li>
-                    <li>Direct support line priorities</li>
-                  </ul>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  {[
+                    { label: 'Bronze', stake: 0, rate: '1%' },
+                    { label: 'Silver', stake: 500, rate: '3%' },
+                    { label: 'Gold', stake: 2500, rate: '5%' },
+                    { label: 'Platinum', stake: 10000, rate: '8%' },
+                    { label: 'Diamond', stake: 25000, rate: '12%' }
+                  ].map(tier => (
+                    <div
+                      key={tier.label}
+                      className={`bg-[#10101C] border rounded-xl p-4 ${
+                        currentVipTier === tier.label ? 'border-[#00FF88]/50' : 'border-neutral-850'
+                      }`}
+                    >
+                      <h4 className="text-xs font-black uppercase text-white">{tier.label}</h4>
+                      <p className="text-[10px] text-neutral-500 mt-1">From ${tier.stake} settled stake</p>
+                      <span className="block text-sm font-black text-[#00FF88] font-mono mt-3">{tier.rate}</span>
+                      <span className="text-[9px] uppercase text-neutral-500 font-black">weekly cashback</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

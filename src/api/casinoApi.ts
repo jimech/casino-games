@@ -176,6 +176,32 @@ interface BonusClaimResponse {
   wallet: WalletDto;
 }
 
+export interface VipTierDto {
+  id: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+  label: string;
+  minSettledStake: number;
+  cashbackRate: number;
+}
+
+export interface VipStatusDto {
+  userId: string;
+  tier: VipTierDto;
+  nextTier?: VipTierDto;
+  settledStake: number;
+  netLoss: number;
+  cashbackRate: number;
+  availableCashback: number;
+  nextTierStakeRemaining: number;
+  weekKey: string;
+  generatedAt: string;
+}
+
+export interface VipCashbackClaimResponseDto {
+  status: VipStatusDto;
+  claim?: BonusClaimDto;
+  wallet: WalletDto;
+}
+
 export interface TargetedBonusOfferDto {
   id: string;
   campaignId: string;
@@ -604,6 +630,25 @@ export const fetchTargetedBonuses = async (): Promise<BonusTargetingResponseDto>
     headers: authHeaders()
   });
   return parseJsonResponse<BonusTargetingResponseDto>(response);
+};
+
+export const fetchVipStatus = async (): Promise<VipStatusDto> => {
+  const response = await fetch('/api/vip/status', {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ status: VipStatusDto }>(response);
+  return payload.status;
+};
+
+export const claimVipCashback = async (input: {
+  idempotencyKey: string;
+}): Promise<VipCashbackClaimResponseDto> => {
+  const response = await fetch('/api/vip/cashback/claim', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  return parseJsonResponse<VipCashbackClaimResponseDto>(response);
 };
 
 export const fetchChurnScore = async (input: { userId?: string } = {}): Promise<ChurnScoreDto> => {

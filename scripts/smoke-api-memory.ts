@@ -161,6 +161,27 @@ const main = async () => {
   assertEqual(exportedRoundEvidence.exportVersion, 'round-evidence-v1', 'round evidence export version');
   assertEqual(exportedRoundEvidence.round.id, bet.round.id, 'round evidence export round id');
 
+  const settledVipRound = await postJson(`${baseUrl}/api/rounds/${bet.round.id}/settle`, adminSession.token, {
+    payout: 0,
+    idempotencyKey: 'quality-vip-settle',
+    outcome: { source: 'vip-smoke-loss' }
+  });
+  assertEqual(settledVipRound.round.status, 'settled', 'vip smoke round settled');
+  const vipStatus = await getJson(`${baseUrl}/api/vip/status`, adminSession.token);
+  assertEqual(vipStatus.status.tier.id, 'silver', 'vip tier after settled stake');
+  if (vipStatus.status.availableCashback <= 0) {
+    throw new Error('Expected VIP cashback to be available after settled net loss');
+  }
+  const vipCashback = await postJson(`${baseUrl}/api/vip/cashback/claim`, adminSession.token, {
+    idempotencyKey: 'quality-vip-cashback'
+  });
+  assertEqual(vipCashback.claim.campaignId, 'vip-weekly-cashback', 'vip cashback campaign id');
+  if (vipCashback.wallet.available <= 99000) {
+    throw new Error('Expected VIP cashback to credit the wallet');
+  }
+  const vipStatusAfterClaim = await getJson(`${baseUrl}/api/vip/status`, adminSession.token);
+  assertEqual(vipStatusAfterClaim.status.availableCashback, 0, 'vip cashback only once per week');
+
   await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
     category: 'page',
     name: 'tab_viewed',
@@ -213,6 +234,9 @@ const main = async () => {
   const bonusTargetAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=bonus&limit=25`, adminSession.token);
   if (!bonusTargetAuditEvents.events.some((event: { name: string }) => event.name === 'bonus_targets_generated')) {
     throw new Error('Expected bonus targeting decision to be logged');
+  }
+  if (!bonusTargetAuditEvents.events.some((event: { name: string }) => event.name === 'vip_cashback_claimed')) {
+    throw new Error('Expected VIP cashback claim decision to be logged');
   }
   const activeChurn = await postJson(`${baseUrl}/api/retention/churn-score/refresh`, adminSession.token, {});
   assertEqual(activeChurn.score.version, 'churn-v1', 'active churn score version');
@@ -402,7 +426,7 @@ const main = async () => {
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);
-  if (!streamUpdates.some(update => update.available === 99000 && update.locked === 1500)) {
+  if (!streamUpdates.some(update => update.available === 99045 && update.locked === 0)) {
     throw new Error('Expected wallet SSE stream to send current wallet state');
   }
 

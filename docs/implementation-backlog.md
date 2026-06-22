@@ -761,6 +761,26 @@ Acceptance criteria:
 - Required security/compliance notices cannot be disabled.
 - Admins can see delivery attempts and failures.
 
+### T36 - VIP Progression and Cashback Rules
+
+Summary: Replace static VIP copy with ledger-backed tier progression and weekly cashback.
+
+Implementation status: Complete. VIP status now calculates tier progression from settled stake, weekly cashback from settled net losses, and once-per-week cashback availability from recorded bonus claims. `/api/vip/status` exposes the current tier packet, `/api/vip/cashback/claim` credits cashback through the wallet ledger, records a `vip-weekly-cashback` bonus claim, creates a notification, and logs a bonus AI event. The VIP UI renders live status, progress, tier thresholds, and claim controls.
+
+Scope:
+- Compute VIP tier from settled rounds.
+- Compute weekly cashback from net losses.
+- Credit cashback through the wallet ledger.
+- Prevent duplicate weekly cashback claims.
+- Expose status and claim endpoints.
+- Add UI, unit tests, and smoke coverage.
+
+Acceptance criteria:
+- VIP status changes only from settled rounds.
+- Cashback claims create ledger entries and bonus claims.
+- Duplicate weekly claims do not credit the wallet again.
+- UI shows real tier, progress, and claim availability.
+
 ## First Working Sequence
 
 Start here:

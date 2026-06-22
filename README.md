@@ -198,6 +198,22 @@ curl http://localhost:3000/api/bonuses/targeted \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Read VIP status:
+
+```bash
+curl http://localhost:3000/api/vip/status \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Claim available weekly VIP cashback:
+
+```bash
+curl -X POST http://localhost:3000/api/vip/cashback/claim \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"idempotencyKey":"vip-cashback-demo-1"}'
+```
+
 Refresh churn and retention scoring:
 
 ```bash
@@ -495,7 +511,8 @@ curl "http://localhost:3000/api/admin/notifications/deliveries?limit=25" \
 - Role-based admin access, admin invite codes, auth rate limiting, and security risk events
 - Realtime wallet updates stream through an authenticated server-sent events endpoint
 - Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
-- Bonus service supports persisted welcome and daily credit claims with ledger-linked wallet credits
+- Bonus service supports persisted welcome, daily credit, and VIP cashback claims with ledger-linked wallet credits
+- VIP service computes tier progression from settled stake and weekly cashback from settled net losses
 - Admin audit panel summarizes wallet, ledger, rounds, risk events, and bonus claims
 - Notification inbox persists bonus, support, admin, and system notices with unread/read state, category preferences, and admin-visible delivery decisions
 - Quality gate and GitHub Actions workflow cover schema validation, TypeScript, tests, build, and memory API smoke

@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService } = createServices();
+const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
@@ -968,6 +968,54 @@ app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
       }
     });
     res.status(201).json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/vip/status', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    res.json({ status: await vipService.getStatus({ userId: user.id }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/vip/cashback/claim', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const result = await vipService.claimCashback({
+      userId: user.id,
+      idempotencyKey: String(req.body.idempotencyKey ?? '')
+    });
+    broadcastWallet(user.id, result.wallet);
+    if (result.claim) {
+      await notificationService.create({
+        userId: user.id,
+        type: 'bonus',
+        title: 'VIP cashback credited',
+        message: `${result.status.tier.label} cashback credited: +$${result.claim.amount}`,
+        metadata: {
+          claimId: result.claim.id,
+          claimKey: result.claim.claimKey,
+          vipTier: result.status.tier.id,
+          cashbackRate: result.status.cashbackRate
+        }
+      });
+      await trackAiEventSafely({
+        userId: user.id,
+        category: 'bonus',
+        name: 'vip_cashback_claimed',
+        context: {
+          claimId: result.claim.id,
+          amount: result.claim.amount,
+          tier: result.status.tier.id,
+          weekKey: result.status.weekKey
+        }
+      });
+    }
+    res.status(result.claim ? 201 : 200).json(result);
   } catch (error) {
     sendApiError(res, error);
   }

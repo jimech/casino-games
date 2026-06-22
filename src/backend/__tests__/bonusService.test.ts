@@ -10,7 +10,8 @@ describe('bonus service', () => {
 
     expect(campaigns.map(campaign => campaign.id)).toEqual([
       'welcome-match-500',
-      'daily-free-credits-100'
+      'daily-free-credits-100',
+      'vip-weekly-cashback'
     ]);
   });
 
