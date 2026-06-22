@@ -13,6 +13,16 @@ const activeTournament = {
   prizePool: 1000
 };
 
+const settlingTournament = {
+  id: 'settling-tournament',
+  title: 'Settling Tournament',
+  description: 'Settlement window',
+  startAt: '2026-06-22T00:00:00.000Z',
+  endAt: '2026-06-23T00:00:00.000Z',
+  entryFee: 0,
+  prizePool: 1000
+};
+
 describe('MemoryTournamentService', () => {
   it('enters users idempotently and debits the wallet once through the ledger', async () => {
     const casino = new CasinoService({ user_1: 1000 });
@@ -140,6 +150,62 @@ describe('MemoryTournamentService', () => {
 
     expect(rows.sort(compareRows).map(item => item.userId)).toEqual(['user_c', 'user_a', 'user_b', 'user_d']);
   });
+
+  it('rejects settlement before the tournament has ended', async () => {
+    const casino = new CasinoService({ user_1: 1000 });
+    const service = new MemoryTournamentService(casino, [settlingTournament]);
+
+    await service.enter({
+      tournamentId: settlingTournament.id,
+      userId: 'user_1',
+      idempotencyKey: 'settle-entry-1',
+      now: new Date('2026-06-22T12:00:00.000Z')
+    });
+
+    await expect(service.settle({
+      tournamentId: settlingTournament.id,
+      idempotencyKey: 'settle-too-early',
+      now: new Date('2026-06-22T12:30:00.000Z')
+    })).rejects.toThrow('not ready for settlement');
+  });
+
+  it('settles ended tournaments with prize ledger credits exactly once', async () => {
+    const casino = new CasinoService({ user_1: 1000, user_2: 1000, user_3: 1000 });
+    const service = new MemoryTournamentService(casino, [settlingTournament]);
+    for (const userId of ['user_1', 'user_2', 'user_3']) {
+      await service.enter({
+        tournamentId: settlingTournament.id,
+        userId,
+        idempotencyKey: `entry-${userId}`,
+        now: new Date('2026-06-22T00:00:00.000Z')
+      });
+    }
+    settleCasinoRound(casino, 'user_1', 100, 200);
+    settleCasinoRound(casino, 'user_2', 100, 150);
+    settleCasinoRound(casino, 'user_3', 100, 0);
+
+    const first = await service.settle({
+      tournamentId: settlingTournament.id,
+      idempotencyKey: 'settle-prizes',
+      now: new Date('2026-06-23T00:00:01.000Z')
+    });
+    const duplicate = await service.settle({
+      tournamentId: settlingTournament.id,
+      idempotencyKey: 'settle-prizes-duplicate',
+      now: new Date('2026-06-23T00:00:01.000Z')
+    });
+
+    expect(first.payouts.map(payout => [payout.userId, payout.rank, payout.amount])).toEqual([
+      ['user_1', 1, 500],
+      ['user_2', 2, 300],
+      ['user_3', 3, 200]
+    ]);
+    expect(duplicate.id).toBe(first.id);
+    expect(casino.getWallet('user_1').available).toBe(1600);
+    expect(casino.getWallet('user_2').available).toBe(1350);
+    expect(casino.getWallet('user_3').available).toBe(1100);
+    expect(casino.getLedger('user_1').filter(entry => entry.metadata?.source === 'tournament_prize')).toHaveLength(1);
+  });
 });
 
 const row = (
@@ -156,3 +222,17 @@ const row = (
   roundCount,
   lastSettledAt
 });
+
+const settleCasinoRound = (casino: CasinoService, userId: string, stake: number, payout: number) => {
+  const round = casino.placeBet({
+    userId,
+    gameId: 'roulette',
+    stake,
+    idempotencyKey: `bet-${userId}-${stake}-${payout}`
+  });
+  casino.settleRound({
+    roundId: round.id,
+    payout,
+    idempotencyKey: `settle-${userId}-${stake}-${payout}`
+  });
+};

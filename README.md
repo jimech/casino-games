@@ -214,6 +214,37 @@ curl -X POST http://localhost:3000/api/vip/cashback/claim \
   -d '{"idempotencyKey":"vip-cashback-demo-1"}'
 ```
 
+List tournaments and leaderboards:
+
+```bash
+curl http://localhost:3000/api/tournaments \
+  -H "Authorization: Bearer $TOKEN"
+
+curl http://localhost:3000/api/tournaments/weekly-neon-race/leaderboard \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Enter an active tournament:
+
+```bash
+curl -X POST http://localhost:3000/api/tournaments/weekly-neon-race/enter \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"idempotencyKey":"tournament-entry-demo-1"}'
+```
+
+Review or settle tournament prizes as an admin:
+
+```bash
+curl http://localhost:3000/api/admin/tournaments/weekly-neon-race/settlement \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X POST http://localhost:3000/api/admin/tournaments/weekly-neon-race/settle \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"idempotencyKey":"tournament-settle-demo-1"}'
+```
+
 Refresh churn and retention scoring:
 
 ```bash
@@ -513,6 +544,7 @@ curl "http://localhost:3000/api/admin/notifications/deliveries?limit=25" \
 - Risk service records failed logins, forbidden access attempts, high-stake rounds, rapid round activity, refunds, and high payouts
 - Bonus service supports persisted welcome, daily credit, and VIP cashback claims with ledger-linked wallet credits
 - VIP service computes tier progression from settled stake and weekly cashback from settled net losses
+- Tournament service supports active entry, persisted leaderboards, admin settlement, and ledger-linked prize payouts
 - Admin audit panel summarizes wallet, ledger, rounds, risk events, and bonus claims
 - Notification inbox persists bonus, support, admin, and system notices with unread/read state, category preferences, and admin-visible delivery decisions
 - Quality gate and GitHub Actions workflow cover schema validation, TypeScript, tests, build, and memory API smoke

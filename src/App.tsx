@@ -38,6 +38,7 @@ import {
   fetchNotifications,
   fetchTargetedBonuses,
   fetchTournamentLeaderboard,
+  fetchTournamentSettlement,
   fetchTournaments,
   fetchVipStatus,
   fetchWallet,
@@ -54,6 +55,7 @@ import {
   ResponsiblePlayInterventionDto,
   searchAdminUsers,
   settleRound,
+  settleTournament,
   spinSlots,
   spinRoulette,
   startBlackjackRound,
@@ -63,6 +65,7 @@ import {
   trackAiEvent,
   TournamentDto,
   TournamentLeaderboardDto,
+  TournamentSettlementDto,
   updateNotificationPreference,
   VipStatusDto
 } from './api/casinoApi';
@@ -160,7 +163,9 @@ export default function App() {
   const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
   const [activeTournamentId, setActiveTournamentId] = useState('');
   const [tournamentLeaderboard, setTournamentLeaderboard] = useState<TournamentLeaderboardDto | null>(null);
+  const [tournamentSettlement, setTournamentSettlement] = useState<TournamentSettlementDto | null>(null);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
+  const [tournamentSettlementLoading, setTournamentSettlementLoading] = useState(false);
   const [vipStatus, setVipStatus] = useState<VipStatusDto | null>(null);
   const [vipLoading, setVipLoading] = useState(false);
   const [aiUiFallbacks, setAiUiFallbacks] = useState<Record<string, string>>({});
@@ -466,7 +471,14 @@ export default function App() {
       setTournaments(nextTournaments);
       const nextId = activeTournamentId || nextTournaments[0]?.id || '';
       setActiveTournamentId(nextId);
-      if (nextId) setTournamentLeaderboard(await fetchTournamentLeaderboard(nextId));
+      if (nextId) {
+        const [leaderboard, settlement] = await Promise.all([
+          fetchTournamentLeaderboard(nextId),
+          fetchTournamentSettlement(nextId).catch(() => undefined)
+        ]);
+        setTournamentLeaderboard(leaderboard);
+        setTournamentSettlement(settlement ?? null);
+      }
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournaments failed to load.", "error");
     } finally {
@@ -479,7 +491,12 @@ export default function App() {
     setTournamentsLoading(true);
     try {
       setActiveTournamentId(tournamentId);
-      setTournamentLeaderboard(await fetchTournamentLeaderboard(tournamentId));
+      const [leaderboard, settlement] = await Promise.all([
+        fetchTournamentLeaderboard(tournamentId),
+        fetchTournamentSettlement(tournamentId).catch(() => undefined)
+      ]);
+      setTournamentLeaderboard(leaderboard);
+      setTournamentSettlement(settlement ?? null);
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Leaderboard failed to load.", "error");
     } finally {
@@ -498,6 +515,36 @@ export default function App() {
       await loadTournamentLeaderboard(tournamentId);
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournament entry failed.", "error");
+    }
+  };
+
+  const loadTournamentSettlement = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId) return;
+    setTournamentSettlementLoading(true);
+    try {
+      setTournamentSettlement(await fetchTournamentSettlement(tournamentId) ?? null);
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament settlement failed to load.", "error");
+    } finally {
+      setTournamentSettlementLoading(false);
+    }
+  };
+
+  const handleSettleTournament = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId) return;
+    setTournamentSettlementLoading(true);
+    try {
+      const settlement = await settleTournament({
+        tournamentId,
+        idempotencyKey: `tournament-settle-${tournamentId}`
+      });
+      setTournamentSettlement(settlement);
+      await loadTournamentLeaderboard(tournamentId);
+      triggerNotification(`Tournament settled: ${settlement.payouts.length} prize payouts credited.`, 'success');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament settlement failed.", "error");
+    } finally {
+      setTournamentSettlementLoading(false);
     }
   };
 
@@ -1978,6 +2025,64 @@ export default function App() {
                         left={adminRewardsLoading ? 'Loading rewards' : 'No rewards review loaded'}
                         right="VIP"
                         detail="Use Rewards from user search to inspect bonus claims and weekly cashback controls"
+                      />
+                    )}
+                  </AdminPanel>
+
+                  <AdminPanel title="Tournament Settlement">
+                    {tournamentLeaderboard ? (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            ['Tournament', tournamentLeaderboard.tournament.title],
+                            ['Status', tournamentLeaderboard.tournament.status],
+                            ['Prize', `$${safeMoney(tournamentLeaderboard.tournament.prizePool)}`],
+                            ['Payouts', String(tournamentSettlement?.payouts.length ?? 0)]
+                          ].map(([label, value]) => (
+                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                              <span className="block text-xs font-black font-mono text-[#00FF88] truncate">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void loadTournamentSettlement(tournamentLeaderboard.tournament.id)}
+                            className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-yellow-400 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            {tournamentSettlementLoading ? 'Loading' : 'Review settlement'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSettleTournament(tournamentLeaderboard.tournament.id)}
+                            disabled={tournamentSettlementLoading || Boolean(tournamentSettlement) || tournamentLeaderboard.tournament.status !== 'ended'}
+                            className="bg-[#00FF88] hover:bg-emerald-400 disabled:bg-neutral-800 disabled:text-neutral-500 text-neutral-950 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            Settle prizes
+                          </button>
+                        </div>
+                        {(tournamentSettlement?.payouts ?? []).slice(0, 5).map(payout => (
+                          <AdminRow
+                            key={payout.id}
+                            left={`Rank #${payout.rank} / ${payout.userId}`}
+                            right={`$${payout.amount}`}
+                            detail={`${payout.ledgerEntryId ?? 'ledger pending'} / ${safeDateTime(payout.createdAt)}`}
+                          />
+                        ))}
+                        {!tournamentSettlement && (
+                          <AdminRow
+                            left="No settlement recorded"
+                            right={tournamentLeaderboard.tournament.status}
+                            detail="Ended tournaments can be settled once; active tournaments stay locked"
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <AdminRow
+                        left={tournamentsLoading ? 'Loading tournaments' : 'No tournament selected'}
+                        right="settle"
+                        detail="Open the Tournament Arena or refresh tournaments to select a leaderboard"
                       />
                     )}
                   </AdminPanel>

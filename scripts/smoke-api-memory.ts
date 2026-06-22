@@ -218,6 +218,29 @@ const main = async () => {
   if (!tournamentLeaderboard.entries.some((entry: { userId: string; roundCount: number; score: number }) => entry.userId === adminSession.user.id && entry.roundCount === 1 && entry.score === -200)) {
     throw new Error('Expected tournament leaderboard to score settled rounds after entry only');
   }
+  const blockedEarlySettlement = await fetch(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/settle`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminSession.token}`
+    },
+    body: JSON.stringify({ idempotencyKey: 'quality-tournament-settle-early' })
+  });
+  assertEqual(blockedEarlySettlement.status, 400, 'active tournament settlement blocked');
+  const tournamentSettlement = await postJson(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/settle`, adminSession.token, {
+    idempotencyKey: 'quality-tournament-settle',
+    now: new Date(new Date(activeTournament.endAt).getTime() + 1000).toISOString()
+  });
+  if (!tournamentSettlement.settlement.payouts.some((payout: { userId: string; amount: number; rank: number }) => payout.userId === adminSession.user.id && payout.amount === activeTournament.prizePool && payout.rank === 1)) {
+    throw new Error('Expected tournament settlement to pay the ranked winner');
+  }
+  const duplicateTournamentSettlement = await postJson(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/settle`, adminSession.token, {
+    idempotencyKey: 'quality-tournament-settle-duplicate',
+    now: new Date(new Date(activeTournament.endAt).getTime() + 1000).toISOString()
+  });
+  assertEqual(duplicateTournamentSettlement.settlement.id, tournamentSettlement.settlement.id, 'duplicate tournament settlement returns original');
+  const loadedTournamentSettlement = await getJson(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/settlement`, adminSession.token);
+  assertEqual(loadedTournamentSettlement.settlement.id, tournamentSettlement.settlement.id, 'tournament settlement load');
 
   await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
     category: 'page',
@@ -463,7 +486,8 @@ const main = async () => {
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);
-  if (!streamUpdates.some(update => update.available === tournamentRoundSettled.wallet.available && update.locked === 0)) {
+  const expectedTournamentWallet = tournamentRoundSettled.wallet.available + activeTournament.prizePool;
+  if (!streamUpdates.some(update => update.available === expectedTournamentWallet && update.locked === 0)) {
     throw new Error('Expected wallet SSE stream to send current wallet state');
   }
 

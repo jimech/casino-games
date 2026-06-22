@@ -245,6 +245,28 @@ export interface TournamentLeaderboardDto {
   entries: TournamentLeaderboardRowDto[];
 }
 
+export interface TournamentPayoutDto {
+  id: string;
+  tournamentId: string;
+  settlementId: string;
+  userId: string;
+  rank: number;
+  amount: number;
+  ledgerEntryId?: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface TournamentSettlementDto {
+  id: string;
+  tournamentId: string;
+  prizePool: number;
+  status: 'settled';
+  idempotencyKey: string;
+  settledAt: string;
+  payouts: TournamentPayoutDto[];
+}
+
 export interface TargetedBonusOfferDto {
   id: string;
   campaignId: string;
@@ -739,6 +761,31 @@ export const fetchTournamentLeaderboard = async (tournamentId: string): Promise<
     headers: authHeaders()
   });
   return parseJsonResponse<TournamentLeaderboardDto>(response);
+};
+
+export const fetchTournamentSettlement = async (tournamentId: string): Promise<TournamentSettlementDto | undefined> => {
+  const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(tournamentId)}/settlement`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ settlement?: TournamentSettlementDto }>(response);
+  return payload.settlement;
+};
+
+export const settleTournament = async (input: {
+  tournamentId: string;
+  idempotencyKey: string;
+  now?: string;
+}): Promise<TournamentSettlementDto> => {
+  const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(input.tournamentId)}/settle`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      idempotencyKey: input.idempotencyKey,
+      now: input.now
+    })
+  });
+  const payload = await parseJsonResponse<{ settlement: TournamentSettlementDto }>(response);
+  return payload.settlement;
 };
 
 export const fetchChurnScore = async (input: { userId?: string } = {}): Promise<ChurnScoreDto> => {

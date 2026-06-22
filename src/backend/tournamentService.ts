@@ -48,13 +48,43 @@ export interface TournamentLeaderboard {
   entries: TournamentLeaderboardRow[];
 }
 
+export interface TournamentPayoutRecord {
+  id: string;
+  tournamentId: string;
+  settlementId: string;
+  userId: string;
+  rank: number;
+  amount: number;
+  ledgerEntryId?: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface TournamentSettlementRecord {
+  id: string;
+  tournamentId: string;
+  prizePool: number;
+  status: 'settled';
+  idempotencyKey: string;
+  settledAt: string;
+  payouts: TournamentPayoutRecord[];
+}
+
 export interface TournamentService {
   listTournaments(now?: Date): TournamentDefinition[];
   enter(input: { tournamentId: string; userId: string; idempotencyKey: string; now?: Date }): Promise<TournamentEntryResult>;
   leaderboard(input: { tournamentId: string; now?: Date }): Promise<TournamentLeaderboard>;
+  getSettlement(input: { tournamentId: string; now?: Date }): Promise<TournamentSettlementRecord | undefined>;
+  settle(input: { tournamentId: string; idempotencyKey: string; now?: Date }): Promise<TournamentSettlementRecord>;
 }
 
 interface TournamentWallet {
+  creditWallet(input: {
+    userId: string;
+    amount: number;
+    idempotencyKey: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<WalletState> | WalletState;
   debitWallet(input: {
     userId: string;
     amount: number;
@@ -101,7 +131,10 @@ export const DEFAULT_TOURNAMENTS: Omit<TournamentDefinition, 'status'>[] = [
 
 export class MemoryTournamentService implements TournamentService {
   private entries = new Map<string, TournamentEntry>();
+  private settlements = new Map<string, TournamentSettlementRecord>();
   private sequence = 0;
+  private settlementSequence = 0;
+  private payoutSequence = 0;
 
   constructor(
     private readonly wallet: TournamentWallet,
@@ -172,6 +205,67 @@ export class MemoryTournamentService implements TournamentService {
       generatedAt: (input.now ?? new Date()).toISOString(),
       entries: rows
     };
+  }
+
+  async getSettlement(input: { tournamentId: string; now?: Date }): Promise<TournamentSettlementRecord | undefined> {
+    assertText(input.tournamentId, 'tournamentId');
+    this.requireTournament(input.tournamentId, input.now);
+    return this.settlements.get(input.tournamentId);
+  }
+
+  async settle(input: { tournamentId: string; idempotencyKey: string; now?: Date }): Promise<TournamentSettlementRecord> {
+    assertText(input.tournamentId, 'tournamentId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const tournament = this.requireTournament(input.tournamentId, input.now);
+    if (tournament.status !== 'ended') {
+      throw new Error(`Tournament ${tournament.id} is not ready for settlement`);
+    }
+    const existing = this.settlements.get(tournament.id);
+    if (existing) return existing;
+
+    const leaderboard = await this.leaderboard({ tournamentId: tournament.id, now: input.now });
+    const payouts = buildPrizePayouts(tournament, leaderboard.entries);
+    const settlementId = `tournament_settlement_${(++this.settlementSequence).toString().padStart(8, '0')}`;
+    const payoutRecords: TournamentPayoutRecord[] = [];
+    for (const payout of payouts) {
+      const payoutKey = `${input.idempotencyKey}-rank-${payout.rank}-${payout.userId}`;
+      await this.wallet.creditWallet({
+        userId: payout.userId,
+        amount: payout.amount,
+        idempotencyKey: payoutKey,
+        metadata: {
+          source: 'tournament_prize',
+          tournamentId: tournament.id,
+          tournamentTitle: tournament.title,
+          settlementId,
+          rank: payout.rank
+        }
+      });
+      const ledger = await this.wallet.getLedger(payout.userId);
+      const ledgerEntry = ledger.find(entry => entry.idempotencyKey === payoutKey);
+      payoutRecords.push({
+        id: `tournament_payout_${(++this.payoutSequence).toString().padStart(8, '0')}`,
+        tournamentId: tournament.id,
+        settlementId,
+        userId: payout.userId,
+        rank: payout.rank,
+        amount: payout.amount,
+        ledgerEntryId: ledgerEntry?.id,
+        idempotencyKey: payoutKey,
+        createdAt: (input.now ?? new Date()).toISOString()
+      });
+    }
+    const settlement: TournamentSettlementRecord = {
+      id: settlementId,
+      tournamentId: tournament.id,
+      prizePool: tournament.prizePool,
+      status: 'settled',
+      idempotencyKey: input.idempotencyKey,
+      settledAt: (input.now ?? new Date()).toISOString(),
+      payouts: payoutRecords
+    };
+    this.settlements.set(tournament.id, settlement);
+    return settlement;
   }
 
   private requireTournament(tournamentId: string, now = new Date()): TournamentDefinition {
@@ -261,6 +355,75 @@ export class PrismaTournamentService implements TournamentService {
     };
   }
 
+  async getSettlement(input: { tournamentId: string; now?: Date }): Promise<TournamentSettlementRecord | undefined> {
+    assertText(input.tournamentId, 'tournamentId');
+    this.requireTournament(input.tournamentId, input.now);
+    const settlement = await this.prisma.tournamentSettlement.findUnique({
+      where: { tournamentId: input.tournamentId },
+      include: { payouts: { orderBy: { rank: 'asc' } } }
+    });
+    return settlement ? tournamentSettlementToRecord(settlement) : undefined;
+  }
+
+  async settle(input: { tournamentId: string; idempotencyKey: string; now?: Date }): Promise<TournamentSettlementRecord> {
+    assertText(input.tournamentId, 'tournamentId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const tournament = this.requireTournament(input.tournamentId, input.now);
+    if (tournament.status !== 'ended') {
+      throw new Error(`Tournament ${tournament.id} is not ready for settlement`);
+    }
+    const existing = await this.prisma.tournamentSettlement.findUnique({
+      where: { tournamentId: tournament.id },
+      include: { payouts: { orderBy: { rank: 'asc' } } }
+    });
+    if (existing) return tournamentSettlementToRecord(existing);
+
+    const leaderboard = await this.leaderboard({ tournamentId: tournament.id, now: input.now });
+    const payouts = buildPrizePayouts(tournament, leaderboard.entries);
+    const settlement = await this.prisma.tournamentSettlement.create({
+      data: {
+        tournamentId: tournament.id,
+        prizePool: BigInt(asMoney(tournament.prizePool)),
+        idempotencyKey: input.idempotencyKey,
+        settledAt: input.now ?? new Date()
+      },
+      include: { payouts: true }
+    });
+
+    const createdPayouts = [];
+    for (const payout of payouts) {
+      const payoutKey = `${input.idempotencyKey}-rank-${payout.rank}-${payout.userId}`;
+      await this.wallet.creditWallet({
+        userId: payout.userId,
+        amount: payout.amount,
+        idempotencyKey: payoutKey,
+        metadata: {
+          source: 'tournament_prize',
+          tournamentId: tournament.id,
+          tournamentTitle: tournament.title,
+          settlementId: settlement.id,
+          rank: payout.rank
+        }
+      });
+      const ledger = await this.wallet.getLedger(payout.userId);
+      const ledgerEntry = ledger.find(entry => entry.idempotencyKey === payoutKey);
+      const created = await this.prisma.tournamentPayout.create({
+        data: {
+          settlementId: settlement.id,
+          tournamentId: tournament.id,
+          userId: payout.userId,
+          rank: payout.rank,
+          amount: BigInt(asMoney(payout.amount)),
+          ledgerEntryId: ledgerEntry?.id,
+          idempotencyKey: payoutKey
+        }
+      });
+      createdPayouts.push(created);
+    }
+
+    return tournamentSettlementToRecord({ ...settlement, payouts: createdPayouts });
+  }
+
   private requireTournament(tournamentId: string, now = new Date()): TournamentDefinition {
     const tournament = this.listTournaments(now).find(candidate => candidate.id === tournamentId);
     if (!tournament) throw new Error(`Tournament not found: ${tournamentId}`);
@@ -295,6 +458,30 @@ export const buildLeaderboardRow = (
     roundCount: settledRounds.length,
     lastSettledAt
   };
+};
+
+export const PRIZE_SHARES = [0.5, 0.3, 0.2] as const;
+
+export const buildPrizePayouts = (
+  tournament: Pick<TournamentDefinition, 'id' | 'prizePool'>,
+  rows: TournamentLeaderboardRow[]
+): Array<{ userId: string; rank: number; amount: number }> => {
+  const winners = rows.filter(row => row.roundCount > 0).slice(0, PRIZE_SHARES.length);
+  if (!winners.length || tournament.prizePool <= 0) return [];
+  const activeShares = PRIZE_SHARES.slice(0, winners.length);
+  const shareTotal = activeShares.reduce((sum, share) => sum + share, 0);
+  let allocated = 0;
+  return winners.map((winner, index) => {
+    const amount = index === winners.length - 1
+      ? asMoney(tournament.prizePool - allocated)
+      : asMoney(Math.floor((tournament.prizePool * activeShares[index]) / shareTotal));
+    allocated += amount;
+    return {
+      userId: winner.userId,
+      rank: winner.rank,
+      amount
+    };
+  });
 };
 
 export const compareRows = (
@@ -335,6 +522,46 @@ const tournamentEntryToRecord = (entry: {
   ledgerEntryId: entry.ledgerEntryId ?? undefined,
   idempotencyKey: entry.idempotencyKey,
   enteredAt: entry.enteredAt.toISOString()
+});
+
+const tournamentSettlementToRecord = (settlement: {
+  id: string;
+  tournamentId: string;
+  prizePool: bigint;
+  status: string;
+  idempotencyKey: string;
+  settledAt: Date;
+  payouts: Array<{
+    id: string;
+    tournamentId: string;
+    settlementId: string;
+    userId: string;
+    rank: number;
+    amount: bigint;
+    ledgerEntryId: string | null;
+    idempotencyKey: string;
+    createdAt: Date;
+  }>;
+}): TournamentSettlementRecord => ({
+  id: settlement.id,
+  tournamentId: settlement.tournamentId,
+  prizePool: toSafeNumber(settlement.prizePool),
+  status: 'settled',
+  idempotencyKey: settlement.idempotencyKey,
+  settledAt: settlement.settledAt.toISOString(),
+  payouts: settlement.payouts
+    .map(payout => ({
+      id: payout.id,
+      tournamentId: payout.tournamentId,
+      settlementId: payout.settlementId,
+      userId: payout.userId,
+      rank: payout.rank,
+      amount: toSafeNumber(payout.amount),
+      ledgerEntryId: payout.ledgerEntryId ?? undefined,
+      idempotencyKey: payout.idempotencyKey,
+      createdAt: payout.createdAt.toISOString()
+    }))
+    .sort((left, right) => left.rank - right.rank)
 });
 
 const toSafeNumber = (value: bigint): number => {

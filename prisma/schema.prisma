@@ -113,6 +113,7 @@ model User {
   notificationPreferences NotificationPreference[]
   notificationDeliveries NotificationDelivery[]
   tournamentEntries TournamentEntry[]
+  tournamentPayouts TournamentPayout[]
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
@@ -401,6 +402,41 @@ model TournamentEntry {
   @@index([userId, enteredAt])
   @@index([tournamentId, enteredAt])
   @@map("tournament_entries")
+}
+
+model TournamentSettlement {
+  id             String   @id @default(cuid())
+  tournamentId   String   @unique
+  prizePool      BigInt
+  status         String   @default("settled")
+  idempotencyKey String   @unique
+  settledAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  payouts TournamentPayout[]
+
+  @@index([settledAt])
+  @@map("tournament_settlements")
+}
+
+model TournamentPayout {
+  id             String   @id @default(cuid())
+  settlementId   String
+  tournamentId   String
+  userId         String
+  rank           Int
+  amount         BigInt
+  ledgerEntryId  String?
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  settlement TournamentSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, rank])
+  @@index([userId, createdAt])
+  @@index([tournamentId, rank])
+  @@map("tournament_payouts")
 }
 
 model RiskEvent {

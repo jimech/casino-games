@@ -255,6 +255,56 @@ app.get('/api/tournaments/:id/leaderboard', async (req, res) => {
   }
 });
 
+app.get('/api/admin/tournaments/:id/settlement', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const settlement = await tournamentService.getSettlement({ tournamentId: req.params.id });
+    res.json({ settlement });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/tournaments/:id/settle', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const settlement = await tournamentService.settle({
+      tournamentId: req.params.id,
+      idempotencyKey: String(req.body.idempotencyKey ?? ''),
+      now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
+    });
+    await Promise.all(settlement.payouts.map(async payout => {
+      broadcastWallet(payout.userId, await casinoService.getWallet(payout.userId));
+      await notificationService.create({
+        userId: payout.userId,
+        type: 'bonus',
+        title: 'Tournament prize credited',
+        message: `Rank #${payout.rank} prize credited: +$${payout.amount}`,
+        metadata: {
+          tournamentId: settlement.tournamentId,
+          settlementId: settlement.id,
+          payoutId: payout.id,
+          rank: payout.rank
+        }
+      });
+    }));
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'tournament_settled',
+      context: {
+        tournamentId: settlement.tournamentId,
+        settlementId: settlement.id,
+        payoutCount: settlement.payouts.length,
+        prizePool: settlement.prizePool
+      }
+    });
+    res.status(201).json({ settlement });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/wallet/:userId/events', async (req, res) => {
   try {
     const user = await requireOwnUser(req, req.params.userId);
@@ -1371,7 +1421,7 @@ app.listen(port, '0.0.0.0', () => {
 
 function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
-  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|consent|replay/i.test(message) ? 400 : 500;
+  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|not ready|consent|replay/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
 }
 

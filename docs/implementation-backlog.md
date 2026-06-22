@@ -805,6 +805,28 @@ Acceptance criteria:
 - Ranking tie-breaks are deterministic.
 - Tournament UI shows definitions, entry controls, and leaderboard state.
 
+### T38 - Prize Payouts and Tournament Settlement
+
+Summary: Close ended tournaments and credit ranked winners safely.
+
+Implementation status: Complete. Tournament settlement now requires ended tournament status, computes the final post-entry leaderboard, distributes the prize pool across ranked winners, credits prize payouts through wallet ledger entries with tournament metadata, stores memory/Prisma settlement and payout records, and returns existing settlement records on duplicate attempts. Admin APIs can review or settle tournaments, the Admin UI exposes settlement status and payout rows, and smoke coverage verifies early-settlement blocking, winner payout, settlement loading, and duplicate settlement idempotency.
+
+Scope:
+- Settlement records for tournaments.
+- Payout records linked to ranked winners.
+- Prize distribution from final leaderboard.
+- Wallet ledger credits for prizes.
+- Idempotent duplicate settlement handling.
+- Admin API and UI coverage.
+- Unit and smoke coverage.
+
+Acceptance criteria:
+- Active/upcoming tournaments cannot be settled.
+- Ended tournaments settle exactly once.
+- Prize payouts create wallet ledger credits.
+- Duplicate settlement attempts do not double-pay.
+- Admins can review settlement and payout evidence.
+
 ## First Working Sequence
 
 Start here:
