@@ -15,6 +15,7 @@ import {
   AuthSessionDto,
   AuthUserDto,
   AdminRoundEvidenceDto,
+  AdminRewardsReviewDto,
   AdminUserDetailDto,
   AdminSummaryDto,
   actBlackjackRound,
@@ -29,6 +30,7 @@ import {
   fetchAdminNotificationDeliveries,
   fetchAuthSession,
   fetchAdminRoundEvidence,
+  fetchAdminRewardsReview,
   fetchAdminUserDetail,
   fetchAdminSummary,
   fetchNotificationPreferences,
@@ -143,9 +145,11 @@ export default function App() {
   const [adminUserResults, setAdminUserResults] = useState<AuthUserDto[]>([]);
   const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetailDto | null>(null);
   const [adminRoundEvidence, setAdminRoundEvidence] = useState<AdminRoundEvidenceDto | null>(null);
+  const [adminRewardsReview, setAdminRewardsReview] = useState<AdminRewardsReviewDto | null>(null);
   const [adminUserSearchLoading, setAdminUserSearchLoading] = useState(false);
   const [adminUserDetailLoading, setAdminUserDetailLoading] = useState(false);
   const [adminRoundEvidenceLoading, setAdminRoundEvidenceLoading] = useState(false);
+  const [adminRewardsLoading, setAdminRewardsLoading] = useState(false);
   const [adminRoundExportPreview, setAdminRoundExportPreview] = useState('');
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferenceDto[]>([]);
@@ -233,6 +237,7 @@ export default function App() {
       void loadAdminSummary();
       void loadAdminUsers();
       void loadAdminNotificationDeliveries();
+      void loadAdminRewardsReview();
     }
   }, [authSession?.user.id, activeCasinoTab]);
 
@@ -366,6 +371,17 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Round evidence failed to load.", "error");
     } finally {
       setAdminRoundEvidenceLoading(false);
+    }
+  };
+
+  const loadAdminRewardsReview = async () => {
+    setAdminRewardsLoading(true);
+    try {
+      setAdminRewardsReview(await fetchAdminRewardsReview({ query: adminUserQuery, limit: 12 }));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Rewards review failed to load.", "error");
+    } finally {
+      setAdminRewardsLoading(false);
     }
   };
 
@@ -1514,7 +1530,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => void joinTournament(tournament.id)}
-                            disabled={tournament.status === 'ended' || tournament.status === 'cancelled'}
+                            disabled={tournament.status !== 'active'}
                             className="bg-[#00FF88] hover:bg-emerald-400 disabled:bg-neutral-800 disabled:text-neutral-500 text-neutral-950 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
                           >
                             Enter
@@ -1794,6 +1810,13 @@ export default function App() {
                       >
                         {adminUserSearchLoading ? 'Searching' : 'Search'}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => void loadAdminRewardsReview()}
+                        className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-200 text-[10px] font-black uppercase px-3 py-2 rounded-lg"
+                      >
+                        Rewards
+                      </button>
                     </form>
                     {(adminUserResults ?? []).map(account => (
                       <button
@@ -1921,6 +1944,40 @@ export default function App() {
                         left={adminRoundEvidenceLoading ? 'Loading round' : 'No round selected'}
                         right="read only"
                         detail="Select a round from User Detail to inspect ledger, risk, AI, and case evidence"
+                      />
+                    )}
+                  </AdminPanel>
+
+                  <AdminPanel title="Rewards Review">
+                    {adminRewardsReview ? (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            ['Accounts', adminRewardsReview.summary.accountCount],
+                            ['Claimed', `$${adminRewardsReview.summary.totalBonusClaimed}`],
+                            ['Cashback', `$${adminRewardsReview.summary.totalAvailableCashback}`],
+                            ['Guarded', adminRewardsReview.summary.duplicateCashbackBlockedCount]
+                          ].map(([label, value]) => (
+                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                              <span className="block text-sm font-black font-mono text-[#00FF88]">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {adminRewardsReview.accounts.slice(0, 6).map(account => (
+                          <AdminRow
+                            key={account.user.id}
+                            left={`${account.user.username} / ${account.vipStatus.tier.label}`}
+                            right={`$${account.vipStatus.availableCashback}`}
+                            detail={`${account.bonusClaims.length} claims / ${account.cashbackClaimedThisWeek ? 'cashback claimed' : 'cashback open'} / ${account.cashbackLedgerEntries.length} ledger credits`}
+                          />
+                        ))}
+                      </>
+                    ) : (
+                      <AdminRow
+                        left={adminRewardsLoading ? 'Loading rewards' : 'No rewards review loaded'}
+                        right="VIP"
+                        detail="Use Rewards from user search to inspect bonus claims and weekly cashback controls"
                       />
                     )}
                   </AdminPanel>

@@ -1,3 +1,4 @@
+import { PrismaClient } from '@prisma/client';
 import { GameRoundRecord } from './casinoService';
 import { LedgerEntry, WalletState } from '../domain/ledger';
 import { asMoney } from '../domain/money';
@@ -116,7 +117,7 @@ export class MemoryTournamentService implements TournamentService {
     assertText(input.userId, 'userId');
     assertText(input.idempotencyKey, 'idempotencyKey');
     const tournament = this.requireTournament(input.tournamentId, input.now);
-    if (tournament.status === 'ended' || tournament.status === 'cancelled') {
+    if (tournament.status !== 'active') {
       throw new Error(`Tournament ${tournament.id} is not open for entry`);
     }
 
@@ -163,7 +164,94 @@ export class MemoryTournamentService implements TournamentService {
     const entries = [...this.entries.values()].filter(entry => entry.tournamentId === tournament.id);
     const rounds = await this.wallet.listRounds();
     const rows = entries
-      .map(entry => buildLeaderboardRow(entry.userId, tournament, rounds))
+      .map(entry => buildLeaderboardRow(entry, tournament, rounds))
+      .sort(compareRows)
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+    return {
+      tournament,
+      generatedAt: (input.now ?? new Date()).toISOString(),
+      entries: rows
+    };
+  }
+
+  private requireTournament(tournamentId: string, now = new Date()): TournamentDefinition {
+    const tournament = this.listTournaments(now).find(candidate => candidate.id === tournamentId);
+    if (!tournament) throw new Error(`Tournament not found: ${tournamentId}`);
+    return tournament;
+  }
+}
+
+export class PrismaTournamentService implements TournamentService {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly wallet: TournamentWallet,
+    private readonly tournaments = DEFAULT_TOURNAMENTS
+  ) {}
+
+  listTournaments(now = new Date()): TournamentDefinition[] {
+    return this.tournaments.map(tournament => withStatus(tournament, now));
+  }
+
+  async enter(input: { tournamentId: string; userId: string; idempotencyKey: string; now?: Date }): Promise<TournamentEntryResult> {
+    assertText(input.tournamentId, 'tournamentId');
+    assertText(input.userId, 'userId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const tournament = this.requireTournament(input.tournamentId, input.now);
+    if (tournament.status !== 'active') {
+      throw new Error(`Tournament ${tournament.id} is not open for entry`);
+    }
+
+    const existing = await this.prisma.tournamentEntry.findUnique({
+      where: { tournamentId_userId: { tournamentId: tournament.id, userId: input.userId } }
+    });
+    if (existing) {
+      return {
+        tournament,
+        entry: tournamentEntryToRecord(existing),
+        wallet: await this.wallet.getWallet(input.userId)
+      };
+    }
+
+    const wallet = tournament.entryFee > 0
+      ? await this.wallet.debitWallet({
+          userId: input.userId,
+          amount: tournament.entryFee,
+          idempotencyKey: input.idempotencyKey,
+          metadata: {
+            source: 'tournament_entry',
+            tournamentId: tournament.id,
+            tournamentTitle: tournament.title
+          }
+        })
+      : await this.wallet.getWallet(input.userId);
+    const ledger = await this.wallet.getLedger(input.userId);
+    const ledgerEntry = ledger.find(entry => entry.idempotencyKey === input.idempotencyKey);
+    const created = await this.prisma.tournamentEntry.create({
+      data: {
+        tournamentId: tournament.id,
+        userId: input.userId,
+        entryFee: BigInt(asMoney(tournament.entryFee)),
+        ledgerEntryId: ledgerEntry?.id,
+        idempotencyKey: input.idempotencyKey,
+        enteredAt: input.now ?? new Date()
+      }
+    });
+
+    return { tournament, entry: tournamentEntryToRecord(created), wallet };
+  }
+
+  async leaderboard(input: { tournamentId: string; now?: Date }): Promise<TournamentLeaderboard> {
+    assertText(input.tournamentId, 'tournamentId');
+    const tournament = this.requireTournament(input.tournamentId, input.now);
+    const [entries, rounds] = await Promise.all([
+      this.prisma.tournamentEntry.findMany({
+        where: { tournamentId: tournament.id },
+        orderBy: { enteredAt: 'asc' }
+      }),
+      this.wallet.listRounds()
+    ]);
+    const rows = entries
+      .map(entry => buildLeaderboardRow(tournamentEntryToRecord(entry), tournament, rounds))
       .sort(compareRows)
       .map((row, index) => ({ ...row, rank: index + 1 }));
     return {
@@ -181,14 +269,14 @@ export class MemoryTournamentService implements TournamentService {
 }
 
 export const buildLeaderboardRow = (
-  userId: string,
+  entry: Pick<TournamentEntry, 'userId' | 'enteredAt'>,
   tournament: Pick<TournamentDefinition, 'startAt' | 'endAt'>,
   rounds: GameRoundRecord[]
 ): Omit<TournamentLeaderboardRow, 'rank'> => {
-  const start = new Date(tournament.startAt).getTime();
+  const start = Math.max(new Date(tournament.startAt).getTime(), new Date(entry.enteredAt).getTime());
   const end = new Date(tournament.endAt).getTime();
   const settledRounds = rounds.filter(round => {
-    if (round.userId !== userId || round.status !== 'settled' || !round.settledAt) return false;
+    if (round.userId !== entry.userId || round.status !== 'settled' || !round.settledAt) return false;
     const settledAt = new Date(round.settledAt).getTime();
     return settledAt >= start && settledAt <= end;
   });
@@ -200,7 +288,7 @@ export const buildLeaderboardRow = (
     .sort()
     .at(-1);
   return {
-    userId,
+    userId: entry.userId,
     score: totalPayout - totalStake,
     totalStake,
     totalPayout,
@@ -230,6 +318,32 @@ const withStatus = (tournament: Omit<TournamentDefinition, 'status'>, now: Date)
 };
 
 const tournamentEntryKey = (tournamentId: string, userId: string) => `${tournamentId}:${userId}`;
+
+const tournamentEntryToRecord = (entry: {
+  id: string;
+  tournamentId: string;
+  userId: string;
+  entryFee: bigint;
+  ledgerEntryId: string | null;
+  idempotencyKey: string;
+  enteredAt: Date;
+}): TournamentEntry => ({
+  id: entry.id,
+  tournamentId: entry.tournamentId,
+  userId: entry.userId,
+  entryFee: toSafeNumber(entry.entryFee),
+  ledgerEntryId: entry.ledgerEntryId ?? undefined,
+  idempotencyKey: entry.idempotencyKey,
+  enteredAt: entry.enteredAt.toISOString()
+});
+
+const toSafeNumber = (value: bigint): number => {
+  const numberValue = Number(value);
+  if (!Number.isSafeInteger(numberValue)) {
+    throw new Error(`Database money value exceeds safe integer range: ${value.toString()}`);
+  }
+  return numberValue;
+};
 
 const assertText = (value: string, field: string) => {
   if (!value || typeof value !== 'string') throw new Error(`${field} is required`);

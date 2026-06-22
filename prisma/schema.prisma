@@ -112,6 +112,7 @@ model User {
   responsiblePlayInterventions ResponsiblePlayIntervention[]
   notificationPreferences NotificationPreference[]
   notificationDeliveries NotificationDelivery[]
+  tournamentEntries TournamentEntry[]
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
@@ -382,6 +383,24 @@ model BonusClaim {
   @@unique([userId, campaignId, claimKey])
   @@index([userId, createdAt])
   @@map("bonus_claims")
+}
+
+model TournamentEntry {
+  id             String   @id @default(cuid())
+  tournamentId   String
+  userId         String
+  entryFee       BigInt
+  ledgerEntryId  String?
+  idempotencyKey String   @unique
+  enteredAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, userId])
+  @@index([userId, enteredAt])
+  @@index([tournamentId, enteredAt])
+  @@map("tournament_entries")
 }
 
 model RiskEvent {

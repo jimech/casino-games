@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { asMoney } from '../../domain/money';
 import { CasinoService } from '../casinoService';
-import { MemoryTournamentService, TournamentLeaderboardRow, compareRows } from '../tournamentService';
+import { MemoryTournamentService, TournamentLeaderboardRow, buildLeaderboardRow, compareRows } from '../tournamentService';
 
 const activeTournament = {
   id: 'test-tournament',
@@ -21,13 +22,13 @@ describe('MemoryTournamentService', () => {
       tournamentId: activeTournament.id,
       userId: 'user_1',
       idempotencyKey: 'tournament-entry-1',
-      now: new Date('2026-06-23T00:00:00.000Z')
+      now: new Date('2026-06-22T00:00:00.000Z')
     });
     const duplicate = await service.enter({
       tournamentId: activeTournament.id,
       userId: 'user_1',
       idempotencyKey: 'tournament-entry-duplicate',
-      now: new Date('2026-06-23T00:00:00.000Z')
+      now: new Date('2026-06-22T00:00:00.000Z')
     });
 
     expect(first.wallet.available).toBe(900);
@@ -51,7 +52,7 @@ describe('MemoryTournamentService', () => {
       tournamentId: activeTournament.id,
       userId: 'user_1',
       idempotencyKey: 'tournament-entry-1',
-      now: new Date('2026-06-23T00:00:00.000Z')
+      now: new Date('2026-06-22T00:00:00.000Z')
     });
     casino.placeBet({ userId: 'user_1', gameId: 'roulette', stake: 100, idempotencyKey: 'open-round' });
     const settled = casino.placeBet({ userId: 'user_1', gameId: 'roulette', stake: 200, idempotencyKey: 'settled-round' });
@@ -59,13 +60,69 @@ describe('MemoryTournamentService', () => {
 
     const leaderboard = await service.leaderboard({
       tournamentId: activeTournament.id,
-      now: new Date('2026-06-23T00:00:00.000Z')
+      now: new Date('2026-06-22T00:00:00.000Z')
     });
 
     expect(leaderboard.entries).toHaveLength(1);
     expect(leaderboard.entries[0]).toMatchObject({
       rank: 1,
       userId: 'user_1',
+      score: 60,
+      totalStake: 200,
+      totalPayout: 260,
+      roundCount: 1
+    });
+  });
+
+  it('rejects entry before the tournament starts', async () => {
+    const casino = new CasinoService({ user_1: 1000 });
+    const service = new MemoryTournamentService(casino, [activeTournament]);
+
+    await expect(service.enter({
+      tournamentId: activeTournament.id,
+      userId: 'user_1',
+      idempotencyKey: 'tournament-entry-upcoming',
+      now: new Date('2026-06-21T23:59:59.000Z')
+    })).rejects.toThrow('not open for entry');
+    expect(casino.getWallet('user_1').available).toBe(1000);
+  });
+
+  it('does not score rounds settled before the user entered', () => {
+    const row = buildLeaderboardRow(
+      {
+        userId: 'user_1',
+        enteredAt: '2026-06-23T00:00:00.000Z'
+      },
+      activeTournament,
+      [
+        {
+          id: 'round_before',
+          userId: 'user_1',
+          gameId: 'roulette',
+          stake: asMoney(100),
+          status: 'settled',
+          payout: asMoney(500),
+          lockIdempotencyKey: 'before-bet',
+          settlementIdempotencyKey: 'before-settle',
+          createdAt: '2026-06-22T10:00:00.000Z',
+          settledAt: '2026-06-22T10:01:00.000Z'
+        },
+        {
+          id: 'round_after',
+          userId: 'user_1',
+          gameId: 'roulette',
+          stake: asMoney(200),
+          status: 'settled',
+          payout: asMoney(260),
+          lockIdempotencyKey: 'after-bet',
+          settlementIdempotencyKey: 'after-settle',
+          createdAt: '2026-06-23T10:00:00.000Z',
+          settledAt: '2026-06-23T10:01:00.000Z'
+        }
+      ]
+    );
+
+    expect(row).toMatchObject({
       score: 60,
       totalStake: 200,
       totalPayout: 260,

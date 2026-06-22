@@ -785,7 +785,7 @@ Acceptance criteria:
 
 Summary: Build backend tournament infrastructure using settled rounds as the source of truth.
 
-Implementation status: Complete. The platform now exposes tournament definitions through `/api/tournaments`, idempotent entry through `/api/tournaments/:id/enter`, and deterministic leaderboards through `/api/tournaments/:id/leaderboard`. Entry fees debit the authoritative wallet ledger with tournament metadata, duplicate user entry returns the original entry without another debit, and leaderboard scores are derived only from settled backend rounds within the tournament window. The UI adds a Tournament Arena tab with entry actions and live leaderboard review.
+Implementation status: Complete. The platform now exposes tournament definitions through `/api/tournaments`, active-only idempotent entry through `/api/tournaments/:id/enter`, and deterministic leaderboards through `/api/tournaments/:id/leaderboard`. Entry fees debit the authoritative wallet ledger with tournament metadata, Prisma mode persists tournament entries, duplicate user entry returns the original entry without another debit, and leaderboard scores are derived only from settled backend rounds after the user entered and inside the tournament window. The UI adds a Tournament Arena tab with entry actions and live leaderboard review.
 
 Scope:
 - Tournament definitions with start/end time, entry fee, prize pool, and status.
@@ -798,10 +798,10 @@ Scope:
 - Unit and smoke coverage.
 
 Acceptance criteria:
-- Users can list tournaments and enter an open tournament.
+- Users can list tournaments and enter an active tournament.
 - Duplicate entry attempts do not double-debit the wallet.
 - Tournament entry fees create debit ledger entries.
-- Leaderboards ignore open/refunded rounds and use settled backend rounds only.
+- Leaderboards ignore open/refunded rounds and pre-entry settled rounds.
 - Ranking tie-breaks are deterministic.
 - Tournament UI shows definitions, entry controls, and leaderboard state.
 
