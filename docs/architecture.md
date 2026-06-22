@@ -46,6 +46,7 @@ Roulette, Crash, Slots, Blackjack, and Poker use backend engines for outcome gen
 - Risk service records failed logins, forbidden access, high stakes, rapid play, refunds, and high payouts.
 - Bonus service records claims and credits wallet through the ledger.
 - VIP service derives tier from settled stake, computes weekly cashback from settled net losses, prevents duplicate weekly cashback claims through bonus claim keys, and credits cashback through the same wallet ledger.
+- Tournament service defines active/upcoming events, debits entry fees through wallet ledger entries, prevents duplicate user entry, and computes leaderboards from settled round records only. Tournament scores are signed `payout - stake` values with deterministic tie-breaks.
 - Notification service stores persistent inbox records with unread/read state, user preferences by category, and delivery audit rows for delivered or preference-suppressed attempts. System, risk, and admin notices are mandatory and cannot be disabled.
 - Security controls use short-lived password-backed step-up tokens for sensitive admin actions and `X-Request-Id` replay checks on protected mutations. Step-up failures, missing request ids, and replay attempts are stored as searchable risk events.
 - Compliance case service stores permanent case queues, assignments, review notes, outcomes, and structured evidence links. Case actions are mirrored into admin AI events and risk events for auditability.

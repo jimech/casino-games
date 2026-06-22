@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle, Compass, Play, Coins, UserCheck, User, Gift, Award, CreditCard,
-  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut, ShieldCheck, Bell, Activity
+  BookOpen, HeartHandshake, Settings as SettingsIcon, LogOut, ShieldCheck, Bell, Activity, Trophy
 } from 'lucide-react';
 
 import SlotsGame from './components/SlotsGame';
@@ -15,7 +15,6 @@ import {
   AuthSessionDto,
   AuthUserDto,
   AdminRoundEvidenceDto,
-  AdminRewardsReviewDto,
   AdminUserDetailDto,
   AdminSummaryDto,
   actBlackjackRound,
@@ -25,17 +24,19 @@ import {
   claimBonus,
   createNotification,
   createWalletEventSource,
+  enterTournament,
   exportAdminRoundEvidence,
   fetchAdminNotificationDeliveries,
   fetchAuthSession,
   fetchAdminRoundEvidence,
-  fetchAdminRewardsReview,
   fetchAdminUserDetail,
   fetchAdminSummary,
   fetchNotificationPreferences,
   fetchGameRecommendations,
   fetchNotifications,
   fetchTargetedBonuses,
+  fetchTournamentLeaderboard,
+  fetchTournaments,
   fetchVipStatus,
   fetchWallet,
   GameRecommendationDto,
@@ -58,6 +59,8 @@ import {
   startPokerRound,
   TargetedBonusOfferDto,
   trackAiEvent,
+  TournamentDto,
+  TournamentLeaderboardDto,
   updateNotificationPreference,
   VipStatusDto
 } from './api/casinoApi';
@@ -140,11 +143,9 @@ export default function App() {
   const [adminUserResults, setAdminUserResults] = useState<AuthUserDto[]>([]);
   const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetailDto | null>(null);
   const [adminRoundEvidence, setAdminRoundEvidence] = useState<AdminRoundEvidenceDto | null>(null);
-  const [adminRewardsReview, setAdminRewardsReview] = useState<AdminRewardsReviewDto | null>(null);
   const [adminUserSearchLoading, setAdminUserSearchLoading] = useState(false);
   const [adminUserDetailLoading, setAdminUserDetailLoading] = useState(false);
   const [adminRoundEvidenceLoading, setAdminRoundEvidenceLoading] = useState(false);
-  const [adminRewardsLoading, setAdminRewardsLoading] = useState(false);
   const [adminRoundExportPreview, setAdminRoundExportPreview] = useState('');
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferenceDto[]>([]);
@@ -152,6 +153,10 @@ export default function App() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
+  const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
+  const [activeTournamentId, setActiveTournamentId] = useState('');
+  const [tournamentLeaderboard, setTournamentLeaderboard] = useState<TournamentLeaderboardDto | null>(null);
+  const [tournamentsLoading, setTournamentsLoading] = useState(false);
   const [vipStatus, setVipStatus] = useState<VipStatusDto | null>(null);
   const [vipLoading, setVipLoading] = useState(false);
   const [aiUiFallbacks, setAiUiFallbacks] = useState<Record<string, string>>({});
@@ -212,6 +217,10 @@ export default function App() {
   }, [authSession?.user.id]);
 
   useEffect(() => {
+    if (authSession) void loadTournaments();
+  }, [authSession?.user.id]);
+
+  useEffect(() => {
     if (authSession) void loadVipStatus();
   }, [authSession?.user.id]);
 
@@ -224,7 +233,6 @@ export default function App() {
       void loadAdminSummary();
       void loadAdminUsers();
       void loadAdminNotificationDeliveries();
-      void loadAdminRewardsReview();
     }
   }, [authSession?.user.id, activeCasinoTab]);
 
@@ -361,17 +369,6 @@ export default function App() {
     }
   };
 
-  const loadAdminRewardsReview = async () => {
-    setAdminRewardsLoading(true);
-    try {
-      setAdminRewardsReview(await fetchAdminRewardsReview({ query: adminUserQuery, limit: 12 }));
-    } catch (error) {
-      triggerNotification(error instanceof Error ? error.message : "Rewards review failed to load.", "error");
-    } finally {
-      setAdminRewardsLoading(false);
-    }
-  };
-
   const previewAdminRoundEvidenceExport = async () => {
     if (!adminRoundEvidence) return;
     try {
@@ -443,6 +440,48 @@ export default function App() {
       console.warn('Targeted bonuses failed', error);
       setAiFallback('bonuses', 'Targeted offers are unavailable, showing standard promotions.');
       setTargetedBonuses([]);
+    }
+  };
+
+  const loadTournaments = async () => {
+    setTournamentsLoading(true);
+    try {
+      const nextTournaments = await fetchTournaments();
+      setTournaments(nextTournaments);
+      const nextId = activeTournamentId || nextTournaments[0]?.id || '';
+      setActiveTournamentId(nextId);
+      if (nextId) setTournamentLeaderboard(await fetchTournamentLeaderboard(nextId));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournaments failed to load.", "error");
+    } finally {
+      setTournamentsLoading(false);
+    }
+  };
+
+  const loadTournamentLeaderboard = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId) return;
+    setTournamentsLoading(true);
+    try {
+      setActiveTournamentId(tournamentId);
+      setTournamentLeaderboard(await fetchTournamentLeaderboard(tournamentId));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Leaderboard failed to load.", "error");
+    } finally {
+      setTournamentsLoading(false);
+    }
+  };
+
+  const joinTournament = async (tournamentId: string) => {
+    try {
+      const response = await enterTournament({
+        tournamentId,
+        idempotencyKey: `tournament-entry-${activeUserId}-${tournamentId}`
+      });
+      setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+      triggerNotification(`Entered ${response.tournament.title}. Entry fee ledgered.`, 'success');
+      await loadTournamentLeaderboard(tournamentId);
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament entry failed.", "error");
     }
   };
 
@@ -897,6 +936,7 @@ export default function App() {
                   { id: 'live', label: 'Live Dealer Lobby', icon: <UserCheck className="h-4 w-4 text-rose-500 animate-pulse" /> },
                   { id: 'profile', label: 'Personal Desk / Stats', icon: <User className="h-4 w-4" /> },
                   { id: 'bonuses', label: 'Bonuses & Promos', icon: <Gift className="h-4 w-4" /> },
+                  { id: 'tournaments', label: 'Tournaments', icon: <Trophy className="h-4 w-4 text-yellow-400" /> },
                   { id: 'vip', label: 'VIP Club Benefits', icon: <Award className="h-4 w-4" /> },
                   { id: 'wallet', label: 'My Wallet', icon: <CreditCard className="h-4 w-4" /> },
                   ...(authSession?.user.role === 'admin' ? [{ id: 'admin', label: 'Admin Audit', icon: <ShieldCheck className="h-4 w-4 text-[#00FF88]" /> }] : []),
@@ -1425,6 +1465,126 @@ export default function App() {
               </div>
             )}
 
+            {activeCasinoTab === 'tournaments' && (
+              <div className="max-w-5xl mx-auto space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-850 pb-3">
+                  <div>
+                    <h2 className="text-lg font-black uppercase text-white flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-yellow-400" />
+                      Tournament Arena
+                    </h2>
+                    <p className="text-xs text-neutral-400">Leaderboards score only settled backend rounds inside each tournament window.</p>
+                  </div>
+                  <button
+                    onClick={loadTournaments}
+                    className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-200 text-[10px] font-black uppercase px-3 py-2 rounded-lg"
+                  >
+                    {tournamentsLoading ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-5">
+                  <div className="space-y-3">
+                    {tournaments.map(tournament => (
+                      <div
+                        key={tournament.id}
+                        className={`bg-[#10101C] border ${activeTournamentId === tournament.id ? 'border-yellow-400/50' : 'border-neutral-850'} rounded-xl p-4 space-y-3`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="text-[9px] uppercase font-black tracking-widest text-yellow-400">{tournament.status}</span>
+                            <h3 className="text-sm font-black uppercase text-white truncate">{tournament.title}</h3>
+                            <p className="text-[10px] text-neutral-400 leading-relaxed mt-1">{tournament.description}</p>
+                          </div>
+                          <span className="text-sm font-black font-mono text-[#00FF88]">${safeMoney(tournament.prizePool)}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            ['Entry', `$${safeMoney(tournament.entryFee)}`],
+                            ['Starts', safeDateTime(tournament.startAt).slice(0, 10)],
+                            ['Ends', safeDateTime(tournament.endAt).slice(0, 10)]
+                          ].map(([label, value]) => (
+                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                              <span className="block text-xs font-black font-mono text-neutral-200 truncate">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void joinTournament(tournament.id)}
+                            disabled={tournament.status === 'ended' || tournament.status === 'cancelled'}
+                            className="bg-[#00FF88] hover:bg-emerald-400 disabled:bg-neutral-800 disabled:text-neutral-500 text-neutral-950 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            Enter
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void loadTournamentLeaderboard(tournament.id)}
+                            className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-yellow-400 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            Leaderboard
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {tournaments.length === 0 && (
+                      <div className="bg-[#10101C] border border-neutral-850 rounded-xl p-4 text-xs text-neutral-400">
+                        No tournament definitions loaded.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-[#10101C] border border-neutral-850 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-[9px] uppercase font-black tracking-widest text-neutral-500">Leaderboard</span>
+                        <h3 className="text-sm font-black uppercase text-white truncate">
+                          {tournamentLeaderboard?.tournament.title ?? 'Select a tournament'}
+                        </h3>
+                      </div>
+                      <span className="text-[10px] text-neutral-500 font-mono">{tournamentLeaderboard ? safeDateTime(tournamentLeaderboard.generatedAt) : 'pending'}</span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        ['Prize', `$${safeMoney(tournamentLeaderboard?.tournament.prizePool ?? 0)}`],
+                        ['Rows', String(tournamentLeaderboard?.entries.length ?? 0)],
+                        ['Status', tournamentLeaderboard?.tournament.status ?? 'none'],
+                        ['Fee', `$${safeMoney(tournamentLeaderboard?.tournament.entryFee ?? 0)}`]
+                      ].map(([label, value]) => (
+                        <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                          <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                          <span className="block text-xs font-black font-mono text-[#00FF88] truncate">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      {(tournamentLeaderboard?.entries ?? []).slice(0, 8).map(row => (
+                        <div key={`${row.rank}-${row.userId}`} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2 grid grid-cols-[44px_1fr_auto] items-center gap-3">
+                          <span className="text-sm font-black font-mono text-yellow-400">#{row.rank}</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-neutral-200 truncate">{row.userId}</div>
+                            <div className="text-[10px] text-neutral-500 truncate">{row.roundCount} settled rounds / payout ${safeMoney(row.totalPayout)}</div>
+                          </div>
+                          <span className={`text-sm font-black font-mono ${row.score >= 0 ? 'text-[#00FF88]' : 'text-[#FF0055]'}`}>
+                            {row.score >= 0 ? '+' : ''}{row.score}
+                          </span>
+                        </div>
+                      ))}
+                      {(!tournamentLeaderboard || tournamentLeaderboard.entries.length === 0) && (
+                        <div className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-4 text-xs text-neutral-400">
+                          Enter this tournament and settle rounds to appear on the leaderboard.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeCasinoTab === 'vip' && (
               <div className="max-w-4xl mx-auto space-y-6">
                 <div className="bg-[#10101C] border border-[#FF0055]/10 p-6 rounded-2xl space-y-5">
@@ -1634,13 +1794,6 @@ export default function App() {
                       >
                         {adminUserSearchLoading ? 'Searching' : 'Search'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void loadAdminRewardsReview()}
-                        className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-200 text-[10px] font-black uppercase px-3 py-2 rounded-lg"
-                      >
-                        Rewards
-                      </button>
                     </form>
                     {(adminUserResults ?? []).map(account => (
                       <button
@@ -1772,39 +1925,6 @@ export default function App() {
                     )}
                   </AdminPanel>
 
-                  <AdminPanel title="Rewards Review">
-                    {adminRewardsReview ? (
-                      <>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          {[
-                            ['Accounts', adminRewardsReview.summary.accountCount],
-                            ['Claimed', `$${adminRewardsReview.summary.totalBonusClaimed}`],
-                            ['Cashback', `$${adminRewardsReview.summary.totalAvailableCashback}`],
-                            ['Guarded', adminRewardsReview.summary.duplicateCashbackBlockedCount]
-                          ].map(([label, value]) => (
-                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
-                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
-                              <span className="block text-sm font-black font-mono text-[#00FF88]">{value}</span>
-                            </div>
-                          ))}
-                        </div>
-                        {adminRewardsReview.accounts.slice(0, 6).map(account => (
-                          <AdminRow
-                            key={account.user.id}
-                            left={`${account.user.username} / ${account.vipStatus.tier.label}`}
-                            right={`$${account.vipStatus.availableCashback}`}
-                            detail={`${account.bonusClaims.length} claims / ${account.cashbackClaimedThisWeek ? 'cashback claimed' : 'cashback open'} / ${account.cashbackLedgerEntries.length} ledger credits`}
-                          />
-                        ))}
-                      </>
-                    ) : (
-                      <AdminRow
-                        left={adminRewardsLoading ? 'Loading rewards' : 'No rewards review loaded'}
-                        right="VIP"
-                        detail="Use Rewards from user search to inspect bonus claims and weekly cashback controls"
-                      />
-                    )}
-                  </AdminPanel>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">

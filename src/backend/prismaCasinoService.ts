@@ -4,6 +4,7 @@ import {
   AddRoundStakeInput,
   CreditWalletInput,
   CreateUserWalletInput,
+  DebitWalletInput,
   GameRoundRecord,
   PlaceBetInput,
   RefundRoundInput,
@@ -88,6 +89,54 @@ export class PrismaCasinoService {
           lockedBefore: wallet.locked,
           lockedAfter: updatedWallet.locked,
           gameId: typeof input.metadata?.gameId === 'string' ? input.metadata.gameId : undefined,
+          metadata: {
+            ...input.metadata,
+            userId
+          }
+        }
+      });
+
+      return walletToState(updatedWallet);
+    }, { isolationLevel: SERIALIZABLE });
+  }
+
+  async debitWallet(input: DebitWalletInput): Promise<WalletState> {
+    assertText(input.userId, 'userId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = BigInt(asMoney(input.amount));
+    const userId = await this.resolveUserId(input.userId);
+
+    return this.prisma.$transaction(async tx => {
+      const existing = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (existing) return walletToState(existing.wallet);
+
+      const wallet = await requireWallet(tx, userId);
+      if (wallet.available < amount) {
+        throw new Error(`Insufficient funds: tried to debit ${amount.toString()} from ${wallet.available.toString()}`);
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          available: wallet.available - amount
+        }
+      });
+
+      await tx.walletLedgerEntry.create({
+        data: {
+          transactionId: randomUUID(),
+          idempotencyKey: input.idempotencyKey,
+          userId,
+          walletId: wallet.id,
+          type: 'debit',
+          amount,
+          balanceBefore: wallet.available,
+          balanceAfter: updatedWallet.available,
+          lockedBefore: wallet.locked,
+          lockedAfter: updatedWallet.locked,
           metadata: {
             ...input.metadata,
             userId

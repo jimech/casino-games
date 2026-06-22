@@ -79,11 +79,6 @@ const main = async () => {
     headers: { Authorization: `Bearer ${userSession.token}` }
   });
   assertEqual(blockedUserSearch.status, 403, 'regular user admin search access');
-  const blockedRewardsReview = await fetch(`${baseUrl}/api/admin/rewards/review`, {
-    headers: { Authorization: `Bearer ${userSession.token}` }
-  });
-  assertEqual(blockedRewardsReview.status, 403, 'regular user admin rewards review access');
-
   const adminUserSearch = await getJson(`${baseUrl}/api/admin/users?query=quality&limit=10`, adminSession.token);
   assertArray(adminUserSearch.users, 'admin user search array');
   if (!adminUserSearch.users.some((account: { id: string }) => account.id === userSession.user.id)) {
@@ -185,9 +180,25 @@ const main = async () => {
   }
   const vipStatusAfterClaim = await getJson(`${baseUrl}/api/vip/status`, adminSession.token);
   assertEqual(vipStatusAfterClaim.status.availableCashback, 0, 'vip cashback only once per week');
-  const rewardsReview = await getJson(`${baseUrl}/api/admin/rewards/review?query=quality&limit=10`, adminSession.token);
-  if (!rewardsReview.accounts.some((account: { user: { id: string }; cashbackClaimedThisWeek: boolean }) => account.user.id === adminSession.user.id && account.cashbackClaimedThisWeek)) {
-    throw new Error('Expected admin rewards review to show claimed VIP cashback');
+
+  const tournaments = await getJson(`${baseUrl}/api/tournaments`, adminSession.token);
+  assertArray(tournaments.tournaments, 'tournament definitions array');
+  const activeTournament = tournaments.tournaments.find((tournament: { status: string; entryFee: number }) => tournament.status === 'active' && tournament.entryFee > 0);
+  if (!activeTournament) {
+    throw new Error('Expected at least one active paid tournament');
+  }
+  const walletBeforeTournament = vipCashback.wallet.available;
+  const tournamentEntry = await postJson(`${baseUrl}/api/tournaments/${activeTournament.id}/enter`, adminSession.token, {
+    idempotencyKey: 'quality-tournament-entry'
+  });
+  assertEqual(tournamentEntry.wallet.available, walletBeforeTournament - activeTournament.entryFee, 'tournament entry fee wallet debit');
+  const duplicateTournamentEntry = await postJson(`${baseUrl}/api/tournaments/${activeTournament.id}/enter`, adminSession.token, {
+    idempotencyKey: 'quality-tournament-entry-duplicate'
+  });
+  assertEqual(duplicateTournamentEntry.wallet.available, tournamentEntry.wallet.available, 'duplicate tournament entry does not debit wallet');
+  const tournamentLeaderboard = await getJson(`${baseUrl}/api/tournaments/${activeTournament.id}/leaderboard`, adminSession.token);
+  if (!tournamentLeaderboard.entries.some((entry: { userId: string; roundCount: number; score: number }) => entry.userId === adminSession.user.id && entry.roundCount >= 1 && entry.score === -1500)) {
+    throw new Error('Expected tournament leaderboard to score settled rounds only');
   }
 
   await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
@@ -434,7 +445,7 @@ const main = async () => {
   }
 
   const streamUpdates = await collectWalletEvents(adminSession.user.id, adminSession.token);
-  if (!streamUpdates.some(update => update.available === 99045 && update.locked === 0)) {
+  if (!streamUpdates.some(update => update.available === duplicateTournamentEntry.wallet.available && update.locked === 0)) {
     throw new Error('Expected wallet SSE stream to send current wallet state');
   }
 

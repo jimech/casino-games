@@ -202,6 +202,49 @@ export interface VipCashbackClaimResponseDto {
   wallet: WalletDto;
 }
 
+export interface TournamentDto {
+  id: string;
+  title: string;
+  description: string;
+  startAt: string;
+  endAt: string;
+  entryFee: number;
+  prizePool: number;
+  status: 'upcoming' | 'active' | 'ended' | 'cancelled';
+}
+
+export interface TournamentEntryDto {
+  id: string;
+  tournamentId: string;
+  userId: string;
+  entryFee: number;
+  ledgerEntryId?: string;
+  idempotencyKey: string;
+  enteredAt: string;
+}
+
+export interface TournamentLeaderboardRowDto {
+  rank: number;
+  userId: string;
+  score: number;
+  totalStake: number;
+  totalPayout: number;
+  roundCount: number;
+  lastSettledAt?: string;
+}
+
+export interface TournamentEntryResponseDto {
+  tournament: TournamentDto;
+  entry: TournamentEntryDto;
+  wallet: WalletDto;
+}
+
+export interface TournamentLeaderboardDto {
+  tournament: TournamentDto;
+  generatedAt: string;
+  entries: TournamentLeaderboardRowDto[];
+}
+
 export interface TargetedBonusOfferDto {
   id: string;
   campaignId: string;
@@ -492,26 +535,6 @@ export interface AdminRoundEvidenceDto {
   };
 }
 
-export interface AdminRewardsReviewDto {
-  generatedAt: string;
-  summary: {
-    accountCount: number;
-    totalBonusClaimed: number;
-    totalAvailableCashback: number;
-    cashbackClaimsThisWeek: number;
-    duplicateCashbackBlockedCount: number;
-  };
-  accounts: Array<{
-    user: AuthUserDto;
-    vipStatus: VipStatusDto;
-    bonusClaims: BonusClaimDto[];
-    bonusTotal: number;
-    cashbackClaimedThisWeek: boolean;
-    cashbackLedgerEntries: LedgerEntryDto[];
-    duplicateCashbackBlocked: boolean;
-  }>;
-}
-
 export interface NotificationDto {
   id: string;
   userId: string;
@@ -671,6 +694,33 @@ export const claimVipCashback = async (input: {
   return parseJsonResponse<VipCashbackClaimResponseDto>(response);
 };
 
+export const fetchTournaments = async (): Promise<TournamentDto[]> => {
+  const response = await fetch('/api/tournaments', {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ tournaments: TournamentDto[] }>(response);
+  return payload.tournaments;
+};
+
+export const enterTournament = async (input: {
+  tournamentId: string;
+  idempotencyKey: string;
+}): Promise<TournamentEntryResponseDto> => {
+  const response = await fetch(`/api/tournaments/${encodeURIComponent(input.tournamentId)}/enter`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ idempotencyKey: input.idempotencyKey })
+  });
+  return parseJsonResponse<TournamentEntryResponseDto>(response);
+};
+
+export const fetchTournamentLeaderboard = async (tournamentId: string): Promise<TournamentLeaderboardDto> => {
+  const response = await fetch(`/api/tournaments/${encodeURIComponent(tournamentId)}/leaderboard`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<TournamentLeaderboardDto>(response);
+};
+
 export const fetchChurnScore = async (input: { userId?: string } = {}): Promise<ChurnScoreDto> => {
   const params = new URLSearchParams();
   if (input.userId) params.set('userId', input.userId);
@@ -780,20 +830,6 @@ export const fetchAdminRoundEvidence = async (roundId: string): Promise<AdminRou
     headers: authHeaders()
   });
   return parseJsonResponse<AdminRoundEvidenceDto>(response);
-};
-
-export const fetchAdminRewardsReview = async (input: {
-  query?: string;
-  limit?: number;
-} = {}): Promise<AdminRewardsReviewDto> => {
-  const params = new URLSearchParams();
-  if (input.query) params.set('query', input.query);
-  if (input.limit) params.set('limit', String(input.limit));
-  const query = params.toString();
-  const response = await fetch(`/api/admin/rewards/review${query ? `?${query}` : ''}`, {
-    headers: authHeaders()
-  });
-  return parseJsonResponse<AdminRewardsReviewDto>(response);
 };
 
 export const exportAdminRoundEvidence = async (roundId: string): Promise<string> => {

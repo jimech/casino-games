@@ -781,24 +781,29 @@ Acceptance criteria:
 - Duplicate weekly claims do not credit the wallet again.
 - UI shows real tier, progress, and claim availability.
 
-### T37 - Admin Rewards Review
+### T37 - Tournament and Leaderboard Engine
 
-Summary: Add an admin review surface for bonus claims and VIP cashback controls.
+Summary: Build backend tournament infrastructure using settled rounds as the source of truth.
 
-Implementation status: Complete. Admins can now open `/api/admin/rewards/review` to inspect account-level VIP status, bonus claim totals, current-week cashback claim state, cashback ledger credits, and duplicate-claim guard status. The Admin Audit UI adds a rewards panel fed by the same endpoint, and smoke coverage confirms claimed VIP cashback appears in the admin review packet.
+Implementation status: Complete. The platform now exposes tournament definitions through `/api/tournaments`, idempotent entry through `/api/tournaments/:id/enter`, and deterministic leaderboards through `/api/tournaments/:id/leaderboard`. Entry fees debit the authoritative wallet ledger with tournament metadata, duplicate user entry returns the original entry without another debit, and leaderboard scores are derived only from settled backend rounds within the tournament window. The UI adds a Tournament Arena tab with entry actions and live leaderboard review.
 
 Scope:
-- Review bonus claims across searched accounts.
-- Include live VIP status and current-week cashback availability.
-- Show ledger-linked cashback credits.
-- Surface duplicate weekly cashback protection.
-- Add UI and smoke coverage.
+- Tournament definitions with start/end time, entry fee, prize pool, and status.
+- Backend tournament service.
+- Idempotent user entry.
+- Entry fee debited safely through wallet ledger.
+- Scores counted only from settled backend rounds.
+- Deterministic leaderboard ranking and tie-breaks.
+- API and UI coverage.
+- Unit and smoke coverage.
 
 Acceptance criteria:
-- Regular users cannot access rewards review.
-- Admins can see bonus totals and VIP status per account.
-- Cashback review includes claim state and ledger credit evidence.
-- Duplicate weekly cashback protection is visible in the review payload.
+- Users can list tournaments and enter an open tournament.
+- Duplicate entry attempts do not double-debit the wallet.
+- Tournament entry fees create debit ledger entries.
+- Leaderboards ignore open/refunded rounds and use settled backend rounds only.
+- Ranking tie-breaks are deterministic.
+- Tournament UI shows definitions, entry controls, and leaderboard state.
 
 ## First Working Sequence
 

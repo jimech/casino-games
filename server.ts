@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService } = createServices();
+const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
@@ -206,6 +206,50 @@ app.get('/api/wallet/:userId/ledger', async (req, res) => {
     await requireOwnUser(req, req.params.userId);
     const entries = await casinoService.getLedger(req.params.userId);
     res.json({ entries: entries.map(sanitizeLedgerEntryForApi) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/tournaments', async (req, res) => {
+  try {
+    await requireAuth(req);
+    res.json({ tournaments: tournamentService.listTournaments() });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/tournaments/:id/enter', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const result = await tournamentService.enter({
+      tournamentId: req.params.id,
+      userId: user.id,
+      idempotencyKey: String(req.body.idempotencyKey ?? '')
+    });
+    broadcastWallet(user.id, result.wallet);
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'game',
+      name: 'tournament_entered',
+      context: {
+        tournamentId: result.tournament.id,
+        entryId: result.entry.id,
+        entryFee: result.entry.entryFee,
+        ledgerEntryId: result.entry.ledgerEntryId
+      }
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/tournaments/:id/leaderboard', async (req, res) => {
+  try {
+    await requireAuth(req);
+    res.json(await tournamentService.leaderboard({ tournamentId: req.params.id }));
   } catch (error) {
     sendApiError(res, error);
   }
@@ -852,67 +896,6 @@ app.get('/api/admin/rounds/:roundId/evidence-export', async (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="round-evidence-${evidence.round.id}.json"`);
     res.send(JSON.stringify(packet, null, 2));
-  } catch (error) {
-    sendApiError(res, error);
-  }
-});
-
-app.get('/api/admin/rewards/review', async (req, res) => {
-  try {
-    const admin = await requireAdmin(req);
-    const query = typeof req.query.query === 'string' ? req.query.query : undefined;
-    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 12;
-    const users = await authService.searchUsers({ query, limit });
-    const accounts = await Promise.all(users.map(async account => {
-      const [vipStatus, bonusClaims, ledger] = await Promise.all([
-        vipService.getStatus({ userId: account.id }),
-        bonusService.listClaims(account.id),
-        casinoService.getLedger(account.id)
-      ]);
-      const cashbackLedgerEntries = ledger
-        .filter(entry => entry.metadata?.source === 'vip_cashback' && entry.metadata?.weekKey === vipStatus.weekKey)
-        .map(sanitizeLedgerEntryForApi)
-        .reverse();
-      const cashbackClaimsThisWeek = bonusClaims.filter(claim =>
-        claim.campaignId === 'vip-weekly-cashback' &&
-        claim.claimKey === vipStatus.weekKey &&
-        claim.status === 'claimed'
-      );
-      return {
-        user: account,
-        vipStatus,
-        bonusClaims,
-        bonusTotal: bonusClaims.reduce((sum, claim) => sum + claim.amount, 0),
-        cashbackClaimedThisWeek: cashbackClaimsThisWeek.length > 0,
-        cashbackLedgerEntries,
-        duplicateCashbackBlocked: cashbackClaimsThisWeek.length <= 1 && cashbackLedgerEntries.length <= 1
-      };
-    }));
-    const summary = {
-      accountCount: accounts.length,
-      totalBonusClaimed: accounts.reduce((sum, account) => sum + account.bonusTotal, 0),
-      totalAvailableCashback: accounts.reduce((sum, account) => sum + account.vipStatus.availableCashback, 0),
-      cashbackClaimsThisWeek: accounts.filter(account => account.cashbackClaimedThisWeek).length,
-      duplicateCashbackBlockedCount: accounts.filter(account => account.duplicateCashbackBlocked).length
-    };
-
-    await trackAiEventSafely({
-      userId: admin.id,
-      category: 'admin',
-      name: 'admin_rewards_review_viewed',
-      context: {
-        query: query?.slice(0, 120),
-        accountCount: accounts.length,
-        totalAvailableCashback: summary.totalAvailableCashback,
-        cashbackClaimsThisWeek: summary.cashbackClaimsThisWeek
-      }
-    });
-
-    res.json({
-      generatedAt: new Date().toISOString(),
-      summary,
-      accounts
-    });
   } catch (error) {
     sendApiError(res, error);
   }
