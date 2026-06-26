@@ -9,6 +9,7 @@ import { evaluateAiModelHealth } from './src/backend/aiModelMonitoringService';
 import { extractBearerToken, AuthUser } from './src/backend/authService';
 import { GameRoundRecord } from './src/backend/casinoService';
 import { isComplianceCasePriority, isComplianceCaseStatus, isComplianceCaseType } from './src/backend/complianceCaseService';
+import { runGameMathSimulation } from './src/backend/gameMathSimulationService';
 import { createServices } from './src/backend/serviceFactory';
 import { RecommendationGame } from './src/backend/gameRecommendationService';
 import { spinRoulette } from './src/backend/games/rouletteEngine';
@@ -271,6 +272,16 @@ app.get('/api/admin/tournaments/policy', async (req, res) => {
   try {
     await requireAdmin(req);
     res.json({ policy: tournamentSettlementPolicy() });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/game-math/simulations', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const sampleCount = typeof req.query.sampleCount === 'string' ? Number(req.query.sampleCount) : undefined;
+    res.json({ report: runGameMathSimulation({ sampleCount }) });
   } catch (error) {
     sendApiError(res, error);
   }

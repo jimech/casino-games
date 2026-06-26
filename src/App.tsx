@@ -41,6 +41,7 @@ import {
   fetchAdminUserDetail,
   fetchAdminSummary,
   fetchNotificationPreferences,
+  fetchGameMathSimulationReport,
   fetchGameRecommendations,
   fetchNotifications,
   fetchTargetedBonuses,
@@ -51,6 +52,7 @@ import {
   fetchVipStatus,
   fetchWallet,
   GameRecommendationDto,
+  GameMathSimulationReportDto,
   getStoredAuthToken,
   loginAccount,
   logoutAccount,
@@ -170,6 +172,8 @@ export default function App() {
   const [adminNotificationDeliveries, setAdminNotificationDeliveries] = useState<NotificationDeliveryDto[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
+  const [gameMathReport, setGameMathReport] = useState<GameMathSimulationReportDto | null>(null);
+  const [gameMathLoading, setGameMathLoading] = useState(false);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
   const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
   const [activeTournamentId, setActiveTournamentId] = useState('');
@@ -517,6 +521,17 @@ export default function App() {
       console.warn('Targeted bonuses failed', error);
       setAiFallback('bonuses', 'Targeted offers are unavailable, showing standard promotions.');
       setTargetedBonuses([]);
+    }
+  };
+
+  const loadGameMathReport = async () => {
+    setGameMathLoading(true);
+    try {
+      setGameMathReport(await fetchGameMathSimulationReport({ sampleCount: 20000 }));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Game math simulation failed.", "error");
+    } finally {
+      setGameMathLoading(false);
     }
   };
 
@@ -2270,6 +2285,48 @@ export default function App() {
                     )}
                     {adminTournamentQueue?.rows.length === 0 && (
                       <AdminRow left="No tournaments match" right={adminTournamentQueue.filter} detail="Try a different queue filter" />
+                    )}
+                  </AdminPanel>
+
+                  <AdminPanel title="Game Math Simulations">
+                    <div className="flex items-center justify-between gap-2">
+                      <AdminRow
+                        left="RTP and volatility harness"
+                        right={gameMathReport ? `${gameMathReport.summary.scenarioCount} scenarios` : 'not run'}
+                        detail={gameMathReport ? safeDateTime(gameMathReport.generatedAt) : 'Run exact roulette/slots and sampled crash checks'}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void loadGameMathReport()}
+                        className="shrink-0 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-[#00FF88] font-black text-[10px] uppercase px-3 py-2 rounded-lg transition-all"
+                      >
+                        {gameMathLoading ? 'Running' : 'Run'}
+                      </button>
+                    </div>
+                    {gameMathReport && (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            ['Lowest RTP', `${Math.round(gameMathReport.summary.lowestRtp * 10000) / 100}%`],
+                            ['Highest RTP', `${Math.round(gameMathReport.summary.highestRtp * 10000) / 100}%`],
+                            ['Volatility', gameMathReport.summary.highestVolatilityIndex],
+                            ['Samples', gameMathReport.sampleCount]
+                          ].map(([label, value]) => (
+                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                              <span className="block text-sm font-black font-mono text-[#00FF88] truncate">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {[...gameMathReport.roulette, ...gameMathReport.slots, ...gameMathReport.crash].slice(0, 8).map(scenario => (
+                          <AdminRow
+                            key={scenario.scenarioId}
+                            left={`${scenario.gameId} / ${scenario.scenarioId}`}
+                            right={`${Math.round(scenario.theoreticalRtp * 10000) / 100}%`}
+                            detail={`${scenario.sampleCount} samples / hit ${Math.round(scenario.hitRate * 10000) / 100}% / ${scenario.warnings[0] ?? 'clean'}`}
+                          />
+                        ))}
+                      </>
                     )}
                   </AdminPanel>
 

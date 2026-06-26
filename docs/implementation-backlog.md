@@ -949,6 +949,26 @@ Acceptance criteria:
 - Admins can see why a tournament is blocked.
 - Policy decisions are included in job audit output.
 
+### T45 - Game Math Simulation Harness
+
+Summary: Add repeatable RTP and volatility simulation reports for backend game math.
+
+Implementation status: Complete. Admins can now load `/api/admin/game-math/simulations` for a read-only math report covering exact European roulette scenarios, exact slot reel-strip enumeration, and deterministic crash cashout sampling. Reports include theoretical RTP, house edge, hit rate, volatility index, total stake/payout, max payout, warnings, and summary ranges. The Admin Audit UI exposes a Game Math Simulations panel with report counters and scenario rows. Unit coverage verifies roulette RTP, slot enumeration/warnings, and deterministic crash reports; smoke coverage verifies the admin endpoint and roulette RTP bounds.
+
+Scope:
+- Pure simulation service with no wallet mutation.
+- Exact roulette RTP scenarios.
+- Exact slots reel-strip enumeration.
+- Deterministic crash sampling.
+- Admin API and UI report.
+- Unit and smoke coverage.
+
+Acceptance criteria:
+- Simulations are repeatable and auditable.
+- Reports include RTP, hit rate, volatility, house edge, and warnings.
+- Admins can run reports without affecting wallets or rounds.
+- Roulette reports match European roulette expected edge.
+
 ## First Working Sequence
 
 Start here:

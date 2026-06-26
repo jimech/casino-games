@@ -366,6 +366,35 @@ export interface AdminTournamentSettlementJobReportDto {
   }>;
 }
 
+export interface GameMathScenarioReportDto {
+  gameId: string;
+  scenarioId: string;
+  description: string;
+  theoreticalRtp: number;
+  hitRate: number;
+  volatilityIndex: number;
+  sampleCount: number;
+  totalStake: number;
+  totalPayout: number;
+  maxPayout: number;
+  expectedHouseEdge: number;
+  warnings: string[];
+}
+
+export interface GameMathSimulationReportDto {
+  generatedAt: string;
+  sampleCount: number;
+  roulette: GameMathScenarioReportDto[];
+  slots: GameMathScenarioReportDto[];
+  crash: GameMathScenarioReportDto[];
+  summary: {
+    scenarioCount: number;
+    lowestRtp: number;
+    highestRtp: number;
+    highestVolatilityIndex: number;
+  };
+}
+
 export interface TargetedBonusOfferDto {
   id: string;
   campaignId: string;
@@ -913,6 +942,17 @@ export const runTournamentSettlementJob = async (input: {
     })
   });
   const payload = await parseJsonResponse<{ report: AdminTournamentSettlementJobReportDto }>(response);
+  return payload.report;
+};
+
+export const fetchGameMathSimulationReport = async (input: { sampleCount?: number } = {}): Promise<GameMathSimulationReportDto> => {
+  const params = new URLSearchParams();
+  if (input.sampleCount) params.set('sampleCount', String(input.sampleCount));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/game-math/simulations${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ report: GameMathSimulationReportDto }>(response);
   return payload.report;
 };
 
