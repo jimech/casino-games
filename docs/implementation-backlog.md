@@ -847,6 +847,29 @@ Acceptance criteria:
 - Evidence review records admin audit telemetry.
 - Export/review paths never settle or credit wallets.
 
+### T40 - Tournament Cancellation and Entry-Fee Refunds
+
+Summary: Let admins cancel tournaments and refund paid entries safely.
+
+Implementation status: Complete. Tournament cancellation is now durable in memory and Prisma drivers with cancellation/refund records, cancelled tournaments surface with `cancelled` status, settled tournaments cannot be cancelled, cancelled tournaments cannot be settled, and duplicate cancellation attempts return the original record without double-crediting wallets. Refunds credit entry fees through wallet ledger entries with tournament metadata, create player wallet notifications, emit admin AI audit telemetry, and appear in tournament evidence/export packets with refund ledger integrity counts. The Admin Tournament Settlement panel can review cancellation records, cancel/refund tournaments, and inspect refund rows next to settlement controls.
+
+Scope:
+- Persistent tournament cancellation records.
+- Refund records linked to entries and ledger credits.
+- Idempotent cancellation command.
+- Block settlement after cancellation and cancellation after settlement.
+- Admin API and UI controls.
+- Evidence/export integration.
+- Unit and smoke coverage.
+
+Acceptance criteria:
+- Cancelling a paid tournament credits each entry fee exactly once.
+- Duplicate cancellation attempts do not create duplicate refunds.
+- Cancelled tournaments show cancelled status in list and leaderboard packets.
+- Settled tournaments cannot be cancelled.
+- Cancelled tournaments cannot be settled.
+- Admin evidence includes cancellation, refund, and refund-ledger proof.
+
 ## First Working Sequence
 
 Start here:

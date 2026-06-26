@@ -114,6 +114,7 @@ model User {
   notificationDeliveries NotificationDelivery[]
   tournamentEntries TournamentEntry[]
   tournamentPayouts TournamentPayout[]
+  tournamentRefunds TournamentRefund[]
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
@@ -397,6 +398,7 @@ model TournamentEntry {
   createdAt      DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refund TournamentRefund?
 
   @@unique([tournamentId, userId])
   @@index([userId, enteredAt])
@@ -437,6 +439,41 @@ model TournamentPayout {
   @@index([userId, createdAt])
   @@index([tournamentId, rank])
   @@map("tournament_payouts")
+}
+
+model TournamentCancellation {
+  id             String   @id @default(cuid())
+  tournamentId   String   @unique
+  reason         String
+  idempotencyKey String   @unique
+  cancelledAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  refunds TournamentRefund[]
+
+  @@index([cancelledAt])
+  @@map("tournament_cancellations")
+}
+
+model TournamentRefund {
+  id             String   @id @default(cuid())
+  cancellationId String
+  tournamentId   String
+  entryId        String   @unique
+  userId         String
+  amount         BigInt
+  ledgerEntryId  String?
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  cancellation TournamentCancellation @relation(fields: [cancellationId], references: [id], onDelete: Cascade)
+  entry        TournamentEntry        @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, entryId])
+  @@index([userId, createdAt])
+  @@index([tournamentId, createdAt])
+  @@map("tournament_refunds")
 }
 
 model RiskEvent {

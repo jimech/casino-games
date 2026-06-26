@@ -214,7 +214,7 @@ app.get('/api/wallet/:userId/ledger', async (req, res) => {
 app.get('/api/tournaments', async (req, res) => {
   try {
     await requireAuth(req);
-    res.json({ tournaments: tournamentService.listTournaments() });
+    res.json({ tournaments: await tournamentService.listTournaments() });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -265,6 +265,16 @@ app.get('/api/admin/tournaments/:id/settlement', async (req, res) => {
   }
 });
 
+app.get('/api/admin/tournaments/:id/cancellation', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const cancellation = await tournamentService.getCancellation({ tournamentId: req.params.id });
+    res.json({ cancellation });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/tournaments/:id/evidence', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
@@ -286,6 +296,48 @@ app.get('/api/admin/tournaments/:id/evidence-export', async (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="tournament-evidence-${evidence.tournament.id}.json"`);
     res.send(JSON.stringify(packet, null, 2));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/tournaments/:id/cancel', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const cancellation = await tournamentService.cancel({
+      tournamentId: req.params.id,
+      reason: String(req.body.reason ?? ''),
+      idempotencyKey: String(req.body.idempotencyKey ?? ''),
+      now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
+    });
+    await Promise.all(cancellation.refunds.map(async refund => {
+      broadcastWallet(refund.userId, await casinoService.getWallet(refund.userId));
+      await notificationService.create({
+        userId: refund.userId,
+        type: 'wallet',
+        title: 'Tournament entry refunded',
+        message: `Tournament cancellation refund credited: +$${refund.amount}`,
+        metadata: {
+          tournamentId: cancellation.tournamentId,
+          cancellationId: cancellation.id,
+          refundId: refund.id,
+          entryId: refund.entryId
+        }
+      });
+    }));
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'tournament_cancelled',
+      context: {
+        tournamentId: cancellation.tournamentId,
+        cancellationId: cancellation.id,
+        refundCount: cancellation.refunds.length,
+        refundTotal: cancellation.refunds.reduce((sum, refund) => sum + refund.amount, 0),
+        reason: cancellation.reason
+      }
+    });
+    res.status(201).json({ cancellation });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -1773,9 +1825,11 @@ async function buildAdminRoundEvidence(roundId: string, adminUserId: string) {
 async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: string) {
   const leaderboard = await tournamentService.leaderboard({ tournamentId });
   const settlement = await tournamentService.getSettlement({ tournamentId });
+  const cancellation = await tournamentService.getCancellation({ tournamentId });
   const subjectUserIds = [...new Set([
     ...leaderboard.entries.map(entry => entry.userId),
-    ...(settlement?.payouts.map(payout => payout.userId) ?? [])
+    ...(settlement?.payouts.map(payout => payout.userId) ?? []),
+    ...(cancellation?.refunds.map(refund => refund.userId) ?? [])
   ])];
 
   const [users, participantEvidence, adminAiEvents] = await Promise.all([
@@ -1820,10 +1874,13 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
   })).filter(participant => participant.user);
   const linkedAdminAiEvents = adminAiEvents.filter(event => recordReferencesTournament(event.context, tournamentId));
   const payoutLedgerEntryIds = new Set(settlement?.payouts.map(payout => payout.ledgerEntryId).filter(Boolean) ?? []);
+  const refundLedgerEntryIds = new Set(cancellation?.refunds.map(refund => refund.ledgerEntryId).filter(Boolean) ?? []);
   const entryLedgerCount = participants.reduce((sum, participant) =>
     sum + participant.ledger.filter(entry => entry.metadata?.source === 'tournament_entry').length, 0);
   const payoutLedgerCount = participants.reduce((sum, participant) =>
     sum + participant.ledger.filter(entry => payoutLedgerEntryIds.has(entry.id) || entry.metadata?.source === 'tournament_prize').length, 0);
+  const refundLedgerCount = participants.reduce((sum, participant) =>
+    sum + participant.ledger.filter(entry => refundLedgerEntryIds.has(entry.id) || entry.metadata?.source === 'tournament_entry_refund').length, 0);
 
   await trackAiEventSafely({
     userId: adminUserId,
@@ -1832,10 +1889,12 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
     context: {
       tournamentId,
       settlementId: settlement?.id,
+      cancellationId: cancellation?.id,
       participantCount: participants.length,
       leaderboardEntryCount: leaderboard.entries.length,
       payoutCount: settlement?.payouts.length ?? 0,
-      ledgerEntryCount: entryLedgerCount + payoutLedgerCount
+      refundCount: cancellation?.refunds.length ?? 0,
+      ledgerEntryCount: entryLedgerCount + payoutLedgerCount + refundLedgerCount
     }
   });
 
@@ -1845,15 +1904,19 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
     tournament: leaderboard.tournament,
     leaderboard,
     settlement,
+    cancellation,
     participants,
     adminAiEvents: linkedAdminAiEvents,
     integrity: {
       participantCount: participants.length,
       leaderboardEntryCount: leaderboard.entries.length,
       settlementRecorded: Boolean(settlement),
+      cancellationRecorded: Boolean(cancellation),
       payoutCount: settlement?.payouts.length ?? 0,
+      refundCount: cancellation?.refunds.length ?? 0,
       entryLedgerCount,
       payoutLedgerCount,
+      refundLedgerCount,
       adminAiEventCount: linkedAdminAiEvents.length,
       roundCount: participants.reduce((sum, participant) => sum + participant.rounds.length, 0),
       riskEventCount: participants.reduce((sum, participant) => sum + participant.riskEvents.length, 0),

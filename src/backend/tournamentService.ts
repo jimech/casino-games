@@ -70,12 +70,35 @@ export interface TournamentSettlementRecord {
   payouts: TournamentPayoutRecord[];
 }
 
+export interface TournamentRefundRecord {
+  id: string;
+  cancellationId: string;
+  tournamentId: string;
+  entryId: string;
+  userId: string;
+  amount: number;
+  ledgerEntryId?: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface TournamentCancellationRecord {
+  id: string;
+  tournamentId: string;
+  reason: string;
+  idempotencyKey: string;
+  cancelledAt: string;
+  refunds: TournamentRefundRecord[];
+}
+
 export interface TournamentService {
-  listTournaments(now?: Date): TournamentDefinition[];
+  listTournaments(now?: Date): Promise<TournamentDefinition[]> | TournamentDefinition[];
   enter(input: { tournamentId: string; userId: string; idempotencyKey: string; now?: Date }): Promise<TournamentEntryResult>;
   leaderboard(input: { tournamentId: string; now?: Date }): Promise<TournamentLeaderboard>;
   getSettlement(input: { tournamentId: string; now?: Date }): Promise<TournamentSettlementRecord | undefined>;
   settle(input: { tournamentId: string; idempotencyKey: string; now?: Date }): Promise<TournamentSettlementRecord>;
+  getCancellation(input: { tournamentId: string; now?: Date }): Promise<TournamentCancellationRecord | undefined>;
+  cancel(input: { tournamentId: string; reason: string; idempotencyKey: string; now?: Date }): Promise<TournamentCancellationRecord>;
 }
 
 interface TournamentWallet {
@@ -132,9 +155,12 @@ export const DEFAULT_TOURNAMENTS: Omit<TournamentDefinition, 'status'>[] = [
 export class MemoryTournamentService implements TournamentService {
   private entries = new Map<string, TournamentEntry>();
   private settlements = new Map<string, TournamentSettlementRecord>();
+  private cancellations = new Map<string, TournamentCancellationRecord>();
   private sequence = 0;
   private settlementSequence = 0;
   private payoutSequence = 0;
+  private cancellationSequence = 0;
+  private refundSequence = 0;
 
   constructor(
     private readonly wallet: TournamentWallet,
@@ -142,7 +168,10 @@ export class MemoryTournamentService implements TournamentService {
   ) {}
 
   listTournaments(now = new Date()): TournamentDefinition[] {
-    return this.tournaments.map(tournament => withStatus(tournament, now));
+    return this.tournaments.map(tournament => {
+      const status = this.cancellations.has(tournament.id) ? 'cancelled' : withStatus(tournament, now).status;
+      return { ...tournament, status };
+    });
   }
 
   async enter(input: { tournamentId: string; userId: string; idempotencyKey: string; now?: Date }): Promise<TournamentEntryResult> {
@@ -217,6 +246,9 @@ export class MemoryTournamentService implements TournamentService {
     assertText(input.tournamentId, 'tournamentId');
     assertText(input.idempotencyKey, 'idempotencyKey');
     const tournament = this.requireTournament(input.tournamentId, input.now);
+    if (tournament.status === 'cancelled') {
+      throw new Error(`Tournament ${tournament.id} is cancelled`);
+    }
     if (tournament.status !== 'ended') {
       throw new Error(`Tournament ${tournament.id} is not ready for settlement`);
     }
@@ -268,6 +300,67 @@ export class MemoryTournamentService implements TournamentService {
     return settlement;
   }
 
+  async getCancellation(input: { tournamentId: string; now?: Date }): Promise<TournamentCancellationRecord | undefined> {
+    assertText(input.tournamentId, 'tournamentId');
+    this.requireTournament(input.tournamentId, input.now);
+    return this.cancellations.get(input.tournamentId);
+  }
+
+  async cancel(input: { tournamentId: string; reason: string; idempotencyKey: string; now?: Date }): Promise<TournamentCancellationRecord> {
+    assertText(input.tournamentId, 'tournamentId');
+    assertText(input.reason, 'reason');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const tournament = this.requireTournament(input.tournamentId, input.now);
+    const existing = this.cancellations.get(tournament.id);
+    if (existing) return existing;
+    if (this.settlements.has(tournament.id)) {
+      throw new Error(`Tournament ${tournament.id} is already settled`);
+    }
+
+    const cancellationId = `tournament_cancellation_${(++this.cancellationSequence).toString().padStart(8, '0')}`;
+    const refunds: TournamentRefundRecord[] = [];
+    const entries = [...this.entries.values()].filter(entry => entry.tournamentId === tournament.id);
+    for (const entry of entries) {
+      if (entry.entryFee <= 0) continue;
+      const refundKey = `${input.idempotencyKey}-entry-${entry.id}`;
+      await this.wallet.creditWallet({
+        userId: entry.userId,
+        amount: entry.entryFee,
+        idempotencyKey: refundKey,
+        metadata: {
+          source: 'tournament_entry_refund',
+          tournamentId: tournament.id,
+          tournamentTitle: tournament.title,
+          cancellationId,
+          entryId: entry.id
+        }
+      });
+      const ledger = await this.wallet.getLedger(entry.userId);
+      const ledgerEntry = ledger.find(item => item.idempotencyKey === refundKey);
+      refunds.push({
+        id: `tournament_refund_${(++this.refundSequence).toString().padStart(8, '0')}`,
+        cancellationId,
+        tournamentId: tournament.id,
+        entryId: entry.id,
+        userId: entry.userId,
+        amount: entry.entryFee,
+        ledgerEntryId: ledgerEntry?.id,
+        idempotencyKey: refundKey,
+        createdAt: (input.now ?? new Date()).toISOString()
+      });
+    }
+    const cancellation: TournamentCancellationRecord = {
+      id: cancellationId,
+      tournamentId: tournament.id,
+      reason: input.reason.trim(),
+      idempotencyKey: input.idempotencyKey,
+      cancelledAt: (input.now ?? new Date()).toISOString(),
+      refunds
+    };
+    this.cancellations.set(tournament.id, cancellation);
+    return cancellation;
+  }
+
   private requireTournament(tournamentId: string, now = new Date()): TournamentDefinition {
     const tournament = this.listTournaments(now).find(candidate => candidate.id === tournamentId);
     if (!tournament) throw new Error(`Tournament not found: ${tournamentId}`);
@@ -282,15 +375,22 @@ export class PrismaTournamentService implements TournamentService {
     private readonly tournaments = DEFAULT_TOURNAMENTS
   ) {}
 
-  listTournaments(now = new Date()): TournamentDefinition[] {
-    return this.tournaments.map(tournament => withStatus(tournament, now));
+  async listTournaments(now = new Date()): Promise<TournamentDefinition[]> {
+    const cancellations = await this.prisma.tournamentCancellation.findMany({
+      select: { tournamentId: true }
+    });
+    const cancelledIds = new Set(cancellations.map(cancellation => cancellation.tournamentId));
+    return this.tournaments.map(tournament => {
+      const status = cancelledIds.has(tournament.id) ? 'cancelled' : withStatus(tournament, now).status;
+      return { ...tournament, status };
+    });
   }
 
   async enter(input: { tournamentId: string; userId: string; idempotencyKey: string; now?: Date }): Promise<TournamentEntryResult> {
     assertText(input.tournamentId, 'tournamentId');
     assertText(input.userId, 'userId');
     assertText(input.idempotencyKey, 'idempotencyKey');
-    const tournament = this.requireTournament(input.tournamentId, input.now);
+    const tournament = await this.requireTournament(input.tournamentId, input.now);
     if (tournament.status !== 'active') {
       throw new Error(`Tournament ${tournament.id} is not open for entry`);
     }
@@ -336,7 +436,7 @@ export class PrismaTournamentService implements TournamentService {
 
   async leaderboard(input: { tournamentId: string; now?: Date }): Promise<TournamentLeaderboard> {
     assertText(input.tournamentId, 'tournamentId');
-    const tournament = this.requireTournament(input.tournamentId, input.now);
+    const tournament = await this.requireTournament(input.tournamentId, input.now);
     const [entries, rounds] = await Promise.all([
       this.prisma.tournamentEntry.findMany({
         where: { tournamentId: tournament.id },
@@ -357,7 +457,7 @@ export class PrismaTournamentService implements TournamentService {
 
   async getSettlement(input: { tournamentId: string; now?: Date }): Promise<TournamentSettlementRecord | undefined> {
     assertText(input.tournamentId, 'tournamentId');
-    this.requireTournament(input.tournamentId, input.now);
+    await this.requireTournament(input.tournamentId, input.now);
     const settlement = await this.prisma.tournamentSettlement.findUnique({
       where: { tournamentId: input.tournamentId },
       include: { payouts: { orderBy: { rank: 'asc' } } }
@@ -368,7 +468,10 @@ export class PrismaTournamentService implements TournamentService {
   async settle(input: { tournamentId: string; idempotencyKey: string; now?: Date }): Promise<TournamentSettlementRecord> {
     assertText(input.tournamentId, 'tournamentId');
     assertText(input.idempotencyKey, 'idempotencyKey');
-    const tournament = this.requireTournament(input.tournamentId, input.now);
+    const tournament = await this.requireTournament(input.tournamentId, input.now);
+    if (tournament.status === 'cancelled') {
+      throw new Error(`Tournament ${tournament.id} is cancelled`);
+    }
     if (tournament.status !== 'ended') {
       throw new Error(`Tournament ${tournament.id} is not ready for settlement`);
     }
@@ -424,8 +527,80 @@ export class PrismaTournamentService implements TournamentService {
     return tournamentSettlementToRecord({ ...settlement, payouts: createdPayouts });
   }
 
-  private requireTournament(tournamentId: string, now = new Date()): TournamentDefinition {
-    const tournament = this.listTournaments(now).find(candidate => candidate.id === tournamentId);
+  async getCancellation(input: { tournamentId: string; now?: Date }): Promise<TournamentCancellationRecord | undefined> {
+    assertText(input.tournamentId, 'tournamentId');
+    await this.requireTournament(input.tournamentId, input.now);
+    const cancellation = await this.prisma.tournamentCancellation.findUnique({
+      where: { tournamentId: input.tournamentId },
+      include: { refunds: { orderBy: { createdAt: 'asc' } } }
+    });
+    return cancellation ? tournamentCancellationToRecord(cancellation) : undefined;
+  }
+
+  async cancel(input: { tournamentId: string; reason: string; idempotencyKey: string; now?: Date }): Promise<TournamentCancellationRecord> {
+    assertText(input.tournamentId, 'tournamentId');
+    assertText(input.reason, 'reason');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const tournament = await this.requireTournament(input.tournamentId, input.now);
+    const existing = await this.prisma.tournamentCancellation.findUnique({
+      where: { tournamentId: tournament.id },
+      include: { refunds: { orderBy: { createdAt: 'asc' } } }
+    });
+    if (existing) return tournamentCancellationToRecord(existing);
+    const settlement = await this.prisma.tournamentSettlement.findUnique({ where: { tournamentId: tournament.id } });
+    if (settlement) throw new Error(`Tournament ${tournament.id} is already settled`);
+
+    const cancellation = await this.prisma.tournamentCancellation.create({
+      data: {
+        tournamentId: tournament.id,
+        reason: input.reason.trim(),
+        idempotencyKey: input.idempotencyKey,
+        cancelledAt: input.now ?? new Date()
+      },
+      include: { refunds: true }
+    });
+    const entries = await this.prisma.tournamentEntry.findMany({
+      where: { tournamentId: tournament.id },
+      orderBy: { enteredAt: 'asc' }
+    });
+    const createdRefunds = [];
+    for (const entry of entries) {
+      const amount = toSafeNumber(entry.entryFee);
+      if (amount <= 0) continue;
+      const refundKey = `${input.idempotencyKey}-entry-${entry.id}`;
+      await this.wallet.creditWallet({
+        userId: entry.userId,
+        amount,
+        idempotencyKey: refundKey,
+        metadata: {
+          source: 'tournament_entry_refund',
+          tournamentId: tournament.id,
+          tournamentTitle: tournament.title,
+          cancellationId: cancellation.id,
+          entryId: entry.id
+        }
+      });
+      const ledger = await this.wallet.getLedger(entry.userId);
+      const ledgerEntry = ledger.find(item => item.idempotencyKey === refundKey);
+      const created = await this.prisma.tournamentRefund.create({
+        data: {
+          cancellationId: cancellation.id,
+          tournamentId: tournament.id,
+          entryId: entry.id,
+          userId: entry.userId,
+          amount: entry.entryFee,
+          ledgerEntryId: ledgerEntry?.id,
+          idempotencyKey: refundKey
+        }
+      });
+      createdRefunds.push(created);
+    }
+
+    return tournamentCancellationToRecord({ ...cancellation, refunds: createdRefunds });
+  }
+
+  private async requireTournament(tournamentId: string, now = new Date()): Promise<TournamentDefinition> {
+    const tournament = (await this.listTournaments(now)).find(candidate => candidate.id === tournamentId);
     if (!tournament) throw new Error(`Tournament not found: ${tournamentId}`);
     return tournament;
   }
@@ -562,6 +737,44 @@ const tournamentSettlementToRecord = (settlement: {
       createdAt: payout.createdAt.toISOString()
     }))
     .sort((left, right) => left.rank - right.rank)
+});
+
+const tournamentCancellationToRecord = (cancellation: {
+  id: string;
+  tournamentId: string;
+  reason: string;
+  idempotencyKey: string;
+  cancelledAt: Date;
+  refunds: Array<{
+    id: string;
+    cancellationId: string;
+    tournamentId: string;
+    entryId: string;
+    userId: string;
+    amount: bigint;
+    ledgerEntryId: string | null;
+    idempotencyKey: string;
+    createdAt: Date;
+  }>;
+}): TournamentCancellationRecord => ({
+  id: cancellation.id,
+  tournamentId: cancellation.tournamentId,
+  reason: cancellation.reason,
+  idempotencyKey: cancellation.idempotencyKey,
+  cancelledAt: cancellation.cancelledAt.toISOString(),
+  refunds: cancellation.refunds
+    .map(refund => ({
+      id: refund.id,
+      cancellationId: refund.cancellationId,
+      tournamentId: refund.tournamentId,
+      entryId: refund.entryId,
+      userId: refund.userId,
+      amount: toSafeNumber(refund.amount),
+      ledgerEntryId: refund.ledgerEntryId ?? undefined,
+      idempotencyKey: refund.idempotencyKey,
+      createdAt: refund.createdAt.toISOString()
+    }))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 });
 
 const toSafeNumber = (value: bigint): number => {

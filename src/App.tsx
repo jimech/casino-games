@@ -21,6 +21,7 @@ import {
   AdminSummaryDto,
   actBlackjackRound,
   actPokerRound,
+  cancelTournament,
   cashoutCrashRound,
   claimVipCashback,
   claimBonus,
@@ -41,6 +42,7 @@ import {
   fetchNotifications,
   fetchTargetedBonuses,
   fetchTournamentLeaderboard,
+  fetchTournamentCancellation,
   fetchTournamentSettlement,
   fetchTournaments,
   fetchVipStatus,
@@ -67,6 +69,7 @@ import {
   TargetedBonusOfferDto,
   trackAiEvent,
   TournamentDto,
+  TournamentCancellationDto,
   TournamentLeaderboardDto,
   TournamentSettlementDto,
   updateNotificationPreference,
@@ -167,10 +170,12 @@ export default function App() {
   const [activeTournamentId, setActiveTournamentId] = useState('');
   const [tournamentLeaderboard, setTournamentLeaderboard] = useState<TournamentLeaderboardDto | null>(null);
   const [tournamentSettlement, setTournamentSettlement] = useState<TournamentSettlementDto | null>(null);
+  const [tournamentCancellation, setTournamentCancellation] = useState<TournamentCancellationDto | null>(null);
   const [adminTournamentEvidence, setAdminTournamentEvidence] = useState<AdminTournamentEvidenceDto | null>(null);
   const [adminTournamentEvidencePreview, setAdminTournamentEvidencePreview] = useState('');
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
   const [tournamentSettlementLoading, setTournamentSettlementLoading] = useState(false);
+  const [tournamentCancellationLoading, setTournamentCancellationLoading] = useState(false);
   const [adminTournamentEvidenceLoading, setAdminTournamentEvidenceLoading] = useState(false);
   const [vipStatus, setVipStatus] = useState<VipStatusDto | null>(null);
   const [vipLoading, setVipLoading] = useState(false);
@@ -478,12 +483,14 @@ export default function App() {
       const nextId = activeTournamentId || nextTournaments[0]?.id || '';
       setActiveTournamentId(nextId);
       if (nextId) {
-        const [leaderboard, settlement] = await Promise.all([
+        const [leaderboard, settlement, cancellation] = await Promise.all([
           fetchTournamentLeaderboard(nextId),
-          fetchTournamentSettlement(nextId).catch(() => undefined)
+          fetchTournamentSettlement(nextId).catch(() => undefined),
+          fetchTournamentCancellation(nextId).catch(() => undefined)
         ]);
         setTournamentLeaderboard(leaderboard);
         setTournamentSettlement(settlement ?? null);
+        setTournamentCancellation(cancellation ?? null);
         setAdminTournamentEvidence(null);
         setAdminTournamentEvidencePreview('');
       }
@@ -499,12 +506,14 @@ export default function App() {
     setTournamentsLoading(true);
     try {
       setActiveTournamentId(tournamentId);
-      const [leaderboard, settlement] = await Promise.all([
+      const [leaderboard, settlement, cancellation] = await Promise.all([
         fetchTournamentLeaderboard(tournamentId),
-        fetchTournamentSettlement(tournamentId).catch(() => undefined)
+        fetchTournamentSettlement(tournamentId).catch(() => undefined),
+        fetchTournamentCancellation(tournamentId).catch(() => undefined)
       ]);
       setTournamentLeaderboard(leaderboard);
       setTournamentSettlement(settlement ?? null);
+      setTournamentCancellation(cancellation ?? null);
       setAdminTournamentEvidence(null);
       setAdminTournamentEvidencePreview('');
     } catch (error) {
@@ -540,6 +549,18 @@ export default function App() {
     }
   };
 
+  const loadTournamentCancellation = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId) return;
+    setTournamentCancellationLoading(true);
+    try {
+      setTournamentCancellation(await fetchTournamentCancellation(tournamentId) ?? null);
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament cancellation failed to load.", "error");
+    } finally {
+      setTournamentCancellationLoading(false);
+    }
+  };
+
   const handleSettleTournament = async (tournamentId = activeTournamentId) => {
     if (!tournamentId) return;
     setTournamentSettlementLoading(true);
@@ -557,6 +578,27 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Tournament settlement failed.", "error");
     } finally {
       setTournamentSettlementLoading(false);
+    }
+  };
+
+  const handleCancelTournament = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId) return;
+    setTournamentCancellationLoading(true);
+    try {
+      const cancellation = await cancelTournament({
+        tournamentId,
+        reason: 'Admin cancellation and entry-fee refund',
+        idempotencyKey: `tournament-cancel-${tournamentId}`
+      });
+      setTournamentCancellation(cancellation);
+      setAdminTournamentEvidence(null);
+      setAdminTournamentEvidencePreview('');
+      await loadTournamentLeaderboard(tournamentId);
+      triggerNotification(`Tournament cancelled: ${cancellation.refunds.length} entry refunds credited.`, 'success');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament cancellation failed.", "error");
+    } finally {
+      setTournamentCancellationLoading(false);
     }
   };
 
@@ -2073,7 +2115,7 @@ export default function App() {
                             ['Tournament', tournamentLeaderboard.tournament.title],
                             ['Status', tournamentLeaderboard.tournament.status],
                             ['Prize', `$${safeMoney(tournamentLeaderboard.tournament.prizePool)}`],
-                            ['Payouts', String(tournamentSettlement?.payouts.length ?? 0)]
+                            ['Refunds', String(tournamentCancellation?.refunds.length ?? tournamentSettlement?.payouts.length ?? 0)]
                           ].map(([label, value]) => (
                             <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
                               <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
@@ -2092,10 +2134,27 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => void handleSettleTournament(tournamentLeaderboard.tournament.id)}
-                            disabled={tournamentSettlementLoading || Boolean(tournamentSettlement) || tournamentLeaderboard.tournament.status !== 'ended'}
+                            disabled={tournamentSettlementLoading || Boolean(tournamentSettlement) || Boolean(tournamentCancellation) || tournamentLeaderboard.tournament.status !== 'ended'}
                             className="bg-[#00FF88] hover:bg-emerald-400 disabled:bg-neutral-800 disabled:text-neutral-500 text-neutral-950 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
                           >
                             Settle prizes
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void loadTournamentCancellation(tournamentLeaderboard.tournament.id)}
+                            className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-yellow-400 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            {tournamentCancellationLoading ? 'Loading' : 'Review cancellation'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleCancelTournament(tournamentLeaderboard.tournament.id)}
+                            disabled={tournamentCancellationLoading || Boolean(tournamentCancellation) || Boolean(tournamentSettlement)}
+                            className="bg-red-500 hover:bg-red-400 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            Cancel + refund
                           </button>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
@@ -2129,13 +2188,28 @@ export default function App() {
                             detail="Ended tournaments can be settled once; active tournaments stay locked"
                           />
                         )}
+                        {(tournamentCancellation?.refunds ?? []).slice(0, 5).map(refund => (
+                          <AdminRow
+                            key={refund.id}
+                            left={`Refund / ${refund.userId}`}
+                            right={`$${refund.amount}`}
+                            detail={`${refund.ledgerEntryId ?? 'ledger pending'} / ${safeDateTime(refund.createdAt)}`}
+                          />
+                        ))}
+                        {tournamentCancellation && tournamentCancellation.refunds.length === 0 && (
+                          <AdminRow
+                            left="Cancellation recorded"
+                            right="no refunds"
+                            detail={tournamentCancellation.reason}
+                          />
+                        )}
                         {adminTournamentEvidence && (
                           <>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                               {[
                                 ['Players', adminTournamentEvidence.integrity.participantCount],
                                 ['Entry Ledger', adminTournamentEvidence.integrity.entryLedgerCount],
-                                ['Prize Ledger', adminTournamentEvidence.integrity.payoutLedgerCount],
+                                ['Refund Ledger', adminTournamentEvidence.integrity.refundLedgerCount],
                                 ['Audit Events', adminTournamentEvidence.integrity.adminAiEventCount]
                               ].map(([label, value]) => (
                                 <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">

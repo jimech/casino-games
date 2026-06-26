@@ -195,6 +195,12 @@ const main = async () => {
   if (!activeTournament) {
     throw new Error('Expected at least one active paid tournament');
   }
+  const cancellableTournament = tournaments.tournaments.find((tournament: { id: string; status: string; entryFee: number }) =>
+    tournament.id !== activeTournament.id && tournament.status === 'active' && tournament.entryFee > 0
+  );
+  if (!cancellableTournament) {
+    throw new Error('Expected a second active paid tournament for cancellation smoke');
+  }
   const walletBeforeTournament = vipCashback.wallet.available;
   const tournamentEntry = await postJson(`${baseUrl}/api/tournaments/${activeTournament.id}/enter`, adminSession.token, {
     idempotencyKey: 'quality-tournament-entry'
@@ -204,6 +210,33 @@ const main = async () => {
     idempotencyKey: 'quality-tournament-entry-duplicate'
   });
   assertEqual(duplicateTournamentEntry.wallet.available, tournamentEntry.wallet.available, 'duplicate tournament entry does not debit wallet');
+  const cancellationEntry = await postJson(`${baseUrl}/api/tournaments/${cancellableTournament.id}/enter`, adminSession.token, {
+    idempotencyKey: 'quality-tournament-cancel-entry'
+  });
+  assertEqual(cancellationEntry.wallet.available, duplicateTournamentEntry.wallet.available - cancellableTournament.entryFee, 'cancellation tournament entry fee debit');
+  const tournamentCancellation = await postJson(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/cancel`, adminSession.token, {
+    reason: 'Smoke test cancellation',
+    idempotencyKey: 'quality-tournament-cancel'
+  });
+  if (!tournamentCancellation.cancellation.refunds.some((refund: { userId: string; amount: number }) => refund.userId === adminSession.user.id && refund.amount === cancellableTournament.entryFee)) {
+    throw new Error('Expected tournament cancellation to refund the entry fee');
+  }
+  const duplicateTournamentCancellation = await postJson(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/cancel`, adminSession.token, {
+    reason: 'Duplicate cancellation',
+    idempotencyKey: 'quality-tournament-cancel-duplicate'
+  });
+  assertEqual(duplicateTournamentCancellation.cancellation.id, tournamentCancellation.cancellation.id, 'duplicate tournament cancellation returns original');
+  const loadedTournamentCancellation = await getJson(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/cancellation`, adminSession.token);
+  assertEqual(loadedTournamentCancellation.cancellation.id, tournamentCancellation.cancellation.id, 'tournament cancellation load');
+  const cancelledTournaments = await getJson(`${baseUrl}/api/tournaments`, adminSession.token);
+  if (!cancelledTournaments.tournaments.some((tournament: { id: string; status: string }) => tournament.id === cancellableTournament.id && tournament.status === 'cancelled')) {
+    throw new Error('Expected cancelled tournament to surface in tournament list');
+  }
+  const cancelledTournamentEvidence = await getJson(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/evidence`, adminSession.token);
+  assertEqual(cancelledTournamentEvidence.cancellation.id, tournamentCancellation.cancellation.id, 'cancelled tournament evidence cancellation id');
+  if (cancelledTournamentEvidence.integrity.refundLedgerCount < 1) {
+    throw new Error('Expected cancelled tournament evidence to include refund ledger proof');
+  }
   const tournamentRound = await postJson(`${baseUrl}/api/bets`, adminSession.token, {
     gameId: 'roulette',
     stake: 200,

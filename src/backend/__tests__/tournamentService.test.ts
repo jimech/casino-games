@@ -206,6 +206,51 @@ describe('MemoryTournamentService', () => {
     expect(casino.getWallet('user_3').available).toBe(1100);
     expect(casino.getLedger('user_1').filter(entry => entry.metadata?.source === 'tournament_prize')).toHaveLength(1);
   });
+
+  it('cancels tournaments with entry refunds exactly once and blocks settlement', async () => {
+    const casino = new CasinoService({ user_1: 1000, user_2: 1000 });
+    const service = new MemoryTournamentService(casino, [activeTournament]);
+    await service.enter({
+      tournamentId: activeTournament.id,
+      userId: 'user_1',
+      idempotencyKey: 'cancel-entry-1',
+      now: new Date('2026-06-22T00:00:00.000Z')
+    });
+    await service.enter({
+      tournamentId: activeTournament.id,
+      userId: 'user_2',
+      idempotencyKey: 'cancel-entry-2',
+      now: new Date('2026-06-22T00:00:00.000Z')
+    });
+
+    const first = await service.cancel({
+      tournamentId: activeTournament.id,
+      reason: 'Provider outage',
+      idempotencyKey: 'cancel-tournament',
+      now: new Date('2026-06-22T01:00:00.000Z')
+    });
+    const duplicate = await service.cancel({
+      tournamentId: activeTournament.id,
+      reason: 'Duplicate click',
+      idempotencyKey: 'cancel-tournament-duplicate',
+      now: new Date('2026-06-22T01:05:00.000Z')
+    });
+
+    expect(first.refunds.map(refund => [refund.userId, refund.amount])).toEqual([
+      ['user_1', 100],
+      ['user_2', 100]
+    ]);
+    expect(duplicate.id).toBe(first.id);
+    expect(casino.getWallet('user_1').available).toBe(1000);
+    expect(casino.getWallet('user_2').available).toBe(1000);
+    expect(casino.getLedger('user_1').filter(entry => entry.metadata?.source === 'tournament_entry_refund')).toHaveLength(1);
+    expect((await service.listTournaments(new Date('2026-06-22T02:00:00.000Z')))[0].status).toBe('cancelled');
+    await expect(service.settle({
+      tournamentId: activeTournament.id,
+      idempotencyKey: 'settle-cancelled',
+      now: new Date('2026-06-30T00:00:00.000Z')
+    })).rejects.toThrow('cancelled');
+  });
 });
 
 const row = (

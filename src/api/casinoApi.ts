@@ -267,6 +267,27 @@ export interface TournamentSettlementDto {
   payouts: TournamentPayoutDto[];
 }
 
+export interface TournamentRefundDto {
+  id: string;
+  cancellationId: string;
+  tournamentId: string;
+  entryId: string;
+  userId: string;
+  amount: number;
+  ledgerEntryId?: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface TournamentCancellationDto {
+  id: string;
+  tournamentId: string;
+  reason: string;
+  idempotencyKey: string;
+  cancelledAt: string;
+  refunds: TournamentRefundDto[];
+}
+
 export interface TargetedBonusOfferDto {
   id: string;
   campaignId: string;
@@ -563,6 +584,7 @@ export interface AdminTournamentEvidenceDto {
   tournament: TournamentDto;
   leaderboard: TournamentLeaderboardDto;
   settlement?: TournamentSettlementDto;
+  cancellation?: TournamentCancellationDto;
   participants: Array<{
     user: AuthUserDto;
     leaderboardRow?: TournamentLeaderboardRowDto;
@@ -578,9 +600,12 @@ export interface AdminTournamentEvidenceDto {
     participantCount: number;
     leaderboardEntryCount: number;
     settlementRecorded: boolean;
+    cancellationRecorded: boolean;
     payoutCount: number;
+    refundCount: number;
     entryLedgerCount: number;
     payoutLedgerCount: number;
+    refundLedgerCount: number;
     adminAiEventCount: number;
     roundCount: number;
     riskEventCount: number;
@@ -802,6 +827,14 @@ export const fetchTournamentSettlement = async (tournamentId: string): Promise<T
   return payload.settlement;
 };
 
+export const fetchTournamentCancellation = async (tournamentId: string): Promise<TournamentCancellationDto | undefined> => {
+  const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(tournamentId)}/cancellation`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ cancellation?: TournamentCancellationDto }>(response);
+  return payload.cancellation;
+};
+
 export const settleTournament = async (input: {
   tournamentId: string;
   idempotencyKey: string;
@@ -817,6 +850,25 @@ export const settleTournament = async (input: {
   });
   const payload = await parseJsonResponse<{ settlement: TournamentSettlementDto }>(response);
   return payload.settlement;
+};
+
+export const cancelTournament = async (input: {
+  tournamentId: string;
+  reason: string;
+  idempotencyKey: string;
+  now?: string;
+}): Promise<TournamentCancellationDto> => {
+  const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(input.tournamentId)}/cancel`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      reason: input.reason,
+      idempotencyKey: input.idempotencyKey,
+      now: input.now
+    })
+  });
+  const payload = await parseJsonResponse<{ cancellation: TournamentCancellationDto }>(response);
+  return payload.cancellation;
 };
 
 export const fetchAdminTournamentEvidence = async (tournamentId: string): Promise<AdminTournamentEvidenceDto> => {
