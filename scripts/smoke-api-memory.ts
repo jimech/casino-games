@@ -258,6 +258,18 @@ const main = async () => {
   if (!unresolvedTournamentQueue.rows.some((row: { tournament: { id: string } }) => row.tournament.id === cancellableTournament.id)) {
     throw new Error('Expected unresolved tournament queue filter to include disputed tournament');
   }
+  const settlementJob = await postJson(`${baseUrl}/api/admin/tournaments/jobs/settlement-scan`, adminSession.token, {
+    autoSettle: false,
+    idempotencyKey: 'quality-tournament-job-dry-run',
+    now: new Date(new Date(activeTournament.endAt).getTime() + 1000).toISOString()
+  });
+  assertEqual(settlementJob.report.mode, 'dry_run', 'tournament settlement job dry-run mode');
+  if (!settlementJob.report.rows.some((row: { tournament: { id: string }; flags: { needsSettlement: boolean } }) => row.tournament.id === activeTournament.id && row.flags.needsSettlement)) {
+    throw new Error('Expected tournament settlement job to detect ended unsettled tournament');
+  }
+  if (settlementJob.report.alertCount < 1) {
+    throw new Error('Expected tournament settlement job to alert admins');
+  }
   const tournamentRound = await postJson(`${baseUrl}/api/bets`, adminSession.token, {
     gameId: 'roulette',
     stake: 200,

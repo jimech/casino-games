@@ -259,8 +259,24 @@ app.get('/api/admin/tournaments/queue', async (req, res) => {
   try {
     await requireAdmin(req);
     const filter = typeof req.query.filter === 'string' ? req.query.filter : 'all';
-    const queue = await buildAdminTournamentQueue(filter);
+    const now = typeof req.query.now === 'string' ? new Date(req.query.now) : undefined;
+    const queue = await buildAdminTournamentQueue(filter, now);
     res.json(queue);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/tournaments/jobs/settlement-scan', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const report = await runTournamentSettlementJob({
+      adminUserId: admin.id,
+      autoSettle: Boolean(req.body.autoSettle),
+      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined,
+      now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
+    });
+    res.status(201).json({ report });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -1993,14 +2009,14 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
   };
 }
 
-async function buildAdminTournamentQueue(filter: string) {
-  const tournaments = await tournamentService.listTournaments();
+async function buildAdminTournamentQueue(filter: string, now?: Date) {
+  const tournaments = await tournamentService.listTournaments(now);
   const allCases = await complianceCaseService.list({ limit: 250 });
   const rows = await Promise.all(tournaments.map(async tournament => {
     const [leaderboard, settlement, cancellation] = await Promise.all([
-      tournamentService.leaderboard({ tournamentId: tournament.id }),
-      tournamentService.getSettlement({ tournamentId: tournament.id }),
-      tournamentService.getCancellation({ tournamentId: tournament.id })
+      tournamentService.leaderboard({ tournamentId: tournament.id, now }),
+      tournamentService.getSettlement({ tournamentId: tournament.id, now }),
+      tournamentService.getCancellation({ tournamentId: tournament.id, now })
     ]);
     const disputeCases = allCases.filter(caseRecord =>
       recordReferencesTournament(caseRecord.evidence, tournament.id) ||
@@ -2046,6 +2062,100 @@ async function buildAdminTournamentQueue(filter: string) {
     },
     rows: filteredRows
   };
+}
+
+async function runTournamentSettlementJob(input: {
+  adminUserId: string;
+  autoSettle: boolean;
+  idempotencyKey?: string;
+  now?: Date;
+}) {
+  const startedAt = (input.now ?? new Date()).toISOString();
+  const queue = await buildAdminTournamentQueue('needsSettlement', input.now);
+  const adminUsers = await authService.searchUsers({ role: 'admin', limit: 50 });
+  const rows = queue.rows;
+  const settled = [];
+  const alerts = [];
+  for (const row of rows) {
+    for (const admin of adminUsers) {
+      const result = await notificationService.create({
+        userId: admin.id,
+        type: 'admin',
+        title: 'Tournament settlement required',
+        message: `${row.tournament.title} has ended and needs settlement review.`,
+        metadata: {
+          source: 'tournament_settlement_job',
+          tournamentId: row.tournament.id,
+          entryCount: row.entryCount,
+          scoredEntryCount: row.scoredEntryCount,
+          leaderUserId: row.leader?.userId,
+          autoSettle: input.autoSettle,
+          startedAt
+        }
+      });
+      alerts.push({
+        userId: admin.id,
+        tournamentId: row.tournament.id,
+        notificationId: result.notification?.id,
+        deliveryStatus: result.delivery.status
+      });
+    }
+
+    if (!input.autoSettle) continue;
+    const settlement = await tournamentService.settle({
+      tournamentId: row.tournament.id,
+      idempotencyKey: `${input.idempotencyKey ?? `tournament-job-${startedAt}`}-${row.tournament.id}`,
+      now: input.now
+    });
+    await Promise.all(settlement.payouts.map(async payout => {
+      broadcastWallet(payout.userId, await casinoService.getWallet(payout.userId));
+      await notificationService.create({
+        userId: payout.userId,
+        type: 'bonus',
+        title: 'Tournament prize credited',
+        message: `Automated settlement credited rank #${payout.rank}: +$${payout.amount}`,
+        metadata: {
+          source: 'tournament_settlement_job',
+          tournamentId: settlement.tournamentId,
+          settlementId: settlement.id,
+          payoutId: payout.id,
+          rank: payout.rank
+        }
+      });
+    }));
+    settled.push({
+      tournamentId: row.tournament.id,
+      settlementId: settlement.id,
+      payoutCount: settlement.payouts.length,
+      prizePool: settlement.prizePool
+    });
+  }
+
+  const report = {
+    startedAt,
+    completedAt: new Date().toISOString(),
+    mode: input.autoSettle ? 'auto_settle' : 'dry_run',
+    detectedCount: rows.length,
+    alertedAdminCount: adminUsers.length,
+    alertCount: alerts.length,
+    settledCount: settled.length,
+    rows,
+    alerts,
+    settled
+  };
+  await trackAiEventSafely({
+    userId: input.adminUserId,
+    category: 'admin',
+    name: 'tournament_settlement_job_ran',
+    context: {
+      mode: report.mode,
+      detectedCount: report.detectedCount,
+      alertCount: report.alertCount,
+      settledCount: report.settledCount,
+      tournamentIds: rows.map(row => row.tournament.id)
+    }
+  });
+  return report;
 }
 
 function tournamentQueueFilterMatches(flags: Record<string, boolean>, filter: string): boolean {

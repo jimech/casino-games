@@ -908,6 +908,27 @@ Acceptance criteria:
 - Selecting a queue row loads the existing leaderboard/detail panel.
 - Regular users cannot access the admin queue.
 
+### T43 - Tournament Scheduled Jobs
+
+Summary: Add a safe tournament settlement job runner for ended tournaments.
+
+Implementation status: Complete. Admins can now run `/api/admin/tournaments/jobs/settlement-scan` to scan the computed tournament queue for ended, unsettled, non-cancelled tournaments. The job defaults to dry-run mode, sends admin notifications for detected tournaments, records an admin AI audit event, and returns a report with detected rows, alert counts, and settlement counts. Explicit `autoSettle` mode safely settles only tournaments flagged as needs-settlement, broadcasts winner wallet updates, and sends prize notifications. The Admin Tournament Queue panel exposes Scan + alert and Auto-settle controls with the latest job report, and smoke coverage verifies dry-run detection and admin alerting.
+
+Scope:
+- Role-protected settlement scan job endpoint.
+- Dry-run detection for ended unsettled tournaments.
+- Admin alert notifications and audit telemetry.
+- Explicit auto-settle mode.
+- Admin UI controls and job report counters.
+- Smoke coverage with simulated job clock.
+
+Acceptance criteria:
+- Dry-run mode does not move wallet funds.
+- Job detects ended, unsettled, non-cancelled tournaments.
+- Admins receive settlement-required notifications.
+- Auto-settle mode is explicit and uses existing idempotent settlement logic.
+- Job output is auditable through returned report and AI events.
+
 ## First Working Sequence
 
 Start here:

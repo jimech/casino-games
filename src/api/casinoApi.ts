@@ -315,6 +315,29 @@ export interface AdminTournamentQueueDto {
   }>;
 }
 
+export interface AdminTournamentSettlementJobReportDto {
+  startedAt: string;
+  completedAt: string;
+  mode: 'dry_run' | 'auto_settle';
+  detectedCount: number;
+  alertedAdminCount: number;
+  alertCount: number;
+  settledCount: number;
+  rows: AdminTournamentQueueDto['rows'];
+  alerts: Array<{
+    userId: string;
+    tournamentId: string;
+    notificationId?: string;
+    deliveryStatus: string;
+  }>;
+  settled: Array<{
+    tournamentId: string;
+    settlementId: string;
+    payoutCount: number;
+    prizePool: number;
+  }>;
+}
+
 export interface TargetedBonusOfferDto {
   id: string;
   campaignId: string;
@@ -829,13 +852,32 @@ export const fetchTournaments = async (): Promise<TournamentDto[]> => {
   return payload.tournaments;
 };
 
-export const fetchAdminTournamentQueue = async (filter = 'all'): Promise<AdminTournamentQueueDto> => {
+export const fetchAdminTournamentQueue = async (filter = 'all', now?: string): Promise<AdminTournamentQueueDto> => {
   const params = new URLSearchParams();
   params.set('filter', filter);
+  if (now) params.set('now', now);
   const response = await fetch(`/api/admin/tournaments/queue?${params.toString()}`, {
     headers: authHeaders()
   });
   return parseJsonResponse<AdminTournamentQueueDto>(response);
+};
+
+export const runTournamentSettlementJob = async (input: {
+  autoSettle?: boolean;
+  idempotencyKey?: string;
+  now?: string;
+} = {}): Promise<AdminTournamentSettlementJobReportDto> => {
+  const response = await fetch('/api/admin/tournaments/jobs/settlement-scan', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      autoSettle: input.autoSettle,
+      idempotencyKey: input.idempotencyKey,
+      now: input.now
+    })
+  });
+  const payload = await parseJsonResponse<{ report: AdminTournamentSettlementJobReportDto }>(response);
+  return payload.report;
 };
 
 export const enterTournament = async (input: {

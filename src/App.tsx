@@ -17,6 +17,7 @@ import {
   AdminRoundEvidenceDto,
   AdminRewardsReviewDto,
   AdminTournamentQueueDto,
+  AdminTournamentSettlementJobReportDto,
   AdminTournamentEvidenceDto,
   AdminUserDetailDto,
   AdminSummaryDto,
@@ -61,6 +62,7 @@ import {
   placeBet,
   registerAccount,
   ResponsiblePlayInterventionDto,
+  runTournamentSettlementJob,
   searchAdminUsers,
   settleRound,
   settleTournament,
@@ -176,10 +178,12 @@ export default function App() {
   const [tournamentCancellation, setTournamentCancellation] = useState<TournamentCancellationDto | null>(null);
   const [adminTournamentQueue, setAdminTournamentQueue] = useState<AdminTournamentQueueDto | null>(null);
   const [adminTournamentQueueFilter, setAdminTournamentQueueFilter] = useState('all');
+  const [adminTournamentJobReport, setAdminTournamentJobReport] = useState<AdminTournamentSettlementJobReportDto | null>(null);
   const [adminTournamentEvidence, setAdminTournamentEvidence] = useState<AdminTournamentEvidenceDto | null>(null);
   const [adminTournamentEvidencePreview, setAdminTournamentEvidencePreview] = useState('');
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
   const [adminTournamentQueueLoading, setAdminTournamentQueueLoading] = useState(false);
+  const [adminTournamentJobLoading, setAdminTournamentJobLoading] = useState(false);
   const [tournamentSettlementLoading, setTournamentSettlementLoading] = useState(false);
   const [tournamentCancellationLoading, setTournamentCancellationLoading] = useState(false);
   const [adminTournamentEvidenceLoading, setAdminTournamentEvidenceLoading] = useState(false);
@@ -367,6 +371,28 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Tournament queue failed to load.", "error");
     } finally {
       setAdminTournamentQueueLoading(false);
+    }
+  };
+
+  const handleTournamentSettlementJob = async (autoSettle = false) => {
+    setAdminTournamentJobLoading(true);
+    try {
+      const report = await runTournamentSettlementJob({
+        autoSettle,
+        idempotencyKey: `admin-tournament-job-${Date.now()}`
+      });
+      setAdminTournamentJobReport(report);
+      await loadAdminTournamentQueue(adminTournamentQueueFilter);
+      triggerNotification(
+        autoSettle
+          ? `Tournament job settled ${report.settledCount} tournaments.`
+          : `Tournament job alerted admins for ${report.detectedCount} tournaments.`,
+        'success'
+      );
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament settlement job failed.", "error");
+    } finally {
+      setAdminTournamentJobLoading(false);
     }
   };
 
@@ -2175,6 +2201,37 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleTournamentSettlementJob(false)}
+                        className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-yellow-400 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                      >
+                        {adminTournamentJobLoading ? 'Running' : 'Scan + alert'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleTournamentSettlementJob(true)}
+                        className="bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                      >
+                        Auto-settle
+                      </button>
+                    </div>
+                    {adminTournamentJobReport && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          ['Mode', adminTournamentJobReport.mode],
+                          ['Detected', adminTournamentJobReport.detectedCount],
+                          ['Alerts', adminTournamentJobReport.alertCount],
+                          ['Settled', adminTournamentJobReport.settledCount]
+                        ].map(([label, value]) => (
+                          <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                            <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                            <span className="block text-sm font-black font-mono text-[#00FF88] truncate">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {(adminTournamentQueue?.rows ?? []).slice(0, 8).map(row => (
                       <button
                         key={row.tournament.id}
