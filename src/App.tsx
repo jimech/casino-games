@@ -55,6 +55,7 @@ import {
   NotificationDeliveryDto,
   NotificationDto,
   NotificationPreferenceDto,
+  openTournamentDispute,
   placeBet,
   registerAccount,
   ResponsiblePlayInterventionDto,
@@ -623,6 +624,26 @@ export default function App() {
       triggerNotification('Tournament evidence export generated.', 'success');
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournament evidence export failed.", "error");
+    }
+  };
+
+  const handleOpenTournamentDispute = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId || !tournamentLeaderboard) return;
+    try {
+      const rankedUserIds = tournamentLeaderboard.entries.map(entry => entry.userId);
+      const subjectUserId = rankedUserIds.includes(adminUserDetail?.user.id ?? '')
+        ? adminUserDetail?.user.id
+        : rankedUserIds[0];
+      const caseRecord = await openTournamentDispute({
+        tournamentId,
+        subjectUserId,
+        disputeType: tournamentCancellation ? 'cancellation_refund_review' : tournamentSettlement ? 'settlement_payout_review' : 'tournament_review',
+        priority: tournamentCancellation ? 'high' : 'medium'
+      });
+      await loadAdminTournamentEvidence(tournamentId);
+      triggerNotification(`Tournament dispute opened: ${caseRecord.id}`, 'success');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament dispute failed to open.", "error");
     }
   };
 
@@ -2173,6 +2194,13 @@ export default function App() {
                             Export packet
                           </button>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleOpenTournamentDispute(tournamentLeaderboard.tournament.id)}
+                          className="w-full bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-[#00FF88] font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                        >
+                          Open dispute case
+                        </button>
                         {(tournamentSettlement?.payouts ?? []).slice(0, 5).map(payout => (
                           <AdminRow
                             key={payout.id}
@@ -2210,7 +2238,7 @@ export default function App() {
                                 ['Players', adminTournamentEvidence.integrity.participantCount],
                                 ['Entry Ledger', adminTournamentEvidence.integrity.entryLedgerCount],
                                 ['Refund Ledger', adminTournamentEvidence.integrity.refundLedgerCount],
-                                ['Audit Events', adminTournamentEvidence.integrity.adminAiEventCount]
+                                ['Disputes', adminTournamentEvidence.integrity.disputeCaseCount]
                               ].map(([label, value]) => (
                                 <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
                                   <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
@@ -2224,6 +2252,14 @@ export default function App() {
                                 left={`${participant.user.username} / rank #${participant.leaderboardRow?.rank ?? '-'}`}
                                 right={`$${participant.leaderboardRow?.score ?? 0}`}
                                 detail={`${participant.ledger.length} ledger entries / ${participant.rounds.length} scored rounds / ${participant.riskEvents.length} risks`}
+                              />
+                            ))}
+                            {adminTournamentEvidence.disputeCases.slice(0, 4).map(caseRecord => (
+                              <AdminRow
+                                key={caseRecord.id}
+                                left={`${caseRecord.title} / ${caseRecord.status}`}
+                                right={caseRecord.priority}
+                                detail={`${caseRecord.id} / ${caseRecord.notes.length} notes`}
                               />
                             ))}
                           </>

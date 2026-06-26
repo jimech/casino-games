@@ -870,6 +870,25 @@ Acceptance criteria:
 - Cancelled tournaments cannot be settled.
 - Admin evidence includes cancellation, refund, and refund-ledger proof.
 
+### T41 - Tournament Dispute Cases
+
+Summary: Link tournament settlement/cancellation evidence into compliance case workflows.
+
+Implementation status: Complete. Admins can now open a tournament dispute from `/api/admin/tournaments/:id/disputes`, which creates a compliance case with tournament evidence references including settlement, cancellation, payout/refund counts, ledger integrity counts, and participant context. Tournament evidence packets now include linked dispute cases and dispute integrity counts. The Admin Tournament Settlement panel exposes an Open dispute case action and renders linked dispute rows in the evidence view. Dispute creation is audited through existing compliance-case AI/risk telemetry.
+
+Scope:
+- Create tournament dispute cases from admin tournament evidence.
+- Link settlement/cancellation ids and ledger integrity counts into case evidence.
+- Include linked dispute cases in tournament evidence/export.
+- Add admin UI action and smoke coverage.
+
+Acceptance criteria:
+- Admins can open a tournament dispute without manually copying ids.
+- Dispute cases appear in the existing compliance queue.
+- Tournament evidence includes linked dispute cases.
+- Dispute creation emits compliance audit telemetry.
+- Regular users cannot open tournament dispute cases.
+
 ## First Working Sequence
 
 Start here:

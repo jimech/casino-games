@@ -343,6 +343,57 @@ app.post('/api/admin/tournaments/:id/cancel', async (req, res) => {
   }
 });
 
+app.post('/api/admin/tournaments/:id/disputes', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const evidence = await buildAdminTournamentEvidence(req.params.id, admin.id);
+    const requestedSubjectUserId = typeof req.body.subjectUserId === 'string' ? req.body.subjectUserId : undefined;
+    const subjectUserId = requestedSubjectUserId && evidence.participants.some(participant => participant.user?.id === requestedSubjectUserId)
+      ? requestedSubjectUserId
+      : evidence.participants[0]?.user?.id ?? admin.id;
+    const disputeType = typeof req.body.disputeType === 'string' ? req.body.disputeType : 'tournament_review';
+    const caseRecord = await complianceCaseService.create({
+      subjectUserId,
+      authorId: admin.id,
+      type: 'general',
+      priority: isComplianceCasePriority(req.body.priority) ? req.body.priority : evidence.cancellation ? 'high' : 'medium',
+      title: typeof req.body.title === 'string' && req.body.title.trim()
+        ? req.body.title
+        : `Tournament dispute: ${evidence.tournament.title}`,
+      description: typeof req.body.description === 'string'
+        ? req.body.description
+        : `Dispute opened for ${evidence.tournament.title} (${evidence.tournament.id}).`,
+      evidence: {
+        source: 'tournament_dispute',
+        disputeType,
+        tournamentId: evidence.tournament.id,
+        tournamentTitle: evidence.tournament.title,
+        tournamentStatus: evidence.tournament.status,
+        settlementId: evidence.settlement?.id,
+        cancellationId: evidence.cancellation?.id,
+        payoutCount: evidence.integrity.payoutCount,
+        refundCount: evidence.integrity.refundCount,
+        entryLedgerCount: evidence.integrity.entryLedgerCount,
+        payoutLedgerCount: evidence.integrity.payoutLedgerCount,
+        refundLedgerCount: evidence.integrity.refundLedgerCount,
+        participantCount: evidence.integrity.participantCount,
+        evidenceGeneratedAt: evidence.generatedAt,
+        requestedSubjectUserId
+      }
+    });
+    await auditComplianceCaseAction(admin.id, caseRecord.subjectUserId, caseRecord.id, 'tournament_dispute_opened', {
+      tournamentId: evidence.tournament.id,
+      settlementId: evidence.settlement?.id,
+      cancellationId: evidence.cancellation?.id,
+      disputeType,
+      evidence: caseRecord.evidence
+    });
+    res.status(201).json({ case: caseRecord });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/admin/tournaments/:id/settle', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
@@ -1872,6 +1923,10 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
     aiDecisionExplanations: evidence.aiDecisionExplanations,
     complianceCases: evidence.complianceCases
   })).filter(participant => participant.user);
+  const disputeCases = uniqueCases(participants
+    .flatMap(participant => participant.complianceCases)
+    .filter(caseRecord => recordReferencesTournament(caseRecord.evidence, tournamentId) ||
+      caseRecord.notes.some(note => recordReferencesTournament(note.evidence, tournamentId))));
   const linkedAdminAiEvents = adminAiEvents.filter(event => recordReferencesTournament(event.context, tournamentId));
   const payoutLedgerEntryIds = new Set(settlement?.payouts.map(payout => payout.ledgerEntryId).filter(Boolean) ?? []);
   const refundLedgerEntryIds = new Set(cancellation?.refunds.map(refund => refund.ledgerEntryId).filter(Boolean) ?? []);
@@ -1905,6 +1960,7 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
     leaderboard,
     settlement,
     cancellation,
+    disputeCases,
     participants,
     adminAiEvents: linkedAdminAiEvents,
     integrity: {
@@ -1920,9 +1976,19 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
       adminAiEventCount: linkedAdminAiEvents.length,
       roundCount: participants.reduce((sum, participant) => sum + participant.rounds.length, 0),
       riskEventCount: participants.reduce((sum, participant) => sum + participant.riskEvents.length, 0),
-      complianceCaseCount: participants.reduce((sum, participant) => sum + participant.complianceCases.length, 0)
+      complianceCaseCount: participants.reduce((sum, participant) => sum + participant.complianceCases.length, 0),
+      disputeCaseCount: disputeCases.length
     }
   };
+}
+
+function uniqueCases<T extends { id: string }>(cases: T[]): T[] {
+  const seen = new Set<string>();
+  return cases.filter(caseRecord => {
+    if (seen.has(caseRecord.id)) return false;
+    seen.add(caseRecord.id);
+    return true;
+  });
 }
 
 function buildRoundReplayTimeline(

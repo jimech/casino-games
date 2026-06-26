@@ -237,6 +237,17 @@ const main = async () => {
   if (cancelledTournamentEvidence.integrity.refundLedgerCount < 1) {
     throw new Error('Expected cancelled tournament evidence to include refund ledger proof');
   }
+  const tournamentDispute = await postJson(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/disputes`, adminSession.token, {
+    subjectUserId: adminSession.user.id,
+    disputeType: 'cancellation_refund_review',
+    priority: 'high'
+  });
+  assertEqual(tournamentDispute.case.evidence.tournamentId, cancellableTournament.id, 'tournament dispute evidence id');
+  assertEqual(tournamentDispute.case.evidence.cancellationId, tournamentCancellation.cancellation.id, 'tournament dispute cancellation evidence');
+  const disputedTournamentEvidence = await getJson(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/evidence`, adminSession.token);
+  if (!disputedTournamentEvidence.disputeCases.some((caseRecord: { id: string }) => caseRecord.id === tournamentDispute.case.id)) {
+    throw new Error('Expected tournament evidence to include linked dispute case');
+  }
   const tournamentRound = await postJson(`${baseUrl}/api/bets`, adminSession.token, {
     gameId: 'roulette',
     stake: 200,

@@ -585,6 +585,7 @@ export interface AdminTournamentEvidenceDto {
   leaderboard: TournamentLeaderboardDto;
   settlement?: TournamentSettlementDto;
   cancellation?: TournamentCancellationDto;
+  disputeCases: ComplianceCaseDto[];
   participants: Array<{
     user: AuthUserDto;
     leaderboardRow?: TournamentLeaderboardRowDto;
@@ -610,6 +611,7 @@ export interface AdminTournamentEvidenceDto {
     roundCount: number;
     riskEventCount: number;
     complianceCaseCount: number;
+    disputeCaseCount: number;
   };
 }
 
@@ -869,6 +871,29 @@ export const cancelTournament = async (input: {
   });
   const payload = await parseJsonResponse<{ cancellation: TournamentCancellationDto }>(response);
   return payload.cancellation;
+};
+
+export const openTournamentDispute = async (input: {
+  tournamentId: string;
+  subjectUserId?: string;
+  disputeType?: string;
+  priority?: ComplianceCaseDto['priority'];
+  title?: string;
+  description?: string;
+}): Promise<ComplianceCaseDto> => {
+  const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(input.tournamentId)}/disputes`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      subjectUserId: input.subjectUserId,
+      disputeType: input.disputeType,
+      priority: input.priority,
+      title: input.title,
+      description: input.description
+    })
+  });
+  const payload = await parseJsonResponse<{ case: ComplianceCaseDto }>(response);
+  return payload.case;
 };
 
 export const fetchAdminTournamentEvidence = async (tournamentId: string): Promise<AdminTournamentEvidenceDto> => {
