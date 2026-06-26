@@ -17,8 +17,8 @@ const settlingTournament = {
   id: 'settling-tournament',
   title: 'Settling Tournament',
   description: 'Settlement window',
-  startAt: '2026-06-22T00:00:00.000Z',
-  endAt: '2026-06-23T00:00:00.000Z',
+  startAt: '2020-01-01T00:00:00.000Z',
+  endAt: '2099-01-01T00:00:00.000Z',
   entryFee: 0,
   prizePool: 1000
 };
@@ -187,12 +187,12 @@ describe('MemoryTournamentService', () => {
     const first = await service.settle({
       tournamentId: settlingTournament.id,
       idempotencyKey: 'settle-prizes',
-      now: new Date('2026-06-23T00:00:01.000Z')
+      now: new Date('2099-01-01T00:00:01.000Z')
     });
     const duplicate = await service.settle({
       tournamentId: settlingTournament.id,
       idempotencyKey: 'settle-prizes-duplicate',
-      now: new Date('2026-06-23T00:00:01.000Z')
+      now: new Date('2099-01-01T00:00:01.000Z')
     });
 
     expect(first.payouts.map(payout => [payout.userId, payout.rank, payout.amount])).toEqual([

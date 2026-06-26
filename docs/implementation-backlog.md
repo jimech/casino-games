@@ -827,6 +827,26 @@ Acceptance criteria:
 - Duplicate settlement attempts do not double-pay.
 - Admins can review settlement and payout evidence.
 
+### T39 - Tournament Evidence Export and Payout Audit
+
+Summary: Add a read-only tournament evidence packet for settlement review and dispute/audit export.
+
+Implementation status: Complete. Admins can now open `/api/admin/tournaments/:id/evidence` for a read-only tournament evidence packet and `/api/admin/tournaments/:id/evidence-export` for a versioned JSON export. Packets include the tournament definition, final leaderboard, settlement and payout rows, participant public account records, linked entry/prize ledger entries, scored rounds, risk events, AI events, AI decision explanations, compliance cases, admin audit events, and integrity counts. The Admin Tournament Settlement panel can load evidence, preview export JSON, and display participant/ledger/audit proof next to payout controls.
+
+Scope:
+- Build tournament evidence from authoritative services without mutating settlement or wallet state.
+- Link entry-fee debits and prize-payout credits to the tournament packet.
+- Include participant scoring context and admin audit events.
+- Expose role-protected evidence and JSON export endpoints.
+- Add admin UI preview and smoke coverage.
+
+Acceptance criteria:
+- Regular users cannot load tournament evidence.
+- Evidence export is stable, timestamped, and versioned.
+- Evidence includes settlement, payout, entry ledger, and prize ledger proof.
+- Evidence review records admin audit telemetry.
+- Export/review paths never settle or credit wallets.
+
 ## First Working Sequence
 
 Start here:

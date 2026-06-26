@@ -265,6 +265,32 @@ app.get('/api/admin/tournaments/:id/settlement', async (req, res) => {
   }
 });
 
+app.get('/api/admin/tournaments/:id/evidence', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    res.json(await buildAdminTournamentEvidence(req.params.id, admin.id));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/admin/tournaments/:id/evidence-export', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const evidence = await buildAdminTournamentEvidence(req.params.id, admin.id);
+    const packet = {
+      exportedAt: new Date().toISOString(),
+      exportVersion: 'tournament-evidence-v1',
+      ...evidence
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="tournament-evidence-${evidence.tournament.id}.json"`);
+    res.send(JSON.stringify(packet, null, 2));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/admin/tournaments/:id/settle', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
@@ -1744,6 +1770,98 @@ async function buildAdminRoundEvidence(roundId: string, adminUserId: string) {
   };
 }
 
+async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: string) {
+  const leaderboard = await tournamentService.leaderboard({ tournamentId });
+  const settlement = await tournamentService.getSettlement({ tournamentId });
+  const subjectUserIds = [...new Set([
+    ...leaderboard.entries.map(entry => entry.userId),
+    ...(settlement?.payouts.map(payout => payout.userId) ?? [])
+  ])];
+
+  const [users, participantEvidence, adminAiEvents] = await Promise.all([
+    Promise.all(subjectUserIds.map(userId => authService.getUserById({ userId }))),
+    Promise.all(subjectUserIds.map(async userId => {
+      const [ledger, rounds, riskEvents, aiEvents, aiDecisionExplanations, complianceCases] = await Promise.all([
+        casinoService.getLedger(userId),
+        casinoService.listRounds(userId),
+        riskService.listEvents({ userId, limit: 200 }),
+        aiEventService.list({ userId, limit: 200 }),
+        aiDecisionExplanationService.list({ userId, limit: 200 }),
+        complianceCaseService.list({ subjectUserId: userId, limit: 100 })
+      ]);
+      return {
+        userId,
+        ledger: ledger.filter(entry => recordReferencesTournament(entry.metadata, tournamentId)).map(sanitizeLedgerEntryForApi),
+        rounds: rounds.filter(round => roundMatchesTournamentWindow(round, leaderboard.tournament)).map(sanitizeRoundForApi),
+        riskEvents: riskEvents.filter(event => recordReferencesTournament(event.context, tournamentId)),
+        aiEvents: aiEvents.filter(event => recordReferencesTournament(event.context, tournamentId)),
+        aiDecisionExplanations: aiDecisionExplanations.filter(explanation =>
+          recordReferencesTournament(explanation.inputFeatures, tournamentId) ||
+          recordReferencesTournament(explanation.output, tournamentId)
+        ),
+        complianceCases: complianceCases.filter(caseRecord =>
+          recordReferencesTournament(caseRecord.evidence, tournamentId) ||
+          caseRecord.notes.some(note => recordReferencesTournament(note.evidence, tournamentId))
+        )
+      };
+    })),
+    aiEventService.list({ category: 'admin', limit: 200 })
+  ]);
+
+  const participants = participantEvidence.map(evidence => ({
+    user: users.find(user => user?.id === evidence.userId),
+    leaderboardRow: leaderboard.entries.find(entry => entry.userId === evidence.userId),
+    ledger: evidence.ledger,
+    rounds: evidence.rounds,
+    riskEvents: evidence.riskEvents,
+    aiEvents: evidence.aiEvents,
+    aiDecisionExplanations: evidence.aiDecisionExplanations,
+    complianceCases: evidence.complianceCases
+  })).filter(participant => participant.user);
+  const linkedAdminAiEvents = adminAiEvents.filter(event => recordReferencesTournament(event.context, tournamentId));
+  const payoutLedgerEntryIds = new Set(settlement?.payouts.map(payout => payout.ledgerEntryId).filter(Boolean) ?? []);
+  const entryLedgerCount = participants.reduce((sum, participant) =>
+    sum + participant.ledger.filter(entry => entry.metadata?.source === 'tournament_entry').length, 0);
+  const payoutLedgerCount = participants.reduce((sum, participant) =>
+    sum + participant.ledger.filter(entry => payoutLedgerEntryIds.has(entry.id) || entry.metadata?.source === 'tournament_prize').length, 0);
+
+  await trackAiEventSafely({
+    userId: adminUserId,
+    category: 'admin',
+    name: 'admin_tournament_evidence_viewed',
+    context: {
+      tournamentId,
+      settlementId: settlement?.id,
+      participantCount: participants.length,
+      leaderboardEntryCount: leaderboard.entries.length,
+      payoutCount: settlement?.payouts.length ?? 0,
+      ledgerEntryCount: entryLedgerCount + payoutLedgerCount
+    }
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    replayMode: 'read_only' as const,
+    tournament: leaderboard.tournament,
+    leaderboard,
+    settlement,
+    participants,
+    adminAiEvents: linkedAdminAiEvents,
+    integrity: {
+      participantCount: participants.length,
+      leaderboardEntryCount: leaderboard.entries.length,
+      settlementRecorded: Boolean(settlement),
+      payoutCount: settlement?.payouts.length ?? 0,
+      entryLedgerCount,
+      payoutLedgerCount,
+      adminAiEventCount: linkedAdminAiEvents.length,
+      roundCount: participants.reduce((sum, participant) => sum + participant.rounds.length, 0),
+      riskEventCount: participants.reduce((sum, participant) => sum + participant.riskEvents.length, 0),
+      complianceCaseCount: participants.reduce((sum, participant) => sum + participant.complianceCases.length, 0)
+    }
+  };
+}
+
 function buildRoundReplayTimeline(
   round: GameRoundRecord,
   ledger: Array<{ type: string; amount: number; createdAt: string; idempotencyKey: string }>,
@@ -1810,6 +1928,25 @@ function recordReferencesRound(value: unknown, roundId: string): boolean {
     (key === 'roundId' && nested === roundId) ||
     recordReferencesRound(nested, roundId)
   );
+}
+
+function recordReferencesTournament(value: unknown, tournamentId: string): boolean {
+  if (value === tournamentId) return true;
+  if (Array.isArray(value)) return value.some(item => recordReferencesTournament(item, tournamentId));
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, nested]) =>
+    (key === 'tournamentId' && nested === tournamentId) ||
+    recordReferencesTournament(nested, tournamentId)
+  );
+}
+
+function roundMatchesTournamentWindow(
+  round: GameRoundRecord,
+  tournament: { startAt: string; endAt: string }
+): boolean {
+  if (round.status !== 'settled' || !round.settledAt) return false;
+  const settledAt = new Date(round.settledAt).getTime();
+  return settledAt >= new Date(tournament.startAt).getTime() && settledAt <= new Date(tournament.endAt).getTime();
 }
 
 async function resolveAiProfileUserId(req: express.Request, user: AuthUser): Promise<string> {

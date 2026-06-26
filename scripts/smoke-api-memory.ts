@@ -241,6 +241,22 @@ const main = async () => {
   assertEqual(duplicateTournamentSettlement.settlement.id, tournamentSettlement.settlement.id, 'duplicate tournament settlement returns original');
   const loadedTournamentSettlement = await getJson(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/settlement`, adminSession.token);
   assertEqual(loadedTournamentSettlement.settlement.id, tournamentSettlement.settlement.id, 'tournament settlement load');
+  const tournamentEvidence = await getJson(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/evidence`, adminSession.token);
+  assertEqual(tournamentEvidence.replayMode, 'read_only', 'tournament evidence replay mode');
+  assertEqual(tournamentEvidence.settlement.id, tournamentSettlement.settlement.id, 'tournament evidence settlement id');
+  if (tournamentEvidence.integrity.entryLedgerCount < 1 || tournamentEvidence.integrity.payoutLedgerCount < 1) {
+    throw new Error('Expected tournament evidence to include entry and payout ledger proof');
+  }
+  if (!tournamentEvidence.participants.some((participant: { user: { id: string }; leaderboardRow?: { rank: number } }) => participant.user.id === adminSession.user.id && participant.leaderboardRow?.rank === 1)) {
+    throw new Error('Expected tournament evidence to include ranked participant detail');
+  }
+  const tournamentEvidenceExport = await fetch(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/evidence-export`, {
+    headers: { Authorization: `Bearer ${adminSession.token}` }
+  });
+  assertEqual(tournamentEvidenceExport.status, 200, 'tournament evidence export status');
+  const exportedTournamentEvidence = await tournamentEvidenceExport.json();
+  assertEqual(exportedTournamentEvidence.exportVersion, 'tournament-evidence-v1', 'tournament evidence export version');
+  assertEqual(exportedTournamentEvidence.tournament.id, activeTournament.id, 'tournament evidence export id');
 
   await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
     category: 'page',

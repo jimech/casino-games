@@ -557,6 +557,37 @@ export interface AdminRoundEvidenceDto {
   };
 }
 
+export interface AdminTournamentEvidenceDto {
+  generatedAt: string;
+  replayMode: 'read_only';
+  tournament: TournamentDto;
+  leaderboard: TournamentLeaderboardDto;
+  settlement?: TournamentSettlementDto;
+  participants: Array<{
+    user: AuthUserDto;
+    leaderboardRow?: TournamentLeaderboardRowDto;
+    ledger: LedgerEntryDto[];
+    rounds: RoundDto[];
+    riskEvents: RiskEventDto[];
+    aiEvents: AiEventDto[];
+    aiDecisionExplanations: AiDecisionExplanationDto[];
+    complianceCases: ComplianceCaseDto[];
+  }>;
+  adminAiEvents: AiEventDto[];
+  integrity: {
+    participantCount: number;
+    leaderboardEntryCount: number;
+    settlementRecorded: boolean;
+    payoutCount: number;
+    entryLedgerCount: number;
+    payoutLedgerCount: number;
+    adminAiEventCount: number;
+    roundCount: number;
+    riskEventCount: number;
+    complianceCaseCount: number;
+  };
+}
+
 export interface AdminRewardsReviewDto {
   generatedAt: string;
   summary: {
@@ -786,6 +817,21 @@ export const settleTournament = async (input: {
   });
   const payload = await parseJsonResponse<{ settlement: TournamentSettlementDto }>(response);
   return payload.settlement;
+};
+
+export const fetchAdminTournamentEvidence = async (tournamentId: string): Promise<AdminTournamentEvidenceDto> => {
+  const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(tournamentId)}/evidence`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<AdminTournamentEvidenceDto>(response);
+};
+
+export const exportAdminTournamentEvidence = async (tournamentId: string): Promise<string> => {
+  const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(tournamentId)}/evidence-export`, {
+    headers: authHeaders()
+  });
+  if (!response.ok) await parseJsonResponse(response);
+  return response.text();
 };
 
 export const fetchChurnScore = async (input: { userId?: string } = {}): Promise<ChurnScoreDto> => {

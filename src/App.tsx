@@ -16,6 +16,7 @@ import {
   AuthUserDto,
   AdminRoundEvidenceDto,
   AdminRewardsReviewDto,
+  AdminTournamentEvidenceDto,
   AdminUserDetailDto,
   AdminSummaryDto,
   actBlackjackRound,
@@ -27,10 +28,12 @@ import {
   createWalletEventSource,
   enterTournament,
   exportAdminRoundEvidence,
+  exportAdminTournamentEvidence,
   fetchAdminNotificationDeliveries,
   fetchAuthSession,
   fetchAdminRoundEvidence,
   fetchAdminRewardsReview,
+  fetchAdminTournamentEvidence,
   fetchAdminUserDetail,
   fetchAdminSummary,
   fetchNotificationPreferences,
@@ -164,8 +167,11 @@ export default function App() {
   const [activeTournamentId, setActiveTournamentId] = useState('');
   const [tournamentLeaderboard, setTournamentLeaderboard] = useState<TournamentLeaderboardDto | null>(null);
   const [tournamentSettlement, setTournamentSettlement] = useState<TournamentSettlementDto | null>(null);
+  const [adminTournamentEvidence, setAdminTournamentEvidence] = useState<AdminTournamentEvidenceDto | null>(null);
+  const [adminTournamentEvidencePreview, setAdminTournamentEvidencePreview] = useState('');
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
   const [tournamentSettlementLoading, setTournamentSettlementLoading] = useState(false);
+  const [adminTournamentEvidenceLoading, setAdminTournamentEvidenceLoading] = useState(false);
   const [vipStatus, setVipStatus] = useState<VipStatusDto | null>(null);
   const [vipLoading, setVipLoading] = useState(false);
   const [aiUiFallbacks, setAiUiFallbacks] = useState<Record<string, string>>({});
@@ -478,6 +484,8 @@ export default function App() {
         ]);
         setTournamentLeaderboard(leaderboard);
         setTournamentSettlement(settlement ?? null);
+        setAdminTournamentEvidence(null);
+        setAdminTournamentEvidencePreview('');
       }
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournaments failed to load.", "error");
@@ -497,6 +505,8 @@ export default function App() {
       ]);
       setTournamentLeaderboard(leaderboard);
       setTournamentSettlement(settlement ?? null);
+      setAdminTournamentEvidence(null);
+      setAdminTournamentEvidencePreview('');
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Leaderboard failed to load.", "error");
     } finally {
@@ -539,12 +549,38 @@ export default function App() {
         idempotencyKey: `tournament-settle-${tournamentId}`
       });
       setTournamentSettlement(settlement);
+      setAdminTournamentEvidence(null);
+      setAdminTournamentEvidencePreview('');
       await loadTournamentLeaderboard(tournamentId);
       triggerNotification(`Tournament settled: ${settlement.payouts.length} prize payouts credited.`, 'success');
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournament settlement failed.", "error");
     } finally {
       setTournamentSettlementLoading(false);
+    }
+  };
+
+  const loadAdminTournamentEvidence = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId) return;
+    setAdminTournamentEvidenceLoading(true);
+    try {
+      setAdminTournamentEvidence(await fetchAdminTournamentEvidence(tournamentId));
+      setAdminTournamentEvidencePreview('');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament evidence failed to load.", "error");
+    } finally {
+      setAdminTournamentEvidenceLoading(false);
+    }
+  };
+
+  const previewAdminTournamentEvidenceExport = async (tournamentId = activeTournamentId) => {
+    if (!tournamentId) return;
+    try {
+      const exported = await exportAdminTournamentEvidence(tournamentId);
+      setAdminTournamentEvidencePreview(exported.slice(0, 420));
+      triggerNotification('Tournament evidence export generated.', 'success');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament evidence export failed.", "error");
     }
   };
 
@@ -2062,6 +2098,22 @@ export default function App() {
                             Settle prizes
                           </button>
                         </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void loadAdminTournamentEvidence(tournamentLeaderboard.tournament.id)}
+                            className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-yellow-400 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            {adminTournamentEvidenceLoading ? 'Loading' : 'Review evidence'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void previewAdminTournamentEvidenceExport(tournamentLeaderboard.tournament.id)}
+                            className="bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-neutral-200 font-black text-[10px] uppercase py-2 rounded-lg transition-all"
+                          >
+                            Export packet
+                          </button>
+                        </div>
                         {(tournamentSettlement?.payouts ?? []).slice(0, 5).map(payout => (
                           <AdminRow
                             key={payout.id}
@@ -2076,6 +2128,36 @@ export default function App() {
                             right={tournamentLeaderboard.tournament.status}
                             detail="Ended tournaments can be settled once; active tournaments stay locked"
                           />
+                        )}
+                        {adminTournamentEvidence && (
+                          <>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {[
+                                ['Players', adminTournamentEvidence.integrity.participantCount],
+                                ['Entry Ledger', adminTournamentEvidence.integrity.entryLedgerCount],
+                                ['Prize Ledger', adminTournamentEvidence.integrity.payoutLedgerCount],
+                                ['Audit Events', adminTournamentEvidence.integrity.adminAiEventCount]
+                              ].map(([label, value]) => (
+                                <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                                  <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                                  <span className="block text-sm font-black font-mono text-[#00FF88]">{value}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {adminTournamentEvidence.participants.slice(0, 4).map(participant => (
+                              <AdminRow
+                                key={participant.user.id}
+                                left={`${participant.user.username} / rank #${participant.leaderboardRow?.rank ?? '-'}`}
+                                right={`$${participant.leaderboardRow?.score ?? 0}`}
+                                detail={`${participant.ledger.length} ledger entries / ${participant.rounds.length} scored rounds / ${participant.riskEvents.length} risks`}
+                              />
+                            ))}
+                          </>
+                        )}
+                        {adminTournamentEvidencePreview && (
+                          <pre className="max-h-32 overflow-hidden whitespace-pre-wrap break-words bg-neutral-950 border border-neutral-850 rounded-md p-3 text-[10px] text-neutral-400">
+                            {adminTournamentEvidencePreview}
+                          </pre>
                         )}
                       </>
                     ) : (
