@@ -889,6 +889,25 @@ Acceptance criteria:
 - Dispute creation emits compliance audit telemetry.
 - Regular users cannot open tournament dispute cases.
 
+### T42 - Tournament Admin Filters and Queue
+
+Summary: Give admins a filtered operational queue for tournament settlement, cancellation, and dispute states.
+
+Implementation status: Complete. Admins can now load `/api/admin/tournaments/queue` with filters for all, active, ended, cancelled, settled, disputed, unresolved, and needs-settlement tournaments. Queue rows combine tournament definitions with leaderboard counts, settlement/cancellation records, dispute cases, open dispute counts, current leader, and operational flags. The Admin Audit UI adds a Tournament Queue panel with summary counters, filter buttons, and selectable queue rows that load the existing tournament settlement/evidence workflow. Smoke coverage verifies cancelled/disputed/unresolved flags and unresolved filtering.
+
+Scope:
+- Role-protected admin tournament queue endpoint.
+- Computed settlement/cancellation/dispute flags.
+- Admin UI filter controls and queue rows.
+- Refresh queue after settlement, cancellation, and dispute actions.
+- Smoke coverage for queue filters.
+
+Acceptance criteria:
+- Admins can filter tournaments by active, ended, cancelled, settled, disputed, unresolved, and needs-settlement states.
+- Queue rows include enough counts to triage without opening every tournament.
+- Selecting a queue row loads the existing leaderboard/detail panel.
+- Regular users cannot access the admin queue.
+
 ## First Working Sequence
 
 Start here:

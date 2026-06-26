@@ -255,6 +255,17 @@ app.get('/api/tournaments/:id/leaderboard', async (req, res) => {
   }
 });
 
+app.get('/api/admin/tournaments/queue', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const filter = typeof req.query.filter === 'string' ? req.query.filter : 'all';
+    const queue = await buildAdminTournamentQueue(filter);
+    res.json(queue);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/tournaments/:id/settlement', async (req, res) => {
   try {
     await requireAdmin(req);
@@ -1980,6 +1991,66 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
       disputeCaseCount: disputeCases.length
     }
   };
+}
+
+async function buildAdminTournamentQueue(filter: string) {
+  const tournaments = await tournamentService.listTournaments();
+  const allCases = await complianceCaseService.list({ limit: 250 });
+  const rows = await Promise.all(tournaments.map(async tournament => {
+    const [leaderboard, settlement, cancellation] = await Promise.all([
+      tournamentService.leaderboard({ tournamentId: tournament.id }),
+      tournamentService.getSettlement({ tournamentId: tournament.id }),
+      tournamentService.getCancellation({ tournamentId: tournament.id })
+    ]);
+    const disputeCases = allCases.filter(caseRecord =>
+      recordReferencesTournament(caseRecord.evidence, tournament.id) ||
+      caseRecord.notes.some(note => recordReferencesTournament(note.evidence, tournament.id))
+    );
+    const openDisputeCases = disputeCases.filter(caseRecord => caseRecord.status !== 'closed');
+    const flags = {
+      upcoming: tournament.status === 'upcoming',
+      active: tournament.status === 'active',
+      ended: tournament.status === 'ended',
+      cancelled: tournament.status === 'cancelled',
+      settled: Boolean(settlement),
+      disputed: disputeCases.length > 0,
+      unresolved: openDisputeCases.length > 0,
+      needsSettlement: tournament.status === 'ended' && !settlement && !cancellation
+    };
+    return {
+      tournament,
+      generatedAt: leaderboard.generatedAt,
+      entryCount: leaderboard.entries.length,
+      scoredEntryCount: leaderboard.entries.filter(entry => entry.roundCount > 0).length,
+      leader: leaderboard.entries[0],
+      settlement,
+      cancellation,
+      disputeCases,
+      openDisputeCaseCount: openDisputeCases.length,
+      flags
+    };
+  }));
+  const filteredRows = rows.filter(row => tournamentQueueFilterMatches(row.flags, filter));
+  return {
+    generatedAt: new Date().toISOString(),
+    filter,
+    summary: {
+      total: rows.length,
+      active: rows.filter(row => row.flags.active).length,
+      ended: rows.filter(row => row.flags.ended).length,
+      cancelled: rows.filter(row => row.flags.cancelled).length,
+      settled: rows.filter(row => row.flags.settled).length,
+      disputed: rows.filter(row => row.flags.disputed).length,
+      unresolved: rows.filter(row => row.flags.unresolved).length,
+      needsSettlement: rows.filter(row => row.flags.needsSettlement).length
+    },
+    rows: filteredRows
+  };
+}
+
+function tournamentQueueFilterMatches(flags: Record<string, boolean>, filter: string): boolean {
+  if (filter === 'all') return true;
+  return Boolean(flags[filter]);
 }
 
 function uniqueCases<T extends { id: string }>(cases: T[]): T[] {

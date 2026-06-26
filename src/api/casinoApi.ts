@@ -288,6 +288,33 @@ export interface TournamentCancellationDto {
   refunds: TournamentRefundDto[];
 }
 
+export interface AdminTournamentQueueDto {
+  generatedAt: string;
+  filter: string;
+  summary: {
+    total: number;
+    active: number;
+    ended: number;
+    cancelled: number;
+    settled: number;
+    disputed: number;
+    unresolved: number;
+    needsSettlement: number;
+  };
+  rows: Array<{
+    tournament: TournamentDto;
+    generatedAt: string;
+    entryCount: number;
+    scoredEntryCount: number;
+    leader?: TournamentLeaderboardRowDto;
+    settlement?: TournamentSettlementDto;
+    cancellation?: TournamentCancellationDto;
+    disputeCases: ComplianceCaseDto[];
+    openDisputeCaseCount: number;
+    flags: Record<string, boolean>;
+  }>;
+}
+
 export interface TargetedBonusOfferDto {
   id: string;
   campaignId: string;
@@ -800,6 +827,15 @@ export const fetchTournaments = async (): Promise<TournamentDto[]> => {
   });
   const payload = await parseJsonResponse<{ tournaments: TournamentDto[] }>(response);
   return payload.tournaments;
+};
+
+export const fetchAdminTournamentQueue = async (filter = 'all'): Promise<AdminTournamentQueueDto> => {
+  const params = new URLSearchParams();
+  params.set('filter', filter);
+  const response = await fetch(`/api/admin/tournaments/queue?${params.toString()}`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<AdminTournamentQueueDto>(response);
 };
 
 export const enterTournament = async (input: {

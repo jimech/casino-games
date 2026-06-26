@@ -16,6 +16,7 @@ import {
   AuthUserDto,
   AdminRoundEvidenceDto,
   AdminRewardsReviewDto,
+  AdminTournamentQueueDto,
   AdminTournamentEvidenceDto,
   AdminUserDetailDto,
   AdminSummaryDto,
@@ -34,6 +35,7 @@ import {
   fetchAuthSession,
   fetchAdminRoundEvidence,
   fetchAdminRewardsReview,
+  fetchAdminTournamentQueue,
   fetchAdminTournamentEvidence,
   fetchAdminUserDetail,
   fetchAdminSummary,
@@ -172,9 +174,12 @@ export default function App() {
   const [tournamentLeaderboard, setTournamentLeaderboard] = useState<TournamentLeaderboardDto | null>(null);
   const [tournamentSettlement, setTournamentSettlement] = useState<TournamentSettlementDto | null>(null);
   const [tournamentCancellation, setTournamentCancellation] = useState<TournamentCancellationDto | null>(null);
+  const [adminTournamentQueue, setAdminTournamentQueue] = useState<AdminTournamentQueueDto | null>(null);
+  const [adminTournamentQueueFilter, setAdminTournamentQueueFilter] = useState('all');
   const [adminTournamentEvidence, setAdminTournamentEvidence] = useState<AdminTournamentEvidenceDto | null>(null);
   const [adminTournamentEvidencePreview, setAdminTournamentEvidencePreview] = useState('');
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
+  const [adminTournamentQueueLoading, setAdminTournamentQueueLoading] = useState(false);
   const [tournamentSettlementLoading, setTournamentSettlementLoading] = useState(false);
   const [tournamentCancellationLoading, setTournamentCancellationLoading] = useState(false);
   const [adminTournamentEvidenceLoading, setAdminTournamentEvidenceLoading] = useState(false);
@@ -345,10 +350,23 @@ export default function App() {
     setAdminLoading(true);
     try {
       setAdminSummary(await fetchAdminSummary());
+      void loadAdminTournamentQueue(adminTournamentQueueFilter);
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Admin summary failed to load.", "error");
     } finally {
       setAdminLoading(false);
+    }
+  };
+
+  const loadAdminTournamentQueue = async (filter = adminTournamentQueueFilter) => {
+    setAdminTournamentQueueLoading(true);
+    try {
+      setAdminTournamentQueueFilter(filter);
+      setAdminTournamentQueue(await fetchAdminTournamentQueue(filter));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Tournament queue failed to load.", "error");
+    } finally {
+      setAdminTournamentQueueLoading(false);
     }
   };
 
@@ -574,6 +592,7 @@ export default function App() {
       setAdminTournamentEvidence(null);
       setAdminTournamentEvidencePreview('');
       await loadTournamentLeaderboard(tournamentId);
+      await loadAdminTournamentQueue(adminTournamentQueueFilter);
       triggerNotification(`Tournament settled: ${settlement.payouts.length} prize payouts credited.`, 'success');
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournament settlement failed.", "error");
@@ -595,6 +614,7 @@ export default function App() {
       setAdminTournamentEvidence(null);
       setAdminTournamentEvidencePreview('');
       await loadTournamentLeaderboard(tournamentId);
+      await loadAdminTournamentQueue(adminTournamentQueueFilter);
       triggerNotification(`Tournament cancelled: ${cancellation.refunds.length} entry refunds credited.`, 'success');
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournament cancellation failed.", "error");
@@ -641,6 +661,7 @@ export default function App() {
         priority: tournamentCancellation ? 'high' : 'medium'
       });
       await loadAdminTournamentEvidence(tournamentId);
+      await loadAdminTournamentQueue(adminTournamentQueueFilter);
       triggerNotification(`Tournament dispute opened: ${caseRecord.id}`, 'success');
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Tournament dispute failed to open.", "error");
@@ -2125,6 +2146,58 @@ export default function App() {
                         right="VIP"
                         detail="Use Rewards from user search to inspect bonus claims and weekly cashback controls"
                       />
+                    )}
+                  </AdminPanel>
+
+                  <AdminPanel title="Tournament Queue">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        ['Total', adminTournamentQueue?.summary.total ?? 0],
+                        ['Needs Settle', adminTournamentQueue?.summary.needsSettlement ?? 0],
+                        ['Disputed', adminTournamentQueue?.summary.disputed ?? 0],
+                        ['Unresolved', adminTournamentQueue?.summary.unresolved ?? 0]
+                      ].map(([label, value]) => (
+                        <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                          <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                          <span className="block text-sm font-black font-mono text-[#00FF88]">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {['all', 'active', 'ended', 'cancelled', 'settled', 'disputed', 'unresolved', 'needsSettlement'].map(filter => (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => void loadAdminTournamentQueue(filter)}
+                          className={`${adminTournamentQueueFilter === filter ? 'bg-[#00FF88] text-neutral-950' : 'bg-neutral-950 text-neutral-300 border border-neutral-800'} font-black text-[9px] uppercase py-2 rounded-lg transition-all`}
+                        >
+                          {filter}
+                        </button>
+                      ))}
+                    </div>
+                    {(adminTournamentQueue?.rows ?? []).slice(0, 8).map(row => (
+                      <button
+                        key={row.tournament.id}
+                        type="button"
+                        onClick={() => void loadTournamentLeaderboard(row.tournament.id)}
+                        className={`w-full text-left rounded-md ${activeTournamentId === row.tournament.id ? 'ring-1 ring-[#00FF88]' : ''}`}
+                      >
+                        <AdminRow
+                          left={`${row.tournament.title} / ${row.tournament.status}`}
+                          right={row.flags.needsSettlement ? 'settle' : row.flags.unresolved ? 'dispute' : row.settlement ? 'settled' : row.cancellation ? 'cancelled' : String(row.entryCount)}
+                          detail={`${row.entryCount} entries / ${row.scoredEntryCount} scored / ${row.disputeCases.length} disputes`}
+                        />
+                      </button>
+                    ))}
+                    {!adminTournamentQueue && (
+                      <AdminRow
+                        left={adminTournamentQueueLoading ? 'Loading queue' : 'No queue loaded'}
+                        right="queue"
+                        detail="Refresh admin or choose a filter to load operational tournament states"
+                      />
+                    )}
+                    {adminTournamentQueue?.rows.length === 0 && (
+                      <AdminRow left="No tournaments match" right={adminTournamentQueue.filter} detail="Try a different queue filter" />
                     )}
                   </AdminPanel>
 

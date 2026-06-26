@@ -248,6 +248,16 @@ const main = async () => {
   if (!disputedTournamentEvidence.disputeCases.some((caseRecord: { id: string }) => caseRecord.id === tournamentDispute.case.id)) {
     throw new Error('Expected tournament evidence to include linked dispute case');
   }
+  const tournamentQueue = await getJson(`${baseUrl}/api/admin/tournaments/queue?filter=all`, adminSession.token);
+  if (!tournamentQueue.rows.some((row: { tournament: { id: string }; flags: { cancelled: boolean; disputed: boolean; unresolved: boolean } }) =>
+    row.tournament.id === cancellableTournament.id && row.flags.cancelled && row.flags.disputed && row.flags.unresolved
+  )) {
+    throw new Error('Expected tournament queue to flag cancelled unresolved dispute');
+  }
+  const unresolvedTournamentQueue = await getJson(`${baseUrl}/api/admin/tournaments/queue?filter=unresolved`, adminSession.token);
+  if (!unresolvedTournamentQueue.rows.some((row: { tournament: { id: string } }) => row.tournament.id === cancellableTournament.id)) {
+    throw new Error('Expected unresolved tournament queue filter to include disputed tournament');
+  }
   const tournamentRound = await postJson(`${baseUrl}/api/bets`, adminSession.token, {
     gameId: 'roulette',
     stake: 200,
