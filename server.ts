@@ -267,6 +267,15 @@ app.get('/api/admin/tournaments/queue', async (req, res) => {
   }
 });
 
+app.get('/api/admin/tournaments/policy', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    res.json({ policy: tournamentSettlementPolicy() });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/admin/tournaments/jobs/settlement-scan', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
@@ -2012,6 +2021,7 @@ async function buildAdminTournamentEvidence(tournamentId: string, adminUserId: s
 async function buildAdminTournamentQueue(filter: string, now?: Date) {
   const tournaments = await tournamentService.listTournaments(now);
   const allCases = await complianceCaseService.list({ limit: 250 });
+  const policy = tournamentSettlementPolicy();
   const rows = await Promise.all(tournaments.map(async tournament => {
     const [leaderboard, settlement, cancellation] = await Promise.all([
       tournamentService.leaderboard({ tournamentId: tournament.id, now }),
@@ -2033,7 +2043,7 @@ async function buildAdminTournamentQueue(filter: string, now?: Date) {
       unresolved: openDisputeCases.length > 0,
       needsSettlement: tournament.status === 'ended' && !settlement && !cancellation
     };
-    return {
+    const row = {
       tournament,
       generatedAt: leaderboard.generatedAt,
       entryCount: leaderboard.entries.length,
@@ -2045,11 +2055,16 @@ async function buildAdminTournamentQueue(filter: string, now?: Date) {
       openDisputeCaseCount: openDisputeCases.length,
       flags
     };
+    return {
+      ...row,
+      policyDecision: evaluateTournamentSettlementPolicy(row, policy)
+    };
   }));
   const filteredRows = rows.filter(row => tournamentQueueFilterMatches(row.flags, filter));
   return {
     generatedAt: new Date().toISOString(),
     filter,
+    policy,
     summary: {
       total: rows.length,
       active: rows.filter(row => row.flags.active).length,
@@ -2072,10 +2087,12 @@ async function runTournamentSettlementJob(input: {
 }) {
   const startedAt = (input.now ?? new Date()).toISOString();
   const queue = await buildAdminTournamentQueue('needsSettlement', input.now);
+  const policy = queue.policy;
   const adminUsers = await authService.searchUsers({ role: 'admin', limit: 50 });
   const rows = queue.rows;
   const settled = [];
   const alerts = [];
+  const policyBlocks = [];
   for (const row of rows) {
     for (const admin of adminUsers) {
       const result = await notificationService.create({
@@ -2102,6 +2119,13 @@ async function runTournamentSettlementJob(input: {
     }
 
     if (!input.autoSettle) continue;
+    if (!row.policyDecision.allowed) {
+      policyBlocks.push({
+        tournamentId: row.tournament.id,
+        reasonCodes: row.policyDecision.reasonCodes
+      });
+      continue;
+    }
     const settlement = await tournamentService.settle({
       tournamentId: row.tournament.id,
       idempotencyKey: `${input.idempotencyKey ?? `tournament-job-${startedAt}`}-${row.tournament.id}`,
@@ -2135,12 +2159,15 @@ async function runTournamentSettlementJob(input: {
     startedAt,
     completedAt: new Date().toISOString(),
     mode: input.autoSettle ? 'auto_settle' : 'dry_run',
+    policy,
     detectedCount: rows.length,
     alertedAdminCount: adminUsers.length,
     alertCount: alerts.length,
     settledCount: settled.length,
+    policyBlockedCount: policyBlocks.length,
     rows,
     alerts,
+    policyBlocks,
     settled
   };
   await trackAiEventSafely({
@@ -2152,10 +2179,64 @@ async function runTournamentSettlementJob(input: {
       detectedCount: report.detectedCount,
       alertCount: report.alertCount,
       settledCount: report.settledCount,
+      policyBlockedCount: report.policyBlockedCount,
       tournamentIds: rows.map(row => row.tournament.id)
     }
   });
   return report;
+}
+
+function tournamentSettlementPolicy() {
+  return {
+    autoSettleEnabled: parseBooleanEnv('TOURNAMENT_AUTO_SETTLE_ENABLED', true),
+    maxPrizePool: parseNumberEnv('TOURNAMENT_AUTO_SETTLE_MAX_PRIZE_POOL', 10000),
+    minEntries: parseNumberEnv('TOURNAMENT_AUTO_SETTLE_MIN_ENTRIES', 1),
+    minScoredEntries: parseNumberEnv('TOURNAMENT_AUTO_SETTLE_MIN_SCORED_ENTRIES', 1),
+    requireDisputeFree: parseBooleanEnv('TOURNAMENT_AUTO_SETTLE_REQUIRE_DISPUTE_FREE', true),
+    requireNoCancellation: true
+  };
+}
+
+function evaluateTournamentSettlementPolicy(
+  row: {
+    tournament: { prizePool: number };
+    entryCount: number;
+    scoredEntryCount: number;
+    openDisputeCaseCount: number;
+    cancellation?: unknown;
+    flags: Record<string, boolean>;
+  },
+  policy: ReturnType<typeof tournamentSettlementPolicy>
+) {
+  const reasonCodes = [];
+  if (!row.flags.needsSettlement) reasonCodes.push('not_needs_settlement');
+  if (!policy.autoSettleEnabled) reasonCodes.push('auto_settle_disabled');
+  if (row.tournament.prizePool > policy.maxPrizePool) reasonCodes.push('prize_pool_exceeds_policy');
+  if (row.entryCount < policy.minEntries) reasonCodes.push('insufficient_entries');
+  if (row.scoredEntryCount < policy.minScoredEntries) reasonCodes.push('insufficient_scored_entries');
+  if (policy.requireDisputeFree && row.openDisputeCaseCount > 0) reasonCodes.push('open_disputes_present');
+  if (policy.requireNoCancellation && row.cancellation) reasonCodes.push('cancelled_tournament');
+  return {
+    allowed: reasonCodes.length === 0,
+    reasonCodes,
+    checks: {
+      prizePool: row.tournament.prizePool,
+      entryCount: row.entryCount,
+      scoredEntryCount: row.scoredEntryCount,
+      openDisputeCaseCount: row.openDisputeCaseCount
+    }
+  };
+}
+
+function parseBooleanEnv(key: string, fallback: boolean): boolean {
+  const value = process.env[key];
+  if (value === undefined) return fallback;
+  return value === '1' || value.toLowerCase() === 'true';
+}
+
+function parseNumberEnv(key: string, fallback: number): number {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function tournamentQueueFilterMatches(flags: Record<string, boolean>, filter: string): boolean {

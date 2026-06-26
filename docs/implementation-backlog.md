@@ -929,6 +929,26 @@ Acceptance criteria:
 - Auto-settle mode is explicit and uses existing idempotent settlement logic.
 - Job output is auditable through returned report and AI events.
 
+### T44 - Tournament Policy Controls
+
+Summary: Add configurable auto-settlement guardrails for tournament jobs.
+
+Implementation status: Complete. Admins can now inspect `/api/admin/tournaments/policy`, and tournament queue rows/job reports include policy decisions with allow/block status, reason codes, and check inputs. Auto-settlement is gated by policy controls for enablement, maximum prize pool, minimum entries, minimum scored entries, dispute-free state, and no-cancellation state. Dry-run reports expose policy blocks without moving funds, while explicit auto-settle skips blocked tournaments and reports policy-blocked counts. The Admin Tournament Queue panel displays policy values, blocked counts, and row-level block reasons. Smoke coverage verifies policy exposure and insufficient-scored-entry blocking before settlement.
+
+Scope:
+- Expose auto-settlement policy values.
+- Evaluate policy per needs-settlement tournament.
+- Block auto-settlement when guardrails fail.
+- Include policy decisions in queue and job reports.
+- Display policy and block reasons in Admin UI.
+- Smoke coverage for policy checks.
+
+Acceptance criteria:
+- Auto-settlement cannot bypass configured guardrails.
+- Dry-run mode reports policy decisions without wallet movement.
+- Admins can see why a tournament is blocked.
+- Policy decisions are included in job audit output.
+
 ## First Working Sequence
 
 Start here:

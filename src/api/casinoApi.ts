@@ -291,6 +291,7 @@ export interface TournamentCancellationDto {
 export interface AdminTournamentQueueDto {
   generatedAt: string;
   filter: string;
+  policy: TournamentSettlementPolicyDto;
   summary: {
     total: number;
     active: number;
@@ -312,23 +313,50 @@ export interface AdminTournamentQueueDto {
     disputeCases: ComplianceCaseDto[];
     openDisputeCaseCount: number;
     flags: Record<string, boolean>;
+    policyDecision: TournamentSettlementPolicyDecisionDto;
   }>;
+}
+
+export interface TournamentSettlementPolicyDto {
+  autoSettleEnabled: boolean;
+  maxPrizePool: number;
+  minEntries: number;
+  minScoredEntries: number;
+  requireDisputeFree: boolean;
+  requireNoCancellation: boolean;
+}
+
+export interface TournamentSettlementPolicyDecisionDto {
+  allowed: boolean;
+  reasonCodes: string[];
+  checks: {
+    prizePool: number;
+    entryCount: number;
+    scoredEntryCount: number;
+    openDisputeCaseCount: number;
+  };
 }
 
 export interface AdminTournamentSettlementJobReportDto {
   startedAt: string;
   completedAt: string;
   mode: 'dry_run' | 'auto_settle';
+  policy: TournamentSettlementPolicyDto;
   detectedCount: number;
   alertedAdminCount: number;
   alertCount: number;
   settledCount: number;
+  policyBlockedCount: number;
   rows: AdminTournamentQueueDto['rows'];
   alerts: Array<{
     userId: string;
     tournamentId: string;
     notificationId?: string;
     deliveryStatus: string;
+  }>;
+  policyBlocks: Array<{
+    tournamentId: string;
+    reasonCodes: string[];
   }>;
   settled: Array<{
     tournamentId: string;
@@ -860,6 +888,14 @@ export const fetchAdminTournamentQueue = async (filter = 'all', now?: string): P
     headers: authHeaders()
   });
   return parseJsonResponse<AdminTournamentQueueDto>(response);
+};
+
+export const fetchTournamentSettlementPolicy = async (): Promise<TournamentSettlementPolicyDto> => {
+  const response = await fetch('/api/admin/tournaments/policy', {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ policy: TournamentSettlementPolicyDto }>(response);
+  return payload.policy;
 };
 
 export const runTournamentSettlementJob = async (input: {

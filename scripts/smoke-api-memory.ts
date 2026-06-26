@@ -249,6 +249,9 @@ const main = async () => {
     throw new Error('Expected tournament evidence to include linked dispute case');
   }
   const tournamentQueue = await getJson(`${baseUrl}/api/admin/tournaments/queue?filter=all`, adminSession.token);
+  if (!tournamentQueue.policy || typeof tournamentQueue.policy.maxPrizePool !== 'number') {
+    throw new Error('Expected tournament queue to include settlement policy');
+  }
   if (!tournamentQueue.rows.some((row: { tournament: { id: string }; flags: { cancelled: boolean; disputed: boolean; unresolved: boolean } }) =>
     row.tournament.id === cancellableTournament.id && row.flags.cancelled && row.flags.disputed && row.flags.unresolved
   )) {
@@ -258,6 +261,8 @@ const main = async () => {
   if (!unresolvedTournamentQueue.rows.some((row: { tournament: { id: string } }) => row.tournament.id === cancellableTournament.id)) {
     throw new Error('Expected unresolved tournament queue filter to include disputed tournament');
   }
+  const tournamentPolicy = await getJson(`${baseUrl}/api/admin/tournaments/policy`, adminSession.token);
+  assertEqual(tournamentPolicy.policy.requireDisputeFree, true, 'tournament auto-settle dispute-free policy');
   const settlementJob = await postJson(`${baseUrl}/api/admin/tournaments/jobs/settlement-scan`, adminSession.token, {
     autoSettle: false,
     idempotencyKey: 'quality-tournament-job-dry-run',
@@ -266,6 +271,11 @@ const main = async () => {
   assertEqual(settlementJob.report.mode, 'dry_run', 'tournament settlement job dry-run mode');
   if (!settlementJob.report.rows.some((row: { tournament: { id: string }; flags: { needsSettlement: boolean } }) => row.tournament.id === activeTournament.id && row.flags.needsSettlement)) {
     throw new Error('Expected tournament settlement job to detect ended unsettled tournament');
+  }
+  if (!settlementJob.report.rows.some((row: { tournament: { id: string }; policyDecision: { allowed: boolean; reasonCodes: string[] } }) =>
+    row.tournament.id === activeTournament.id && !row.policyDecision.allowed && row.policyDecision.reasonCodes.includes('insufficient_scored_entries')
+  )) {
+    throw new Error('Expected tournament settlement job to expose policy block reasons before scored rounds');
   }
   if (settlementJob.report.alertCount < 1) {
     throw new Error('Expected tournament settlement job to alert admins');

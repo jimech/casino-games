@@ -2222,8 +2222,23 @@ export default function App() {
                         {[
                           ['Mode', adminTournamentJobReport.mode],
                           ['Detected', adminTournamentJobReport.detectedCount],
-                          ['Alerts', adminTournamentJobReport.alertCount],
+                          ['Blocked', adminTournamentJobReport.policyBlockedCount],
                           ['Settled', adminTournamentJobReport.settledCount]
+                        ].map(([label, value]) => (
+                          <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                            <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                            <span className="block text-sm font-black font-mono text-[#00FF88] truncate">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {adminTournamentQueue?.policy && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          ['Auto', adminTournamentQueue.policy.autoSettleEnabled ? 'enabled' : 'disabled'],
+                          ['Max Prize', `$${safeMoney(adminTournamentQueue.policy.maxPrizePool)}`],
+                          ['Min Entries', adminTournamentQueue.policy.minEntries],
+                          ['Min Scored', adminTournamentQueue.policy.minScoredEntries]
                         ].map(([label, value]) => (
                           <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
                             <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
@@ -2241,8 +2256,8 @@ export default function App() {
                       >
                         <AdminRow
                           left={`${row.tournament.title} / ${row.tournament.status}`}
-                          right={row.flags.needsSettlement ? 'settle' : row.flags.unresolved ? 'dispute' : row.settlement ? 'settled' : row.cancellation ? 'cancelled' : String(row.entryCount)}
-                          detail={`${row.entryCount} entries / ${row.scoredEntryCount} scored / ${row.disputeCases.length} disputes`}
+                          right={row.flags.needsSettlement ? (row.policyDecision.allowed ? 'ready' : 'blocked') : row.flags.unresolved ? 'dispute' : row.settlement ? 'settled' : row.cancellation ? 'cancelled' : String(row.entryCount)}
+                          detail={`${row.entryCount} entries / ${row.scoredEntryCount} scored / ${row.policyDecision.reasonCodes[0] ?? 'policy ok'}`}
                         />
                       </button>
                     ))}
