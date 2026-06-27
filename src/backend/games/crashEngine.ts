@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { WalletState } from '../../domain/ledger';
 import { asMoney } from '../../domain/money';
 import { crashPointFromUnitRandom, multiplierFromElapsedMs, resolveCrashCashout } from '../../domain/crash';
+import { crashProof } from '../../domain/provablyFair';
 import { GameRoundRecord } from '../casinoService';
 
 const RANDOM_SCALE = 1_000_000_000;
@@ -36,6 +37,11 @@ export interface CrashCashoutResult {
 interface CrashEngineOptions {
   unitRandom?: () => number;
   now?: () => Date;
+  provablyFair?: {
+    serverSeed?: string;
+    clientSeed?: string;
+    nonce?: number;
+  };
 }
 
 type MaybePromise<T> = T | Promise<T>;
@@ -67,10 +73,17 @@ export const startCrashRound = async (
   const stake = asMoney(input.stake);
   if (stake <= 0) throw new Error('Crash stake must be greater than zero');
 
-  const unitRandom = options.unitRandom ?? secureUnitRandom;
-  const crashPoint = crashPointFromUnitRandom(unitRandom(), DEFAULT_CONFIG);
   const launchTime = (options.now ?? (() => new Date()))().toISOString();
   const idempotencyKey = input.idempotencyKey || `crash-${randomUUID()}`;
+  const proof = options.unitRandom ? undefined : crashProof({
+    ...options.provablyFair,
+    clientSeed: options.provablyFair?.clientSeed ?? `${input.userId}:${idempotencyKey}`,
+    config: DEFAULT_CONFIG
+  });
+  const unitRandom = options.unitRandom?.() ?? (proof?.result.kind === 'crash-unit' ? proof.result.unitRandom : secureUnitRandom());
+  const crashPoint = proof?.result.kind === 'crash-unit'
+    ? proof.result.crashPoint
+    : crashPointFromUnitRandom(unitRandom, DEFAULT_CONFIG);
 
   const round = await service.placeBet({
     userId: input.userId,
@@ -81,7 +94,8 @@ export const startCrashRound = async (
       game: 'crash',
       crashPoint,
       launchTime,
-      config: DEFAULT_CONFIG
+      config: DEFAULT_CONFIG,
+      provablyFair: proof
     }
   });
 

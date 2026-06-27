@@ -72,8 +72,30 @@ const main = async () => {
   });
   assertEqual(adminSession.user.role, 'admin', 'admin invite role');
 
+  const proofSession = await register({
+    username: 'quality_proof',
+    password: 'very-secret-pass',
+    acceptAgeGate: true,
+    acceptTerms: true,
+    acceptPrivacy: true
+  });
+
   const adminSummary = await getJson(`${baseUrl}/api/admin/summary`, adminSession.token);
   assertArray(adminSummary.ledger, 'admin ledger array');
+
+  const provablyFairSlots = await postJson(`${baseUrl}/api/games/slots/spin`, proofSession.token, {
+    machineId: 'fruit-mania',
+    bet: 10,
+    idempotencyKey: 'quality-provably-fair-slots'
+  });
+  const provablyFairProof = provablyFairSlots.round?.outcome?.provablyFair;
+  if (!provablyFairProof) {
+    throw new Error('Expected slots spin to include provably fair proof');
+  }
+  const provablyFairVerification = await postJson(`${baseUrl}/api/provably-fair/verify`, proofSession.token, {
+    proof: provablyFairProof
+  });
+  assertEqual(provablyFairVerification.verification.valid, true, 'provably fair slots verification');
 
   const blockedUserSearch = await fetch(`${baseUrl}/api/admin/users`, {
     headers: { Authorization: `Bearer ${userSession.token}` }

@@ -988,6 +988,25 @@ Acceptance criteria:
 - Reports reuse domain math functions rather than duplicating settlement/evaluation rules.
 - Admin math report includes all implemented game families.
 
+### T47 - Provably Fair Seed Verification
+
+Summary: Add HMAC-based seed commitments and replay verification for server-generated game outcomes.
+
+Implementation status: Complete. Roulette, slots, and crash now attach provably fair proof metadata to normal server-generated outcomes. Proofs include algorithm, server seed hash, revealed server seed, client seed, nonce, cursor, and the derived result. A shared domain verifier recomputes the server seed hash and HMAC-derived outcome, detects result tampering, and powers `/api/provably-fair/verify`. API smoke coverage spins a real slots round and verifies its stored proof through the endpoint.
+
+Scope:
+- HMAC-SHA256 seed derivation utility.
+- Server seed hash commitments and revealed proof payloads.
+- Roulette index, slots stop, and crash unit-random verification.
+- Public verification endpoint and client API helper.
+- Unit and smoke coverage for valid and tampered proofs.
+
+Acceptance criteria:
+- Default roulette, slots, and crash outcome generation stores replayable proof metadata.
+- Verification detects server seed hash mismatches and result tampering.
+- Verification does not mutate wallets, rounds, or ledger entries.
+- Test overrides remain deterministic without requiring random proof generation.
+
 ## First Working Sequence
 
 Start here:

@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { WalletState } from '../../domain/ledger';
 import { asMoney } from '../../domain/money';
+import { slotsProof } from '../../domain/provablyFair';
 import {
   SlotSpinOutcome,
   getSlotMachine,
@@ -26,6 +27,11 @@ export interface SlotsSpinResult {
 
 interface SlotsEngineOptions {
   pickStops?: (stripLengths: [number, number, number]) => [number, number, number];
+  provablyFair?: {
+    serverSeed?: string;
+    clientSeed?: string;
+    nonce?: number;
+  };
 }
 
 type MaybePromise<T> = T | Promise<T>;
@@ -60,11 +66,17 @@ export const spinSlots = async (
   const chargedStake = input.freeSpin ? asMoney(0) : bet;
   const idempotencyKey = input.idempotencyKey || `slots-${randomUUID()}`;
 
-  const stops = (options.pickStops ?? secureStops)([
+  const reelLengths: [number, number, number] = [
     machine.reelStrips[0].length,
     machine.reelStrips[1].length,
     machine.reelStrips[2].length
-  ]);
+  ];
+  const proof = options.pickStops ? undefined : slotsProof({
+    ...options.provablyFair,
+    clientSeed: options.provablyFair?.clientSeed ?? `${input.userId}:${idempotencyKey}`,
+    reelLengths
+  });
+  const stops = proof?.result.kind === 'slots-stops' ? proof.result.stops : (options.pickStops ?? secureStops)(reelLengths);
   const outcome = resolveSlotSpin(machine, bet, stops, bonusMultiplier);
   const displaySymbols = symbolIdsToChars(machine, outcome.symbols);
 
@@ -100,7 +112,8 @@ export const spinSlots = async (
       chargedStake,
       freeSpin: Boolean(input.freeSpin),
       ...outcome,
-      displaySymbols
+      displaySymbols,
+      provablyFair: proof
     }
   });
 

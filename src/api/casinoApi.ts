@@ -35,6 +35,7 @@ interface RoundDto {
   stake: number;
   status: 'open' | 'settled' | 'refunded';
   payout: number;
+  outcome?: unknown;
 }
 
 interface RoundResponse {
@@ -395,6 +396,13 @@ export interface GameMathSimulationReportDto {
     highestRtp: number;
     highestVolatilityIndex: number;
   };
+}
+
+export interface ProvablyFairVerificationDto {
+  valid: boolean;
+  expected: unknown;
+  proof: unknown;
+  errors: string[];
 }
 
 export interface TargetedBonusOfferDto {
@@ -956,6 +964,16 @@ export const fetchGameMathSimulationReport = async (input: { sampleCount?: numbe
   });
   const payload = await parseJsonResponse<{ report: GameMathSimulationReportDto }>(response);
   return payload.report;
+};
+
+export const verifyProvablyFairProof = async (proof: unknown): Promise<ProvablyFairVerificationDto> => {
+  const response = await fetch('/api/provably-fair/verify', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ proof })
+  });
+  const payload = await parseJsonResponse<{ verification: ProvablyFairVerificationDto }>(response);
+  return payload.verification;
 };
 
 export const enterTournament = async (input: {

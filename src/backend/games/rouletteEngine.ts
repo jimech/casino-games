@@ -8,6 +8,7 @@ import {
   totalRouletteStake
 } from '../../domain/roulette';
 import { asMoney } from '../../domain/money';
+import { ProvablyFairProof, rouletteProof } from '../../domain/provablyFair';
 import { WalletState } from '../../domain/ledger';
 import { GameRoundRecord } from '../casinoService';
 
@@ -27,6 +28,11 @@ export interface RouletteSpinResult {
 
 interface RouletteSpinOptions {
   pickIndex?: () => number;
+  provablyFair?: {
+    serverSeed?: string;
+    clientSeed?: string;
+    nonce?: number;
+  };
 }
 
 type MaybePromise<T> = T | Promise<T>;
@@ -78,7 +84,12 @@ export const spinRoulette = async (
     };
   }
 
-  const outcome = createRouletteOutcome(options.pickIndex);
+  const proof = options.pickIndex ? undefined : rouletteProof({
+    ...options.provablyFair,
+    clientSeed: options.provablyFair?.clientSeed ?? `${input.userId}:${idempotencyKey}`,
+    wheel: EUROPEAN_ROULETTE_SEQUENCE
+  });
+  const outcome = createRouletteOutcome(options.pickIndex, proof);
   const payout = resolveRoulettePayout(bets, outcome);
   const settledRound = await service.settleRound({
     roundId: round.id,
@@ -87,7 +98,8 @@ export const spinRoulette = async (
     outcome: {
       game: 'roulette',
       bets,
-      outcome
+      outcome,
+      provablyFair: proof
     }
   });
 
@@ -124,8 +136,11 @@ export const parseRouletteBetSlip = (value: unknown): RouletteBetSlip => {
   return { outside, straight };
 };
 
-const createRouletteOutcome = (pickIndex = () => randomInt(EUROPEAN_ROULETTE_SEQUENCE.length)): RouletteOutcome => {
-  const index = pickIndex();
+const createRouletteOutcome = (
+  pickIndex = () => randomInt(EUROPEAN_ROULETTE_SEQUENCE.length),
+  proof?: ProvablyFairProof
+): RouletteOutcome => {
+  const index = proof?.result.kind === 'roulette-index' ? proof.result.index : pickIndex();
   if (!Number.isInteger(index) || index < 0 || index >= EUROPEAN_ROULETTE_SEQUENCE.length) {
     throw new Error(`Invalid roulette RNG index ${index}`);
   }

@@ -17,6 +17,7 @@ import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEng
 import { spinSlots } from './src/backend/games/slotsEngine';
 import { actBlackjackRound, startBlackjackRound } from './src/backend/games/blackjackEngine';
 import { actPokerRound, startPokerRound } from './src/backend/games/pokerEngine';
+import { ProvablyFairProof, verifyProvablyFairProof } from './src/domain/provablyFair';
 
 dotenv.config();
 
@@ -282,6 +283,15 @@ app.get('/api/admin/game-math/simulations', async (req, res) => {
     await requireAdmin(req);
     const sampleCount = typeof req.query.sampleCount === 'string' ? Number(req.query.sampleCount) : undefined;
     res.json({ report: runGameMathSimulation({ sampleCount }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/provably-fair/verify', async (req, res) => {
+  try {
+    const proof = parseProvablyFairProof(req.body.proof ?? req.body);
+    res.json({ verification: verifyProvablyFairProof(proof) });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -2615,6 +2625,31 @@ function sanitizeLedgerEntryForApi<T extends { metadata?: Record<string, unknown
       outcome: undefined
     }
   };
+}
+
+function parseProvablyFairProof(value: unknown): ProvablyFairProof {
+  if (!isRecord(value)) throw new Error('Provably fair proof is required');
+  if (value.algorithm !== 'hmac-sha256-v1') throw new Error('Unsupported provably fair algorithm');
+  if (value.gameId !== 'roulette' && value.gameId !== 'slots' && value.gameId !== 'crash') {
+    throw new Error('Unsupported provably fair game id');
+  }
+  if (typeof value.serverSeedHash !== 'string' || typeof value.serverSeed !== 'string' || typeof value.clientSeed !== 'string') {
+    throw new Error('Provably fair seed fields are required');
+  }
+  if (
+    typeof value.nonce !== 'number' ||
+    typeof value.cursor !== 'number' ||
+    !Number.isInteger(value.nonce) ||
+    value.nonce < 0 ||
+    !Number.isInteger(value.cursor) ||
+    value.cursor < 0
+  ) {
+    throw new Error('Provably fair nonce and cursor must be non-negative integers');
+  }
+  if (!isRecord(value.result) || typeof value.result.kind !== 'string') {
+    throw new Error('Provably fair result is required');
+  }
+  return value as unknown as ProvablyFairProof;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
