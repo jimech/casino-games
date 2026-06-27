@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { PrismaClient } from '@prisma/client';
 import {
   ProvablyFairCommitment,
   ProvablyFairProof,
@@ -111,6 +112,93 @@ export class MemoryProvablyFairSeedService {
   }
 }
 
+export class PrismaProvablyFairSeedService {
+  constructor(private readonly prisma: PrismaClient) {}
+
+  async commit(input: {
+    userId: string;
+    gameId: ProvablyFairGameId;
+    commitmentKey: string;
+    clientSeed?: string;
+  }): Promise<ProvablyFairSeedRecord> {
+    assertText(input.userId, 'userId');
+    assertText(input.commitmentKey, 'commitmentKey');
+    return this.prisma.$transaction(async tx => {
+      const existing = await tx.provablyFairSeed.findUnique({
+        where: { commitmentKey: input.commitmentKey }
+      });
+      if (existing) return prismaSeedRecord(existing);
+
+      const latest = await tx.provablyFairSeed.findFirst({
+        where: {
+          userId: input.userId,
+          gameId: input.gameId
+        },
+        orderBy: { nonce: 'desc' }
+      });
+      const nonce = (latest?.nonce ?? -1) + 1;
+      const serverSeed = randomBytes(32).toString('hex');
+      const created = await tx.provablyFairSeed.create({
+        data: {
+          userId: input.userId,
+          gameId: input.gameId,
+          serverSeed,
+          serverSeedHash: hashServerSeed(serverSeed),
+          clientSeed: input.clientSeed ?? `${input.userId}:${input.gameId}:${nonce}`,
+          nonce,
+          status: 'committed',
+          commitmentKey: input.commitmentKey
+        }
+      });
+      return prismaSeedRecord(created);
+    }, { isolationLevel: 'Serializable' });
+  }
+
+  async reveal(input: { seedId: string; roundId?: string }): Promise<ProvablyFairSeedRecord> {
+    assertText(input.seedId, 'seedId');
+    return this.prisma.$transaction(async tx => {
+      const record = await tx.provablyFairSeed.findUnique({
+        where: { id: input.seedId }
+      });
+      if (!record) throw new Error(`Provably fair seed not found: ${input.seedId}`);
+      if (record.status === 'revealed') {
+        if (input.roundId && !record.roundId) {
+          const updated = await tx.provablyFairSeed.update({
+            where: { id: record.id },
+            data: { roundId: input.roundId }
+          });
+          return prismaSeedRecord(updated);
+        }
+        return prismaSeedRecord(record);
+      }
+
+      const revealed = await tx.provablyFairSeed.update({
+        where: { id: record.id },
+        data: {
+          status: 'revealed',
+          roundId: input.roundId,
+          revealedAt: new Date()
+        }
+      });
+      return prismaSeedRecord(revealed);
+    }, { isolationLevel: 'Serializable' });
+  }
+
+  async get(seedId: string): Promise<ProvablyFairSeedRecord | undefined> {
+    const record = await this.prisma.provablyFairSeed.findUnique({ where: { id: seedId } });
+    return record ? prismaSeedRecord(record) : undefined;
+  }
+
+  async listForUser(userId: string): Promise<PublicProvablyFairSeedRecord[]> {
+    assertText(userId, 'userId');
+    const records = await this.prisma.provablyFairSeed.findMany({
+      where: { userId },
+      orderBy: { committedAt: 'desc' }
+    });
+    return records.map(prismaSeedRecord).map(publicSeedRecord);
+  }
+}
+
 export const seedLifecycle = (record: ProvablyFairSeedRecord): ProvablyFairSeedLifecycle => ({
   seedId: record.id,
   status: record.status,
@@ -147,3 +235,31 @@ const assertText = (value: string, field: string) => {
     throw new Error(`${field} is required`);
   }
 };
+
+const prismaSeedRecord = (record: {
+  id: string;
+  userId: string;
+  gameId: string;
+  serverSeed: string;
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+  status: string;
+  commitmentKey: string;
+  roundId: string | null;
+  committedAt: Date;
+  revealedAt: Date | null;
+}): ProvablyFairSeedRecord => ({
+  id: record.id,
+  userId: record.userId,
+  gameId: record.gameId as ProvablyFairGameId,
+  serverSeed: record.serverSeed,
+  serverSeedHash: record.serverSeedHash,
+  clientSeed: record.clientSeed,
+  nonce: record.nonce,
+  status: record.status as ProvablyFairSeedStatus,
+  commitmentKey: record.commitmentKey,
+  roundId: record.roundId ?? undefined,
+  committedAt: record.committedAt.toISOString(),
+  revealedAt: record.revealedAt?.toISOString()
+});

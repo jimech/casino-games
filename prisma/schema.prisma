@@ -32,6 +32,11 @@ enum GameRoundEventType {
   refunded
 }
 
+enum ProvablyFairSeedStatus {
+  committed
+  revealed
+}
+
 enum RiskSeverity {
   low
   medium
@@ -115,6 +120,7 @@ model User {
   tournamentEntries TournamentEntry[]
   tournamentPayouts TournamentPayout[]
   tournamentRefunds TournamentRefund[]
+  provablyFairSeeds ProvablyFairSeed[]
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
@@ -570,11 +576,37 @@ model GameRound {
   user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   events        GameRoundEvent[]
   ledgerEntries WalletLedgerEntry[]
+  provablyFairSeeds ProvablyFairSeed[]
 
   @@index([userId, createdAt])
   @@index([gameId, createdAt])
   @@index([status])
   @@map("game_rounds")
+}
+
+model ProvablyFairSeed {
+  id             String                   @id @default(cuid())
+  userId         String
+  gameId         String
+  serverSeed     String
+  serverSeedHash String
+  clientSeed     String
+  nonce          Int
+  status         ProvablyFairSeedStatus   @default(committed)
+  commitmentKey  String                   @unique
+  roundId        String?
+  committedAt    DateTime                 @default(now())
+  revealedAt     DateTime?
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  round GameRound? @relation(fields: [roundId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, gameId, nonce])
+  @@index([userId, committedAt])
+  @@index([gameId, committedAt])
+  @@index([status])
+  @@index([roundId])
+  @@map("provably_fair_seeds")
 }
 
 model GameRoundEvent {

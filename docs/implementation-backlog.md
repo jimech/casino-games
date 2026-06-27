@@ -1065,6 +1065,26 @@ Acceptance criteria:
 - Seed review is user-owned and read-only.
 - Prisma persistence for seed lifecycle records is explicitly left for the next persistence hardening ticket.
 
+### T51 - Persist Provably Fair Seed Lifecycle
+
+Summary: Add Prisma persistence for committed and revealed provably fair seed records.
+
+Implementation status: Complete. Prisma mode now has a `provably_fair_seeds` table with committed/revealed status, private server seed storage, server seed hash, client seed, nonce, idempotent commitment key, optional round linkage, and reveal timestamps. The service factory selects `PrismaProvablyFairSeedService` in Prisma mode and `MemoryProvablyFairSeedService` in memory mode behind the same API. The migration enforces unique commitment keys and per-user/game nonces. The quality gate validates the schema, TypeScript, unit tests, build, and memory API smoke path.
+
+Scope:
+- Prisma enum/model for seed lifecycle status and records.
+- Forward SQL migration for `provably_fair_seeds`.
+- Prisma-backed commit, reveal, get, and list methods.
+- Service factory persistence switch.
+- Local Prisma client generation and quality validation.
+
+Acceptance criteria:
+- Seed commitments survive process restarts in Prisma mode.
+- Commitment keys are idempotent.
+- Per-user/game nonces are unique.
+- Revealed records can link to settled rounds.
+- Public seed lists hide server seeds until reveal.
+
 ## First Working Sequence
 
 Start here:
