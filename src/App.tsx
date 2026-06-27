@@ -2318,7 +2318,7 @@ export default function App() {
                             </div>
                           ))}
                         </div>
-                        {[...gameMathReport.roulette, ...gameMathReport.slots, ...gameMathReport.crash].slice(0, 8).map(scenario => (
+                        {[...gameMathReport.roulette, ...gameMathReport.slots, ...gameMathReport.crash, ...gameMathReport.blackjack, ...gameMathReport.poker].slice(0, 10).map(scenario => (
                           <AdminRow
                             key={scenario.scenarioId}
                             left={`${scenario.gameId} / ${scenario.scenarioId}`}

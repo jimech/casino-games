@@ -32,4 +32,28 @@ describe('game math simulation service', () => {
     expect(first).toEqual(second);
     expect(first.every(scenario => scenario.theoreticalRtp > 0.9 && scenario.theoreticalRtp < 1.05)).toBe(true);
   });
+
+  it('samples blackjack strategy scenarios deterministically', () => {
+    const first = runGameMathSimulation({ sampleCount: 5000 }).blackjack;
+    const second = runGameMathSimulation({ sampleCount: 5000 }).blackjack;
+
+    expect(first.map(scenario => scenario.scenarioId)).toEqual([
+      'blackjack-stand-hard-17',
+      'blackjack-basic-no-double'
+    ]);
+    expect(first).toEqual(second);
+    expect(first.every(scenario => scenario.theoreticalRtp > 0.9 && scenario.theoreticalRtp < 1)).toBe(true);
+  });
+
+  it('samples poker showdown scenarios with explicit rake assumptions', () => {
+    const poker = runGameMathSimulation({ sampleCount: 5000 }).poker;
+
+    expect(poker.map(scenario => scenario.scenarioId)).toEqual([
+      'poker-heads-up-checkdown',
+      'poker-heads-up-five-percent-rake'
+    ]);
+    expect(poker[0].theoreticalRtp).toBeGreaterThan(0.96);
+    expect(poker[0].theoreticalRtp).toBeLessThan(1.04);
+    expect(poker[1].theoreticalRtp).toBeLessThan(poker[0].theoreticalRtp);
+  });
 });

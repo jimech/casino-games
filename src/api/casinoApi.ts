@@ -387,6 +387,8 @@ export interface GameMathSimulationReportDto {
   roulette: GameMathScenarioReportDto[];
   slots: GameMathScenarioReportDto[];
   crash: GameMathScenarioReportDto[];
+  blackjack: GameMathScenarioReportDto[];
+  poker: GameMathScenarioReportDto[];
   summary: {
     scenarioCount: number;
     lowestRtp: number;

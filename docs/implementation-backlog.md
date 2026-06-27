@@ -969,6 +969,25 @@ Acceptance criteria:
 - Admins can run reports without affecting wallets or rounds.
 - Roulette reports match European roulette expected edge.
 
+### T46 - Blackjack and Poker Strategy Simulation Harness
+
+Summary: Extend game math reports with deterministic blackjack and poker strategy scenarios.
+
+Implementation status: Complete. The admin math report now includes deterministic blackjack flat-bet strategy sampling and Texas Holdem heads-up showdown sampling with explicit no-rake and 5% rake assumptions. Blackjack scenarios reuse the domain scoring, soft-hand detection, dealer draw, and settlement functions; poker scenarios reuse the Texas Holdem evaluator and hand comparison logic. Reports flow through the existing admin API and Game Math Simulations UI, and smoke coverage now verifies roulette, slots, crash, blackjack, and poker buckets are present.
+
+Scope:
+- Blackjack sampled strategy reports with no wallet mutation.
+- Poker sampled showdown reports with explicit rake assumptions.
+- Shared RTP, hit-rate, volatility, house-edge, and warning output.
+- Admin API/UI inclusion in the existing math report.
+- Unit and smoke coverage for repeatability and scenario presence.
+
+Acceptance criteria:
+- Blackjack and poker reports are deterministic for the same sample count.
+- Strategy assumptions are visible in scenario descriptions.
+- Reports reuse domain math functions rather than duplicating settlement/evaluation rules.
+- Admin math report includes all implemented game families.
+
 ## First Working Sequence
 
 Start here:

@@ -1,5 +1,17 @@
+import {
+  BlackjackCard,
+  isSoftHand,
+  scoreBlackjackHand,
+  settleBlackjackHand,
+  shouldDealerDraw
+} from '../domain/blackjack';
 import { crashPointFromUnitRandom, resolveCrashCashout } from '../domain/crash';
-import { asMoney } from '../domain/money';
+import { Money, asMoney } from '../domain/money';
+import {
+  PlayingCard,
+  comparePokerHands,
+  evaluateBestTexasHoldemHand
+} from '../domain/poker';
 import {
   EUROPEAN_ROULETTE_SEQUENCE,
   RouletteBetSlip,
@@ -15,6 +27,8 @@ export interface GameMathSimulationReport {
   roulette: GameMathScenarioReport[];
   slots: GameMathScenarioReport[];
   crash: GameMathScenarioReport[];
+  blackjack: GameMathScenarioReport[];
+  poker: GameMathScenarioReport[];
   summary: {
     scenarioCount: number;
     lowestRtp: number;
@@ -43,13 +57,17 @@ export const runGameMathSimulation = (input: { sampleCount?: number } = {}): Gam
   const roulette = simulateRoulette();
   const slots = SLOT_MACHINES.map(machine => simulateSlotMachine(machine));
   const crash = simulateCrash(sampleCount);
-  const scenarios = [...roulette, ...slots, ...crash];
+  const blackjack = simulateBlackjack(sampleCount);
+  const poker = simulatePoker(sampleCount);
+  const scenarios = [...roulette, ...slots, ...crash, ...blackjack, ...poker];
   return {
     generatedAt: new Date().toISOString(),
     sampleCount,
     roulette,
     slots,
     crash,
+    blackjack,
+    poker,
     summary: {
       scenarioCount: scenarios.length,
       lowestRtp: roundRatio(Math.min(...scenarios.map(scenario => scenario.theoreticalRtp))),
@@ -120,6 +138,123 @@ const simulateCrash = (sampleCount: number): GameMathScenarioReport[] => {
   });
 };
 
+const simulateBlackjack = (sampleCount: number): GameMathScenarioReport[] => {
+  const stake = asMoney(100);
+  return [
+    blackjackScenario({
+      scenarioId: 'blackjack-stand-hard-17',
+      description: 'Blackjack flat bet, hit until hard 17 or soft 18, dealer stands soft 17',
+      stake,
+      sampleCount,
+      seed: 0xB10C17,
+      shouldPlayerHit: hand => {
+        const score = scoreBlackjackHand(hand);
+        if (isSoftHand(hand)) return score < 18;
+        return score < 17;
+      }
+    }),
+    blackjackScenario({
+      scenarioId: 'blackjack-basic-no-double',
+      description: 'Blackjack flat bet, basic hit/stand approximation without double or split',
+      stake,
+      sampleCount,
+      seed: 0xB10CBA51,
+      shouldPlayerHit: (hand, dealerUpCard) => {
+        const score = scoreBlackjackHand(hand);
+        if (isSoftHand(hand)) return score <= 17;
+        const dealerScore = scoreBlackjackHand([dealerUpCard]);
+        if (score <= 11) return true;
+        if (score === 12) return dealerScore < 4 || dealerScore > 6;
+        if (score >= 13 && score <= 16) return dealerScore >= 7;
+        return false;
+      }
+    })
+  ];
+};
+
+const blackjackScenario = (input: {
+  scenarioId: string;
+  description: string;
+  stake: Money;
+  sampleCount: number;
+  seed: number;
+  shouldPlayerHit: (hand: BlackjackCard[], dealerUpCard: BlackjackCard) => boolean;
+}): GameMathScenarioReport => {
+  const random = seededRandom(input.seed);
+  const payouts = Array.from({ length: input.sampleCount }, () => {
+    const shoe = shuffleCards(createBlackjackShoe(6), random);
+    const playerHand = [drawCard(shoe), drawCard(shoe)] as BlackjackCard[];
+    const dealerHand = [drawCard(shoe), drawCard(shoe)] as BlackjackCard[];
+    while (scoreBlackjackHand(playerHand) < 21 && input.shouldPlayerHit(playerHand, dealerHand[0])) {
+      playerHand.push(drawCard(shoe));
+    }
+    while (scoreBlackjackHand(playerHand) <= 21 && shouldDealerDraw(dealerHand, false)) {
+      dealerHand.push(drawCard(shoe));
+    }
+    return settleBlackjackHand(playerHand, dealerHand, input.stake).payout;
+  });
+  return scenarioReport({
+    gameId: 'blackjack',
+    scenarioId: input.scenarioId,
+    description: input.description,
+    stake: input.stake,
+    payouts
+  });
+};
+
+const simulatePoker = (sampleCount: number): GameMathScenarioReport[] => {
+  const stake = asMoney(100);
+  return [
+    pokerScenario({
+      scenarioId: 'poker-heads-up-checkdown',
+      description: 'Texas Holdem heads-up showdown, equal ante, no rake',
+      stake,
+      sampleCount,
+      seed: 0xF10D,
+      rakeRate: 0
+    }),
+    pokerScenario({
+      scenarioId: 'poker-heads-up-five-percent-rake',
+      description: 'Texas Holdem heads-up showdown, equal ante, 5% winning-pot rake',
+      stake,
+      sampleCount,
+      seed: 0xF10D,
+      rakeRate: 0.05
+    })
+  ];
+};
+
+const pokerScenario = (input: {
+  scenarioId: string;
+  description: string;
+  stake: number;
+  sampleCount: number;
+  seed: number;
+  rakeRate: number;
+}): GameMathScenarioReport => {
+  const random = seededRandom(input.seed);
+  const pot = input.stake * 2;
+  const payouts = Array.from({ length: input.sampleCount }, () => {
+    const deck = shuffleCards(createPokerDeck(), random);
+    const playerCards = [drawCard(deck), drawCard(deck)] as [PlayingCard, PlayingCard];
+    const dealerCards = [drawCard(deck), drawCard(deck)] as [PlayingCard, PlayingCard];
+    const communityCards = [drawCard(deck), drawCard(deck), drawCard(deck), drawCard(deck), drawCard(deck)];
+    const playerRank = evaluateBestTexasHoldemHand(playerCards, communityCards);
+    const dealerRank = evaluateBestTexasHoldemHand(dealerCards, communityCards);
+    const comparison = comparePokerHands(playerRank, dealerRank);
+    if (comparison > 0) return asMoney(pot * (1 - input.rakeRate));
+    if (comparison < 0) return 0;
+    return input.stake;
+  });
+  return scenarioReport({
+    gameId: 'poker',
+    scenarioId: input.scenarioId,
+    description: input.description,
+    stake: input.stake,
+    payouts
+  });
+};
+
 const scenarioReport = (input: {
   gameId: string;
   scenarioId: string;
@@ -164,6 +299,45 @@ const seededRandom = (seed: number) => {
     return state / 0x100000000;
   };
 };
+
+const shuffleCards = <T>(cards: T[], random: () => number) => {
+  for (let index = cards.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [cards[index], cards[swapIndex]] = [cards[swapIndex], cards[index]];
+  }
+  return cards;
+};
+
+const drawCard = <T>(cards: T[]) => {
+  const card = cards.pop();
+  if (!card) throw new Error('Simulation deck is empty');
+  return card;
+};
+
+const createBlackjackShoe = (deckCount: number): BlackjackCard[] => {
+  const shoe: BlackjackCard[] = [];
+  for (let deck = 0; deck < deckCount; deck += 1) {
+    for (const suit of CARD_SUITS) {
+      for (const rank of CARD_RANKS) {
+        shoe.push({ suit, rank });
+      }
+    }
+  }
+  return shoe;
+};
+
+const createPokerDeck = (): PlayingCard[] => {
+  const deck: PlayingCard[] = [];
+  for (const suit of CARD_SUITS) {
+    for (const rank of CARD_RANKS) {
+      deck.push({ suit, rank });
+    }
+  }
+  return deck;
+};
+
+const CARD_SUITS = ['hearts', 'diamonds', 'clubs', 'spades'] as const;
+const CARD_RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'] as const;
 
 const parseAdvertisedRtp = (value: string) => {
   const parsed = Number(value.replace('%', ''));

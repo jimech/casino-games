@@ -264,8 +264,15 @@ const main = async () => {
   const tournamentPolicy = await getJson(`${baseUrl}/api/admin/tournaments/policy`, adminSession.token);
   assertEqual(tournamentPolicy.policy.requireDisputeFree, true, 'tournament auto-settle dispute-free policy');
   const mathReport = await getJson(`${baseUrl}/api/admin/game-math/simulations?sampleCount=5000`, adminSession.token);
-  if (mathReport.report.summary.scenarioCount < 8 || mathReport.report.roulette.length < 2 || mathReport.report.slots.length < 3 || mathReport.report.crash.length < 3) {
-    throw new Error('Expected game math simulation report to include roulette, slots, and crash scenarios');
+  if (
+    mathReport.report.summary.scenarioCount < 12 ||
+    mathReport.report.roulette.length < 2 ||
+    mathReport.report.slots.length < 3 ||
+    mathReport.report.crash.length < 3 ||
+    mathReport.report.blackjack.length < 2 ||
+    mathReport.report.poker.length < 2
+  ) {
+    throw new Error('Expected game math simulation report to include roulette, slots, crash, blackjack, and poker scenarios');
   }
   if (!mathReport.report.roulette.every((scenario: { theoreticalRtp: number }) => scenario.theoreticalRtp > 0.96 && scenario.theoreticalRtp < 0.98)) {
     throw new Error('Expected roulette simulation RTP to match European roulette house edge');
