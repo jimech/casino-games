@@ -96,6 +96,9 @@ const main = async () => {
     proof: provablyFairProof
   });
   assertEqual(provablyFairVerification.verification.valid, true, 'provably fair slots verification');
+  const playerProvablyFairEvidence = await getJson(`${baseUrl}/api/rounds/${provablyFairSlots.round.id}/provably-fair`, proofSession.token);
+  assertEqual(playerProvablyFairEvidence.provablyFair.present, true, 'player proof inspector proof present');
+  assertEqual(playerProvablyFairEvidence.provablyFair.valid, true, 'player proof inspector proof valid');
   const provablyFairEvidence = await getJson(`${baseUrl}/api/admin/rounds/${provablyFairSlots.round.id}`, adminSession.token);
   assertEqual(provablyFairEvidence.provablyFair.present, true, 'round evidence provably fair proof present');
   assertEqual(provablyFairEvidence.provablyFair.valid, true, 'round evidence provably fair proof valid');

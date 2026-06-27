@@ -529,6 +529,21 @@ app.get('/api/rounds', async (req, res) => {
   }
 });
 
+app.get('/api/rounds/:roundId/provably-fair', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    await assertRoundOwner(req.params.roundId, user.id);
+    const round = await casinoService.getRoundById(req.params.roundId);
+    if (!round) throw new Error(`Round not found: ${req.params.roundId}`);
+    res.json({
+      round: sanitizeRoundForApi(round),
+      provablyFair: buildRoundProvablyFairEvidence(round)
+    });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/risk/events', async (req, res) => {
   try {
     await requireAdmin(req);

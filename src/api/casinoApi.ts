@@ -28,7 +28,7 @@ export interface StepUpAuthDto {
   scope: string;
 }
 
-interface RoundDto {
+export interface RoundDto {
   id: string;
   userId: string;
   gameId: string;
@@ -403,6 +403,17 @@ export interface ProvablyFairVerificationDto {
   expected: unknown;
   proof: unknown;
   errors: string[];
+}
+
+export interface PlayerProvablyFairEvidenceDto {
+  round: RoundDto;
+  provablyFair: {
+    present: boolean;
+    valid: boolean;
+    errors: string[];
+    proof?: unknown;
+    expected?: unknown;
+  };
 }
 
 export interface TargetedBonusOfferDto {
@@ -874,6 +885,21 @@ export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> =
     headers: authHeaders()
   });
   return parseJsonResponse<WalletDto>(response);
+};
+
+export const fetchRounds = async (): Promise<RoundDto[]> => {
+  const response = await fetch('/api/rounds', {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ rounds: RoundDto[] }>(response);
+  return payload.rounds;
+};
+
+export const fetchPlayerProvablyFairEvidence = async (roundId: string): Promise<PlayerProvablyFairEvidenceDto> => {
+  const response = await fetch(`/api/rounds/${encodeURIComponent(roundId)}/provably-fair`, {
+    headers: authHeaders()
+  });
+  return parseJsonResponse<PlayerProvablyFairEvidenceDto>(response);
 };
 
 export const createWalletEventSource = (userId: string): EventSource => {

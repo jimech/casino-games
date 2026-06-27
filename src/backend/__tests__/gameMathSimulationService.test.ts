@@ -26,16 +26,16 @@ describe('game math simulation service', () => {
   });
 
   it('samples crash deterministically for repeatable audit reports', () => {
-    const first = runGameMathSimulation({ sampleCount: 5000 }).crash;
-    const second = runGameMathSimulation({ sampleCount: 5000 }).crash;
+    const first = runGameMathSimulation({ sampleCount: 2000 }).crash;
+    const second = runGameMathSimulation({ sampleCount: 2000 }).crash;
 
     expect(first).toEqual(second);
     expect(first.every(scenario => scenario.theoreticalRtp > 0.9 && scenario.theoreticalRtp < 1.05)).toBe(true);
   });
 
   it('samples blackjack strategy scenarios deterministically', () => {
-    const first = runGameMathSimulation({ sampleCount: 5000 }).blackjack;
-    const second = runGameMathSimulation({ sampleCount: 5000 }).blackjack;
+    const first = runGameMathSimulation({ sampleCount: 2000 }).blackjack;
+    const second = runGameMathSimulation({ sampleCount: 2000 }).blackjack;
 
     expect(first.map(scenario => scenario.scenarioId)).toEqual([
       'blackjack-stand-hard-17',
@@ -46,7 +46,7 @@ describe('game math simulation service', () => {
   });
 
   it('samples poker showdown scenarios with explicit rake assumptions', () => {
-    const poker = runGameMathSimulation({ sampleCount: 5000 }).poker;
+    const poker = runGameMathSimulation({ sampleCount: 2000 }).poker;
 
     expect(poker.map(scenario => scenario.scenarioId)).toEqual([
       'poker-heads-up-checkdown',

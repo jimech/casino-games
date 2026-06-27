@@ -1026,6 +1026,24 @@ Acceptance criteria:
 - Evidence proof verification is read-only.
 - Exported evidence includes the same proof status as the API packet.
 
+### T49 - User-Facing Provably Fair Inspector
+
+Summary: Let players inspect and verify provably fair proofs for their own rounds.
+
+Implementation status: Complete. Players can now load `/api/rounds/:roundId/provably-fair` for owned rounds, which returns sanitized round data plus the same read-only proof verification block used by admin evidence. The Wallet tab includes a Provably Fair Inspector that refreshes recent rounds, lets players select a round, and displays proof presence, validity, errors, and the stored proof JSON. API smoke coverage verifies a real player slots round is valid through the player-owned proof endpoint.
+
+Scope:
+- User-owned proof evidence endpoint.
+- Recent round loading client helper.
+- Wallet UI proof inspector.
+- Smoke coverage for player proof verification.
+
+Acceptance criteria:
+- Players can only inspect proofs for their own rounds.
+- Inspector shows proof presence, validity, and errors.
+- Verification is read-only and reuses the shared verifier.
+- Rounds without proofs remain inspectable with a clear absence state.
+
 ## First Working Sequence
 
 Start here:

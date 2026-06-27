@@ -44,6 +44,8 @@ import {
   fetchGameMathSimulationReport,
   fetchGameRecommendations,
   fetchNotifications,
+  fetchPlayerProvablyFairEvidence,
+  fetchRounds,
   fetchTargetedBonuses,
   fetchTournamentLeaderboard,
   fetchTournamentCancellation,
@@ -64,6 +66,7 @@ import {
   placeBet,
   registerAccount,
   ResponsiblePlayInterventionDto,
+  RoundDto,
   runTournamentSettlementJob,
   searchAdminUsers,
   settleRound,
@@ -174,6 +177,19 @@ export default function App() {
   const [gameRecommendations, setGameRecommendations] = useState<GameRecommendationDto[]>([]);
   const [gameMathReport, setGameMathReport] = useState<GameMathSimulationReportDto | null>(null);
   const [gameMathLoading, setGameMathLoading] = useState(false);
+  const [playerRounds, setPlayerRounds] = useState<RoundDto[]>([]);
+  const [playerRoundsLoading, setPlayerRoundsLoading] = useState(false);
+  const [playerProofEvidence, setPlayerProofEvidence] = useState<{
+    round: RoundDto;
+    provablyFair: {
+      present: boolean;
+      valid: boolean;
+      errors: string[];
+      proof?: unknown;
+      expected?: unknown;
+    };
+  } | null>(null);
+  const [playerProofLoading, setPlayerProofLoading] = useState(false);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
   const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
   const [activeTournamentId, setActiveTournamentId] = useState('');
@@ -270,6 +286,16 @@ export default function App() {
       void loadAdminRewardsReview();
     }
   }, [authSession?.user.id, activeCasinoTab]);
+
+  useEffect(() => {
+    if (authSession && activeCasinoTab === 'wallet') {
+      void loadPlayerRounds();
+    }
+  }, [authSession?.user.id, activeCasinoTab]);
+
+  useEffect(() => {
+    setPlayerProofEvidence(null);
+  }, [authSession?.user.id]);
 
   useEffect(() => {
     if (!authSession) return;
@@ -532,6 +558,35 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Game math simulation failed.", "error");
     } finally {
       setGameMathLoading(false);
+    }
+  };
+
+  const loadPlayerRounds = async () => {
+    setPlayerRoundsLoading(true);
+    try {
+      setPlayerRounds(await fetchRounds());
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Recent rounds failed to load.", "error");
+    } finally {
+      setPlayerRoundsLoading(false);
+    }
+  };
+
+  const inspectPlayerProof = async (roundId: string) => {
+    setPlayerProofLoading(true);
+    try {
+      const evidence = await fetchPlayerProvablyFairEvidence(roundId);
+      setPlayerProofEvidence(evidence);
+      triggerNotification(
+        evidence.provablyFair.present
+          ? (evidence.provablyFair.valid ? "Provably fair proof verified." : "Provably fair proof did not verify.")
+          : "This round has no provably fair proof attached.",
+        evidence.provablyFair.present && evidence.provablyFair.valid ? "success" : "info"
+      );
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Proof inspection failed.", "error");
+    } finally {
+      setPlayerProofLoading(false);
     }
   };
 
@@ -1896,72 +1951,147 @@ export default function App() {
             )}
 
             {activeCasinoTab === 'wallet' && (
-              <div className="max-w-md mx-auto bg-[#10101C] border border-neutral-800 p-6 rounded-2xl space-y-6">
-                <div>
-                  <h3 className="text-md font-black text-white uppercase tracking-tight">Virtual Payment desk</h3>
-                  <p className="text-xs text-neutral-400">Mock credentials sandbox environment for platform test.</p>
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-4">
+                <div className="bg-[#10101C] border border-neutral-800 p-6 rounded-2xl space-y-6">
+                  <div>
+                    <h3 className="text-md font-black text-white uppercase tracking-tight">Virtual Payment desk</h3>
+                    <p className="text-xs text-neutral-400">Mock credentials sandbox environment for platform test.</p>
+                  </div>
+
+                  <div className="bg-[#0b0b14] border border-neutral-850 p-4 rounded-xl text-center">
+                    <span className="text-[10px] text-neutral-500 uppercase font-black">Current Balance</span>
+                    <span className="block text-2xl font-black text-[#00FF88] mt-1 font-mono">${user.walletBalance}</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="text-[10px] text-neutral-400 font-black uppercase block">Deposit Sandbox Method:</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => {
+                          sound.playClick();
+                          handleUpdateWallet(100);
+                          triggerNotification("Simulated Credit Card: Loaded +$100!", "success");
+                        }}
+                        className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
+                      >
+                        Credit Card
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          sound.playClick();
+                          handleUpdateWallet(250);
+                          triggerNotification("Simulated Crypto Deposit: Loaded +$250!", "success");
+                        }}
+                        className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
+                      >
+                        BTC/ETH
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          sound.playClick();
+                          handleUpdateWallet(500);
+                          triggerNotification("Simulated Bank wire: Loaded +$500!", "success");
+                        }}
+                        className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
+                      >
+                        Bank Wire
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      sound.playClick();
+                      if (user.walletBalance <= 0) {
+                        sound.playError();
+                        triggerNotification("Wallet has zero funds available to withdraw!", "error");
+                      } else {
+                        handleUpdateWallet(-user.walletBalance);
+                        sound.playBigWin();
+                        triggerNotification("Withdrawal requested successfully inside mock ledger!", "success");
+                      }
+                    }}
+                    className="w-full bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-xs py-3 rounded-xl transition-all block uppercase"
+                  >
+                    Withdraw entire reserves
+                  </button>
                 </div>
 
-                <div className="bg-[#0b0b14] border border-neutral-850 p-4 rounded-xl text-center">
-                  <span className="text-[10px] text-neutral-500 uppercase font-black">Current Balance</span>
-                  <span className="block text-2xl font-black text-[#00FF88] mt-1 font-mono">${user.walletBalance}</span>
-                </div>
-
-                {/* Simulated Payment Modes */}
-                <div className="space-y-2">
-                  <span className="text-[10px] text-neutral-400 font-black uppercase block">Deposit Sandbox Method:</span>
-                  <div className="grid grid-cols-3 gap-2">
+                <div className="bg-[#10101C] border border-neutral-800 p-6 rounded-2xl space-y-4 min-w-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-md font-black text-white uppercase tracking-tight">Provably Fair Inspector</h3>
+                      <p className="text-xs text-neutral-400">Verify your own roulette, slots, and crash outcomes from stored seed proofs.</p>
+                    </div>
                     <button
-                      onClick={() => {
-                        sound.playClick();
-                        handleUpdateWallet(100);
-                        triggerNotification("Simulated Credit Card: Loaded +$100!", "success");
-                      }}
-                      className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
+                      type="button"
+                      onClick={() => void loadPlayerRounds()}
+                      className="shrink-0 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-[#00FF88] font-black text-[10px] uppercase px-3 py-2 rounded-lg transition-all"
                     >
-                      💳 Credit Card
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        sound.playClick();
-                        handleUpdateWallet(250);
-                        triggerNotification("Simulated Crypto Deposit: Loaded +$250!", "success");
-                      }}
-                      className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
-                    >
-                      🪙 Cryptos BTC/ETH
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        sound.playClick();
-                        handleUpdateWallet(500);
-                        triggerNotification("Simulated Bank wire: Loaded +$500!", "success");
-                      }}
-                      className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
-                    >
-                      🏦 Bank Wire
+                      {playerRoundsLoading ? 'Loading' : 'Refresh'}
                     </button>
                   </div>
-                </div>
 
-                <button
-                  onClick={() => {
-                    sound.playClick();
-                    if (user.walletBalance <= 0) {
-                      sound.playError();
-                      triggerNotification("Wallet has zero funds available to withdraw!", "error");
-                    } else {
-                      handleUpdateWallet(-user.walletBalance);
-                      sound.playBigWin();
-                      triggerNotification("Withdrawal requested successfully inside mock ledger!", "success");
-                    }
-                  }}
-                  className="w-full bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-xs py-3 rounded-xl transition-all block uppercase"
-                >
-                  Withdraw entire reserves
-                </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-2 min-w-0">
+                      {playerRounds.slice(0, 6).map(round => (
+                        <button
+                          key={round.id}
+                          type="button"
+                          onClick={() => void inspectPlayerProof(round.id)}
+                          className={`w-full text-left bg-neutral-950 hover:bg-neutral-900 border ${playerProofEvidence?.round.id === round.id ? 'border-[#00FF88]' : 'border-neutral-850'} rounded-lg p-3 transition-all`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black text-white uppercase truncate">{round.gameId}</span>
+                            <span className="text-[10px] font-black text-neutral-500 uppercase">{round.status}</span>
+                          </div>
+                          <div className="mt-1 text-[10px] text-neutral-500 font-mono truncate">{round.id}</div>
+                          <div className="mt-2 text-[10px] text-neutral-400">Stake ${round.stake} / payout ${round.payout}</div>
+                        </button>
+                      ))}
+                      {!playerRounds.length && (
+                        <div className="bg-neutral-950 border border-neutral-850 rounded-lg p-4 text-xs text-neutral-500">
+                          {playerRoundsLoading ? 'Loading recent rounds.' : 'No settled game rounds found yet.'}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-neutral-950 border border-neutral-850 rounded-lg p-4 min-w-0">
+                      {playerProofEvidence ? (
+                        <div className="space-y-3">
+                          <div>
+                            <span className="text-[10px] uppercase font-black text-neutral-500">Selected round</span>
+                            <span className="block text-xs font-mono text-neutral-300 truncate">{playerProofEvidence.round.id}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              ['Proof', playerProofEvidence.provablyFair.present ? 'present' : 'none'],
+                              ['Status', playerProofEvidence.provablyFair.valid ? 'valid' : 'review'],
+                              ['Game', playerProofEvidence.round.gameId],
+                              ['Errors', String(playerProofEvidence.provablyFair.errors.length)]
+                            ].map(([label, value]) => (
+                              <div key={label} className="border border-neutral-850 rounded-md px-3 py-2">
+                                <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                                <span className="block text-xs font-black text-[#00FF88] truncate">{value}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {playerProofEvidence.provablyFair.proof && (
+                            <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words border border-neutral-850 rounded-md p-3 text-[10px] text-neutral-400">
+                              {JSON.stringify(playerProofEvidence.provablyFair.proof, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="min-h-48 flex items-center justify-center text-center text-xs text-neutral-500 px-4">
+                          {playerProofLoading ? 'Verifying proof.' : 'Choose a recent round to replay its seed proof.'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
