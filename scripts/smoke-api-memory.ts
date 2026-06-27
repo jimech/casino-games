@@ -99,6 +99,12 @@ const main = async () => {
   const playerProvablyFairEvidence = await getJson(`${baseUrl}/api/rounds/${provablyFairSlots.round.id}/provably-fair`, proofSession.token);
   assertEqual(playerProvablyFairEvidence.provablyFair.present, true, 'player proof inspector proof present');
   assertEqual(playerProvablyFairEvidence.provablyFair.valid, true, 'player proof inspector proof valid');
+  const provablyFairSeeds = await getJson(`${baseUrl}/api/provably-fair/seeds`, proofSession.token);
+  if (!provablyFairSeeds.seeds.some((seed: { status: string; roundId?: string; serverSeed?: string }) =>
+    seed.status === 'revealed' && seed.roundId === provablyFairSlots.round.id && typeof seed.serverSeed === 'string'
+  )) {
+    throw new Error('Expected provably fair seed lifecycle list to expose revealed round seed');
+  }
   const provablyFairEvidence = await getJson(`${baseUrl}/api/admin/rounds/${provablyFairSlots.round.id}`, adminSession.token);
   assertEqual(provablyFairEvidence.provablyFair.present, true, 'round evidence provably fair proof present');
   assertEqual(provablyFairEvidence.provablyFair.valid, true, 'round evidence provably fair proof valid');

@@ -1044,6 +1044,27 @@ Acceptance criteria:
 - Verification is read-only and reuses the shared verifier.
 - Rounds without proofs remain inspectable with a clear absence state.
 
+### T50 - Provably Fair Seed Lifecycle
+
+Summary: Add committed/revealed seed lifecycle records with nonce tracking for provably fair games.
+
+Implementation status: Complete. Memory mode now has a provably fair seed lifecycle service that creates idempotent server-seed commitments, hashes server seeds before play, increments per-user/game nonces, reveals seeds after instant roulette/slots settlement, and defers crash seed reveal until cashout settlement. Players can review their seed records through `/api/provably-fair/seeds`, where committed seeds hide the server seed and revealed seeds expose it with round linkage. Smoke coverage verifies a real slots round produces a revealed seed lifecycle record.
+
+Scope:
+- Memory seed lifecycle service.
+- Idempotent commitment keys and per-user/game nonce tracking.
+- Instant roulette/slots reveal wiring.
+- Deferred crash commitment/reveal wiring.
+- Player seed lifecycle endpoint.
+- Unit and smoke coverage.
+
+Acceptance criteria:
+- Server seed hashes are available before reveal.
+- Revealed seed records include server seed, round id, client seed, nonce, and timestamps.
+- Crash start stores a commitment without revealing the server seed.
+- Seed review is user-owned and read-only.
+- Prisma persistence for seed lifecycle records is explicitly left for the next persistence hardening ticket.
+
 ## First Working Sequence
 
 Start here:

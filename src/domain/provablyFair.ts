@@ -15,7 +15,25 @@ export interface ProvablyFairProof {
   clientSeed: string;
   nonce: number;
   cursor: number;
+  lifecycle?: ProvablyFairSeedLifecycle;
   result: ProvablyFairResult;
+}
+
+export interface ProvablyFairSeedLifecycle {
+  seedId: string;
+  status: 'committed' | 'revealed';
+  committedAt: string;
+  revealedAt?: string;
+}
+
+export interface ProvablyFairCommitment {
+  algorithm: 'hmac-sha256-v1';
+  gameId: ProvablyFairProof['gameId'];
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+  cursor: number;
+  lifecycle?: ProvablyFairSeedLifecycle;
 }
 
 export interface ProvablyFairVerification {
@@ -92,6 +110,7 @@ export const rouletteProof = (input: {
   clientSeed?: string;
   nonce?: number;
   cursor?: number;
+  lifecycle?: ProvablyFairSeedLifecycle;
   wheel: readonly number[];
 }): ProvablyFairProof => {
   const seed = createProvablyFairSeed({ gameId: 'roulette', ...input });
@@ -102,6 +121,7 @@ export const rouletteProof = (input: {
     algorithm: 'hmac-sha256-v1',
     ...seed,
     cursor,
+    lifecycle: input.lifecycle,
     result: {
       kind: 'roulette-index',
       index,
@@ -117,6 +137,7 @@ export const slotsProof = (input: {
   clientSeed?: string;
   nonce?: number;
   cursor?: number;
+  lifecycle?: ProvablyFairSeedLifecycle;
   reelLengths: [number, number, number];
 }): ProvablyFairProof => {
   const seed = createProvablyFairSeed({ gameId: 'slots', ...input });
@@ -125,6 +146,7 @@ export const slotsProof = (input: {
     algorithm: 'hmac-sha256-v1',
     ...seed,
     cursor,
+    lifecycle: input.lifecycle,
     result: {
       kind: 'slots-stops',
       stops: input.reelLengths.map((exclusiveMax, offset) =>
@@ -140,6 +162,7 @@ export const crashProof = (input: {
   clientSeed?: string;
   nonce?: number;
   cursor?: number;
+  lifecycle?: ProvablyFairSeedLifecycle;
   config: { houseEdgeBps: number; maxMultiplier: number };
 }): ProvablyFairProof => {
   const seed = createProvablyFairSeed({ gameId: 'crash', ...input });
@@ -149,6 +172,7 @@ export const crashProof = (input: {
     algorithm: 'hmac-sha256-v1',
     ...seed,
     cursor,
+    lifecycle: input.lifecycle,
     result: {
       kind: 'crash-unit',
       unitRandom,
@@ -157,6 +181,16 @@ export const crashProof = (input: {
     }
   };
 };
+
+export const commitmentFromProof = (proof: ProvablyFairProof): ProvablyFairCommitment => ({
+  algorithm: proof.algorithm,
+  gameId: proof.gameId,
+  serverSeedHash: proof.serverSeedHash,
+  clientSeed: proof.clientSeed,
+  nonce: proof.nonce,
+  cursor: proof.cursor,
+  lifecycle: proof.lifecycle
+});
 
 const expectedResult = (proof: ProvablyFairProof): ProvablyFairResult => {
   if (proof.result.kind === 'roulette-index') {

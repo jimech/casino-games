@@ -8,7 +8,7 @@ import {
   totalRouletteStake
 } from '../../domain/roulette';
 import { asMoney } from '../../domain/money';
-import { ProvablyFairProof, rouletteProof } from '../../domain/provablyFair';
+import { ProvablyFairProof, ProvablyFairSeedLifecycle, rouletteProof } from '../../domain/provablyFair';
 import { WalletState } from '../../domain/ledger';
 import { GameRoundRecord } from '../casinoService';
 
@@ -32,6 +32,7 @@ interface RouletteSpinOptions {
     serverSeed?: string;
     clientSeed?: string;
     nonce?: number;
+    lifecycle?: ProvablyFairSeedLifecycle;
   };
 }
 

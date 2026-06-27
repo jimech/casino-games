@@ -17,7 +17,8 @@ import { cashoutCrashRound, startCrashRound } from './src/backend/games/crashEng
 import { spinSlots } from './src/backend/games/slotsEngine';
 import { actBlackjackRound, startBlackjackRound } from './src/backend/games/blackjackEngine';
 import { actPokerRound, startPokerRound } from './src/backend/games/pokerEngine';
-import { ProvablyFairProof, verifyProvablyFairProof } from './src/domain/provablyFair';
+import { ProvablyFairCommitment, ProvablyFairProof, verifyProvablyFairProof } from './src/domain/provablyFair';
+import { ProvablyFairSeedRecord, seedLifecycle } from './src/backend/provablyFairSeedService';
 
 dotenv.config();
 
@@ -26,7 +27,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService } = createServices();
+const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
@@ -292,6 +293,15 @@ app.post('/api/provably-fair/verify', async (req, res) => {
   try {
     const proof = parseProvablyFairProof(req.body.proof ?? req.body);
     res.json({ verification: verifyProvablyFairProof(proof) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.get('/api/provably-fair/seeds', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    res.json({ seeds: provablyFairSeedService.listForUser(user.id) });
   } catch (error) {
     sendApiError(res, error);
   }
@@ -1440,11 +1450,21 @@ app.post('/api/rounds/:roundId/refund', async (req, res) => {
 app.post('/api/games/roulette/spin', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'roulette');
+    const seed = revealProvablyFairSeed(commitProvablyFairSeed(user.id, 'roulette', idempotencyKey, req.body.clientSeed));
     const result = await spinRoulette(casinoService, {
       userId: user.id,
       bets: req.body.bets,
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+      idempotencyKey
+    }, {
+      provablyFair: {
+        serverSeed: seed.serverSeed,
+        clientSeed: seed.clientSeed,
+        nonce: seed.nonce,
+        lifecycle: seedLifecycle(seed)
+      }
     });
+    revealProvablyFairSeed(seed, result.round.id);
     const intervention = await evaluateResponsiblePlay({
       userId: user.id,
       triggerGameId: 'roulette',
@@ -1462,6 +1482,8 @@ app.post('/api/games/roulette/spin', async (req, res) => {
 app.post('/api/games/crash/start', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'crash');
+    const seed = commitProvablyFairSeed(user.id, 'crash', idempotencyKey, req.body.clientSeed);
     const intervention = await evaluateResponsiblePlay({
       userId: user.id,
       triggerGameId: 'crash',
@@ -1470,7 +1492,15 @@ app.post('/api/games/crash/start', async (req, res) => {
     const result = await startCrashRound(casinoService, {
       userId: user.id,
       stake: Number(req.body.stake),
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+      idempotencyKey
+    }, {
+      provablyFair: {
+        serverSeed: seed.serverSeed,
+        clientSeed: seed.clientSeed,
+        nonce: seed.nonce,
+        lifecycle: seedLifecycle(seed)
+      },
+      deferProvablyFairReveal: true
     });
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
@@ -1484,11 +1514,20 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
   try {
     const user = await requireAuth(req);
     await assertRoundOwner(req.params.roundId, user.id);
+    const round = await casinoService.getRoundById(req.params.roundId);
+    const seed = round ? revealProvablyFairSeedForRound(round, req.params.roundId) : undefined;
     const result = await cashoutCrashRound(casinoService, {
       roundId: req.params.roundId,
       cashoutMultiplier: Number(req.body.cashoutMultiplier),
       idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
-    });
+    }, seed ? {
+      provablyFair: {
+        serverSeed: seed.serverSeed,
+        clientSeed: seed.clientSeed,
+        nonce: seed.nonce,
+        lifecycle: seedLifecycle(seed)
+      }
+    } : undefined);
     broadcastWallet(result.round.userId, result.wallet);
     await riskService.assessRoundSettled(result.round);
     res.json(result);
@@ -1500,6 +1539,8 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
 app.post('/api/games/slots/spin', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'slots');
+    const seed = revealProvablyFairSeed(commitProvablyFairSeed(user.id, 'slots', idempotencyKey, req.body.clientSeed));
     const intervention = await evaluateResponsiblePlay({
       userId: user.id,
       triggerGameId: 'slots',
@@ -1511,8 +1552,16 @@ app.post('/api/games/slots/spin', async (req, res) => {
       bet: Number(req.body.bet),
       freeSpin: Boolean(req.body.freeSpin),
       bonusMultiplier: Number(req.body.bonusMultiplier ?? (req.body.freeSpin ? 3 : 1)),
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+      idempotencyKey
+    }, {
+      provablyFair: {
+        serverSeed: seed.serverSeed,
+        clientSeed: seed.clientSeed,
+        nonce: seed.nonce,
+        lifecycle: seedLifecycle(seed)
+      }
     });
+    revealProvablyFairSeed(seed, result.round.id);
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
     await riskService.assessRoundSettled(result.round);
@@ -2383,9 +2432,42 @@ function buildRoundProvablyFairEvidence(round: GameRoundRecord) {
   };
 }
 
+function requestIdempotencyKey(value: unknown, prefix: string): string {
+  return typeof value === 'string' && value ? value : `${prefix}-${randomBytes(16).toString('hex')}`;
+}
+
+function commitProvablyFairSeed(
+  userId: string,
+  gameId: ProvablyFairProof['gameId'],
+  idempotencyKey: string,
+  clientSeed: unknown
+): ProvablyFairSeedRecord {
+  return provablyFairSeedService.commit({
+    userId,
+    gameId,
+    commitmentKey: `${gameId}:${idempotencyKey}`,
+    clientSeed: typeof clientSeed === 'string' && clientSeed ? clientSeed : `${userId}:${idempotencyKey}`
+  });
+}
+
+function revealProvablyFairSeed(seed: ProvablyFairSeedRecord, roundId?: string): ProvablyFairSeedRecord {
+  return provablyFairSeedService.reveal({ seedId: seed.id, roundId });
+}
+
+function revealProvablyFairSeedForRound(round: GameRoundRecord, roundId: string): ProvablyFairSeedRecord | undefined {
+  const commitment = extractRoundProvablyFairCommitment(round);
+  if (!commitment?.lifecycle?.seedId) return undefined;
+  return provablyFairSeedService.reveal({ seedId: commitment.lifecycle.seedId, roundId });
+}
+
 function extractRoundProvablyFairProof(round: GameRoundRecord): ProvablyFairProof | undefined {
   if (!isRecord(round.outcome) || !isRecord(round.outcome.provablyFair)) return undefined;
   return round.outcome.provablyFair as unknown as ProvablyFairProof;
+}
+
+function extractRoundProvablyFairCommitment(round: GameRoundRecord) {
+  if (!isRecord(round.outcome) || !isRecord(round.outcome.provablyFairCommitment)) return undefined;
+  return round.outcome.provablyFairCommitment as unknown as ProvablyFairCommitment;
 }
 
 function recordReferencesRound(value: unknown, roundId: string): boolean {

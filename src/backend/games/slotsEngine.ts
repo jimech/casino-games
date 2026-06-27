@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { WalletState } from '../../domain/ledger';
 import { asMoney } from '../../domain/money';
-import { slotsProof } from '../../domain/provablyFair';
+import { ProvablyFairSeedLifecycle, slotsProof } from '../../domain/provablyFair';
 import {
   SlotSpinOutcome,
   getSlotMachine,
@@ -31,6 +31,7 @@ interface SlotsEngineOptions {
     serverSeed?: string;
     clientSeed?: string;
     nonce?: number;
+    lifecycle?: ProvablyFairSeedLifecycle;
   };
 }
 

@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { WalletState } from '../../domain/ledger';
 import { asMoney } from '../../domain/money';
 import { crashPointFromUnitRandom, multiplierFromElapsedMs, resolveCrashCashout } from '../../domain/crash';
-import { crashProof } from '../../domain/provablyFair';
+import { ProvablyFairSeedLifecycle, commitmentFromProof, crashProof } from '../../domain/provablyFair';
 import { GameRoundRecord } from '../casinoService';
 
 const RANDOM_SCALE = 1_000_000_000;
@@ -41,7 +41,9 @@ interface CrashEngineOptions {
     serverSeed?: string;
     clientSeed?: string;
     nonce?: number;
+    lifecycle?: ProvablyFairSeedLifecycle;
   };
+  deferProvablyFairReveal?: boolean;
 }
 
 type MaybePromise<T> = T | Promise<T>;
@@ -95,7 +97,8 @@ export const startCrashRound = async (
       crashPoint,
       launchTime,
       config: DEFAULT_CONFIG,
-      provablyFair: proof
+      provablyFair: options.deferProvablyFairReveal ? undefined : proof,
+      provablyFairCommitment: proof && options.deferProvablyFairReveal ? commitmentFromProof(proof) : undefined
     }
   });
 
@@ -109,7 +112,7 @@ export const startCrashRound = async (
 export const cashoutCrashRound = async (
   service: CasinoServiceLike,
   input: CrashCashoutInput,
-  options: Pick<CrashEngineOptions, 'now'> = {}
+  options: Pick<CrashEngineOptions, 'now' | 'provablyFair'> = {}
 ): Promise<CrashCashoutResult> => {
   assertText(input.roundId, 'roundId');
   if (!Number.isFinite(input.cashoutMultiplier) || input.cashoutMultiplier < 1) {
@@ -130,6 +133,13 @@ export const cashoutCrashRound = async (
     ? asMoney(0)
     : resolveCrashCashout(round.stake, cashoutMultiplier, crashState.crashPoint);
   const idempotencyKey = input.idempotencyKey || `crash-cashout-${randomUUID()}`;
+  const proof = options.provablyFair ? crashProof({
+    ...options.provablyFair,
+    config: DEFAULT_CONFIG
+  }) : undefined;
+  if (proof?.result.kind === 'crash-unit' && proof.result.crashPoint !== crashState.crashPoint) {
+    throw new Error('Provably fair crash proof does not match stored crash point');
+  }
 
   const settled = await service.settleRound({
     roundId: round.id,
@@ -139,7 +149,8 @@ export const cashoutCrashRound = async (
       ...(isRecord(round.outcome) ? round.outcome : {}),
       serverMultiplier,
       cashoutMultiplier,
-      payout
+      payout,
+      provablyFair: proof
     }
   });
 

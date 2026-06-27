@@ -16,6 +16,7 @@ import { MemoryFraudService, PrismaFraudService } from './fraudService';
 import { MemoryResponsiblePlayService, PrismaResponsiblePlayService } from './responsiblePlayService';
 import { DeterministicVipService } from './vipService';
 import { MemoryTournamentService, PrismaTournamentService } from './tournamentService';
+import { MemoryProvablyFairSeedService } from './provablyFairSeedService';
 import { prisma } from './db/prisma';
 
 export type CasinoBackendDriver = 'memory' | 'prisma';
@@ -77,6 +78,7 @@ export const createServices = () => {
   const tournamentService = driver === 'prisma'
     ? new PrismaTournamentService(prisma, casinoService)
     : new MemoryTournamentService(casinoService);
+  const provablyFairSeedService = new MemoryProvablyFairSeedService();
 
-  return { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService };
+  return { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService };
 };
