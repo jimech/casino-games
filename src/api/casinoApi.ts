@@ -680,6 +680,13 @@ export interface AdminRoundEvidenceDto {
   aiEvents: AiEventDto[];
   aiDecisionExplanations: AiDecisionExplanationDto[];
   complianceCases: ComplianceCaseDto[];
+  provablyFair: {
+    present: boolean;
+    valid: boolean;
+    errors: string[];
+    proof?: unknown;
+    expected?: unknown;
+  };
   replayTimeline: Array<{
     type: string;
     at: string;
@@ -692,6 +699,8 @@ export interface AdminRoundEvidenceDto {
     aiEventCount: number;
     aiDecisionExplanationCount: number;
     complianceCaseCount: number;
+    provablyFairProofCount: number;
+    provablyFairValidCount: number;
   };
 }
 

@@ -2125,7 +2125,8 @@ export default function App() {
                             ['Risk', adminRoundEvidence.integrity.riskEventCount],
                             ['AI Events', adminRoundEvidence.integrity.aiEventCount],
                             ['AI Decisions', adminRoundEvidence.integrity.aiDecisionExplanationCount],
-                            ['Cases', adminRoundEvidence.integrity.complianceCaseCount]
+                            ['Cases', adminRoundEvidence.integrity.complianceCaseCount],
+                            ['Proof', adminRoundEvidence.provablyFair.present ? (adminRoundEvidence.provablyFair.valid ? 'valid' : 'invalid') : 'none']
                           ].map(([label, value]) => (
                             <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
                               <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>

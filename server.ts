@@ -1892,6 +1892,7 @@ async function buildAdminRoundEvidence(roundId: string, adminUserId: string) {
     recordReferencesRound(caseRecord.evidence, round.id) ||
     caseRecord.notes.some(note => recordReferencesRound(note.evidence, round.id))
   );
+  const provablyFair = buildRoundProvablyFairEvidence(round);
   const replayTimeline = buildRoundReplayTimeline(round, linkedLedger, linkedRiskEvents, linkedAiEvents);
 
   await trackAiEventSafely({
@@ -1919,13 +1920,16 @@ async function buildAdminRoundEvidence(roundId: string, adminUserId: string) {
     aiEvents: linkedAiEvents,
     aiDecisionExplanations: linkedAiDecisionExplanations,
     complianceCases: linkedComplianceCases,
+    provablyFair,
     replayTimeline,
     integrity: {
       ledgerEntryCount: linkedLedger.length,
       riskEventCount: linkedRiskEvents.length,
       aiEventCount: linkedAiEvents.length,
       aiDecisionExplanationCount: linkedAiDecisionExplanations.length,
-      complianceCaseCount: linkedComplianceCases.length
+      complianceCaseCount: linkedComplianceCases.length,
+      provablyFairProofCount: provablyFair.present ? 1 : 0,
+      provablyFairValidCount: provablyFair.valid ? 1 : 0
     }
   };
 }
@@ -2280,6 +2284,7 @@ function buildRoundReplayTimeline(
   riskEvents: Array<{ type: string; severity: string; score: number; createdAt: string }>,
   aiEvents: Array<{ category: string; name: string; createdAt: string }>
 ) {
+  const provablyFair = buildRoundProvablyFairEvidence(round);
   return [
     {
       type: 'round_created',
@@ -2319,6 +2324,16 @@ function buildRoundReplayTimeline(
         name: event.name
       }
     })),
+    ...(provablyFair.present ? [{
+      type: 'provably_fair_verified',
+      at: round.settledAt ?? round.createdAt,
+      summary: provablyFair.valid ? 'Provably fair proof verified' : `Provably fair proof invalid: ${provablyFair.errors.join(', ')}`,
+      data: {
+        valid: provablyFair.valid,
+        errors: provablyFair.errors,
+        serverSeedHash: provablyFair.proof?.serverSeedHash
+      }
+    }] : []),
     ...(round.settledAt ? [{
       type: 'round_closed',
       at: round.settledAt,
@@ -2330,6 +2345,32 @@ function buildRoundReplayTimeline(
       }
     }] : [])
   ].sort((first, second) => new Date(first.at).getTime() - new Date(second.at).getTime());
+}
+
+function buildRoundProvablyFairEvidence(round: GameRoundRecord) {
+  const proof = extractRoundProvablyFairProof(round);
+  if (!proof) {
+    return {
+      present: false,
+      valid: false,
+      errors: ['proof_not_available'],
+      proof: undefined,
+      expected: undefined
+    };
+  }
+  const verification = verifyProvablyFairProof(proof);
+  return {
+    present: true,
+    valid: verification.valid,
+    errors: verification.errors,
+    proof: verification.proof,
+    expected: verification.expected
+  };
+}
+
+function extractRoundProvablyFairProof(round: GameRoundRecord): ProvablyFairProof | undefined {
+  if (!isRecord(round.outcome) || !isRecord(round.outcome.provablyFair)) return undefined;
+  return round.outcome.provablyFair as unknown as ProvablyFairProof;
 }
 
 function recordReferencesRound(value: unknown, roundId: string): boolean {

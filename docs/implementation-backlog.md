@@ -1007,6 +1007,25 @@ Acceptance criteria:
 - Verification does not mutate wallets, rounds, or ledger entries.
 - Test overrides remain deterministic without requiring random proof generation.
 
+### T48 - Round Evidence Includes Provably Fair Proofs
+
+Summary: Surface provably fair verification inside read-only round evidence packets and exports.
+
+Implementation status: Complete. Admin round evidence now extracts stored provably fair proof metadata, replays it through the shared verifier, and includes a `provablyFair` evidence block with presence, validity, errors, proof payload, and expected result. Evidence integrity counts now include proof-present and proof-valid counts, and the replay timeline records a `provably_fair_verified` event for rounds with proof metadata. API smoke coverage verifies a real slots round proof appears as valid in admin evidence.
+
+Scope:
+- Round evidence proof extraction and verification.
+- Integrity counters for proof presence and proof validity.
+- Replay timeline event for proof verification.
+- Admin UI proof status in the Round Evidence panel.
+- Smoke coverage for proof-backed round evidence.
+
+Acceptance criteria:
+- Evidence packets expose whether a proof is present and valid.
+- Rounds without proof remain readable and report proof absence.
+- Evidence proof verification is read-only.
+- Exported evidence includes the same proof status as the API packet.
+
 ## First Working Sequence
 
 Start here:

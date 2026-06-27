@@ -96,6 +96,13 @@ const main = async () => {
     proof: provablyFairProof
   });
   assertEqual(provablyFairVerification.verification.valid, true, 'provably fair slots verification');
+  const provablyFairEvidence = await getJson(`${baseUrl}/api/admin/rounds/${provablyFairSlots.round.id}`, adminSession.token);
+  assertEqual(provablyFairEvidence.provablyFair.present, true, 'round evidence provably fair proof present');
+  assertEqual(provablyFairEvidence.provablyFair.valid, true, 'round evidence provably fair proof valid');
+  assertEqual(provablyFairEvidence.integrity.provablyFairProofCount, 1, 'round evidence proof integrity count');
+  if (!provablyFairEvidence.replayTimeline.some((event: { type: string }) => event.type === 'provably_fair_verified')) {
+    throw new Error('Expected round evidence timeline to include provably fair verification');
+  }
 
   const blockedUserSearch = await fetch(`${baseUrl}/api/admin/users`, {
     headers: { Authorization: `Bearer ${userSession.token}` }
