@@ -82,9 +82,30 @@ export const createServices = () => {
   const provablyFairSeedService = driver === 'prisma'
     ? new PrismaProvablyFairSeedService(prisma)
     : new MemoryProvablyFairSeedService();
+  const idempotencyAudit = async (event: {
+    userId: string;
+    scope: string;
+    idempotencyKey: string;
+    fingerprint: string;
+    decision: 'replay' | 'conflict' | 'in_progress_replay';
+    metadata?: Record<string, unknown>;
+  }) => {
+    await riskService.recordEvent({
+      userId: event.userId,
+      type: `idempotency_${event.decision}`,
+      severity: event.decision === 'conflict' ? 'medium' : 'low',
+      score: event.decision === 'conflict' ? 35 : 10,
+      context: {
+        scope: event.scope,
+        idempotencyKey: event.idempotencyKey,
+        fingerprint: event.fingerprint,
+        metadata: event.metadata
+      }
+    });
+  };
   const idempotencyService = driver === 'prisma'
-    ? new PrismaIdempotencyService(prisma)
-    : new MemoryIdempotencyService();
+    ? new PrismaIdempotencyService(prisma, idempotencyAudit)
+    : new MemoryIdempotencyService(idempotencyAudit);
 
   return { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService, idempotencyService };
 };

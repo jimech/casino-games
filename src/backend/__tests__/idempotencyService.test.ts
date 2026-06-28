@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fingerprintPayload, MemoryIdempotencyService } from '../idempotencyService';
 
 describe('idempotency service', () => {
-  it('accepts exact request replays and rejects changed payloads', () => {
+  it('accepts exact request replays and rejects changed payloads', async () => {
     const service = new MemoryIdempotencyService();
     const input = {
       userId: 'user_1',
@@ -14,8 +14,8 @@ describe('idempotency service', () => {
       }
     };
 
-    service.assertRequest(input);
-    service.assertRequest({
+    await service.assertRequest(input);
+    await service.assertRequest({
       ...input,
       payload: {
         machineId: 'fruit-mania',
@@ -23,13 +23,13 @@ describe('idempotency service', () => {
       }
     });
 
-    expect(() => service.assertRequest({
+    await expect(service.assertRequest({
       ...input,
       payload: {
         machineId: 'fruit-mania',
         bet: 20
       }
-    })).toThrow('Idempotency conflict');
+    })).rejects.toThrow('Idempotency conflict');
   });
 
   it('creates stable fingerprints for reordered object keys', () => {
@@ -80,5 +80,46 @@ describe('idempotency service', () => {
       replayed: true
     });
     expect(calls).toBe(1);
+  });
+
+  it('emits audit events for exact replays and conflicts', async () => {
+    const auditEvents: Array<{ decision: string; scope: string; idempotencyKey: string }> = [];
+    const service = new MemoryIdempotencyService(event => {
+      auditEvents.push(event);
+    });
+    const input = {
+      userId: 'user_1',
+      scope: 'bonus.claim',
+      idempotencyKey: 'bonus-key',
+      payload: {
+        campaignId: 'welcome-match-500'
+      }
+    };
+
+    await service.assertRequest(input);
+    await service.assertRequest(input);
+    await expect(service.assertRequest({
+      ...input,
+      payload: {
+        campaignId: 'daily-free-credits-100'
+      }
+    })).rejects.toThrow('Idempotency conflict');
+
+    expect(auditEvents.map(event => ({
+      decision: event.decision,
+      scope: event.scope,
+      idempotencyKey: event.idempotencyKey
+    }))).toEqual([
+      {
+        decision: 'replay',
+        scope: 'bonus.claim',
+        idempotencyKey: 'bonus-key'
+      },
+      {
+        decision: 'conflict',
+        scope: 'bonus.claim',
+        idempotencyKey: 'bonus-key'
+      }
+    ]);
   });
 });

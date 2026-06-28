@@ -14,6 +14,19 @@ export interface IdempotentResponse<T> {
   replayed: boolean;
 }
 
+export type IdempotencyAuditDecision = 'replay' | 'conflict' | 'in_progress_replay';
+
+export interface IdempotencyAuditEvent {
+  userId: string;
+  scope: string;
+  idempotencyKey: string;
+  fingerprint: string;
+  decision: IdempotencyAuditDecision;
+  metadata?: Record<string, unknown>;
+}
+
+export type IdempotencyAuditSink = (event: IdempotencyAuditEvent) => Promise<void> | void;
+
 export interface IdempotencyService {
   assertRequest(input: IdempotencyRequestInput): Promise<void> | void;
   runWithResponse<T>(
@@ -25,14 +38,22 @@ export interface IdempotencyService {
 export class MemoryIdempotencyService implements IdempotencyService {
   private requests = new Map<string, MemoryIdempotencyRecord>();
 
-  assertRequest(input: IdempotencyRequestInput): void {
+  constructor(private readonly audit?: IdempotencyAuditSink) {}
+
+  async assertRequest(input: IdempotencyRequestInput): Promise<void> {
     assertText(input.userId, 'userId');
     assertText(input.scope, 'scope');
     assertText(input.idempotencyKey, 'idempotencyKey');
     const key = registryKey(input);
     const fingerprint = fingerprintPayload(input.payload);
     const existing = this.requests.get(key);
-    if (existing && existing.fingerprint !== fingerprint) throw idempotencyConflict(input.scope);
+    if (existing && existing.fingerprint !== fingerprint) {
+      await this.recordAudit(input, fingerprint, 'conflict');
+      throw idempotencyConflict(input.scope);
+    }
+    if (existing) {
+      await this.recordAudit(input, fingerprint, 'replay');
+    }
     if (!existing) {
       this.requests.set(key, {
         fingerprint,
@@ -53,9 +74,18 @@ export class MemoryIdempotencyService implements IdempotencyService {
     const existing = this.requests.get(key);
 
     if (existing) {
-      if (existing.fingerprint !== fingerprint) throw idempotencyConflict(input.scope);
-      if (existing.response !== undefined) return { body: existing.response as T, replayed: true };
-      if (existing.pending) return { body: await existing.pending as T, replayed: true };
+      if (existing.fingerprint !== fingerprint) {
+        await this.recordAudit(input, fingerprint, 'conflict');
+        throw idempotencyConflict(input.scope);
+      }
+      if (existing.response !== undefined) {
+        await this.recordAudit(input, fingerprint, 'replay');
+        return { body: existing.response as T, replayed: true };
+      }
+      if (existing.pending) {
+        await this.recordAudit(input, fingerprint, 'in_progress_replay');
+        return { body: await existing.pending as T, replayed: true };
+      }
     }
 
     const pending = Promise.resolve().then(handler);
@@ -79,10 +109,28 @@ export class MemoryIdempotencyService implements IdempotencyService {
       throw error;
     }
   }
+
+  private async recordAudit(
+    input: IdempotencyRequestInput,
+    fingerprint: string,
+    decision: IdempotencyAuditDecision
+  ) {
+    await this.audit?.({
+      userId: input.userId,
+      scope: input.scope,
+      idempotencyKey: input.idempotencyKey,
+      fingerprint,
+      decision,
+      metadata: input.metadata
+    });
+  }
 }
 
 export class PrismaIdempotencyService implements IdempotencyService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly audit?: IdempotencyAuditSink
+  ) {}
 
   async assertRequest(input: IdempotencyRequestInput): Promise<void> {
     assertText(input.userId, 'userId');
@@ -100,7 +148,11 @@ export class PrismaIdempotencyService implements IdempotencyService {
       }
     });
     if (existing) {
-      if (existing.fingerprint !== fingerprint) throw idempotencyConflict(input.scope);
+      if (existing.fingerprint !== fingerprint) {
+        await this.recordAudit(input, fingerprint, 'conflict');
+        throw idempotencyConflict(input.scope);
+      }
+      await this.recordAudit(input, fingerprint, 'replay');
       return;
     }
 
@@ -138,9 +190,16 @@ export class PrismaIdempotencyService implements IdempotencyService {
       where: { userId_scope_idempotencyKey: uniqueKey }
     });
     if (existing) {
-      if (existing.fingerprint !== fingerprint) throw idempotencyConflict(input.scope);
+      if (existing.fingerprint !== fingerprint) {
+        await this.recordAudit(input, fingerprint, 'conflict');
+        throw idempotencyConflict(input.scope);
+      }
       const response = replayResponseFromMetadata<T>(existing.metadata);
-      if (response.found) return { body: response.body, replayed: true };
+      if (response.found) {
+        await this.recordAudit(input, fingerprint, 'replay');
+        return { body: response.body, replayed: true };
+      }
+      await this.recordAudit(input, fingerprint, 'in_progress_replay');
       return {
         body: await this.waitForStoredResponse<T>(uniqueKey),
         replayed: true
@@ -181,6 +240,21 @@ export class PrismaIdempotencyService implements IdempotencyService {
       }).catch(() => undefined);
       throw error;
     }
+  }
+
+  private async recordAudit(
+    input: IdempotencyRequestInput,
+    fingerprint: string,
+    decision: IdempotencyAuditDecision
+  ) {
+    await this.audit?.({
+      userId: input.userId,
+      scope: input.scope,
+      idempotencyKey: input.idempotencyKey,
+      fingerprint,
+      decision,
+      metadata: input.metadata
+    });
   }
 
   private async waitForStoredResponse<T>(

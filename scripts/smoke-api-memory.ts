@@ -639,7 +639,7 @@ const main = async () => {
     throw new Error('Expected compliance case actions in audit events');
   }
 
-  const risks = await getJson(`${baseUrl}/api/risk/events?status=open`, adminSession.token);
+  const risks = await getJson(`${baseUrl}/api/risk/events?status=open&limit=300`, adminSession.token);
   if (!risks.events.some((event: { type: string }) => event.type === 'high_stake_round')) {
     throw new Error('Expected high-stake risk event to be created');
   }
@@ -657,6 +657,16 @@ const main = async () => {
   }
   if (!risks.events.some((event: { type: string }) => event.type === 'replay_request_blocked')) {
     throw new Error('Expected replay request risk event to be searchable');
+  }
+  if (!risks.events.some((event: { type: string; context?: { scope?: string } }) =>
+    event.type === 'idempotency_replay' && event.context?.scope === 'vip.cashback.claim'
+  )) {
+    throw new Error('Expected idempotency replay audit event to be searchable');
+  }
+  if (!risks.events.some((event: { type: string; context?: { scope?: string } }) =>
+    event.type === 'idempotency_conflict' && event.context?.scope === 'bonus.claim'
+  )) {
+    throw new Error('Expected idempotency conflict audit event to be searchable');
   }
   if (!risks.events.some((event: { type: string }) => event.type === 'compliance_case_action')) {
     throw new Error('Expected compliance case action risk event to be searchable');

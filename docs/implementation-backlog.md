@@ -1369,6 +1369,27 @@ Acceptance criteria:
 - Existing service-level idempotency remains intact behind route-level conflict protection.
 - Local quality gate passes.
 
+### T67 - Idempotency Replay and Conflict Audit Events
+
+Summary: Record searchable audit events for idempotency replay and conflict decisions.
+
+Implementation status: Complete. The shared idempotency service now accepts an audit sink and emits decision events for exact replays, in-progress replays, and changed-payload conflicts. The service factory persists those decisions through the existing risk-event pipeline as `idempotency_replay`, `idempotency_in_progress_replay`, and `idempotency_conflict`, including scope, idempotency key, request fingerprint, and route metadata. Unit coverage verifies replay/conflict audit emission, and the memory API smoke verifies replay and conflict events are searchable through `/api/risk/events`.
+
+Scope:
+- Optional idempotency audit sink for memory and Prisma idempotency services.
+- Searchable risk-event records for exact replay decisions.
+- Searchable risk-event records for changed-payload conflicts.
+- Route/scope/key/fingerprint metadata in audit context.
+- Unit coverage for audit hook emission.
+- Memory API smoke coverage for admin-visible audit events.
+
+Acceptance criteria:
+- Exact same-key replays create an `idempotency_replay` audit event.
+- Changed same-key payloads create an `idempotency_conflict` audit event before returning `409`.
+- Audit events are queryable through the existing admin risk-events endpoint.
+- Existing idempotency replay/conflict behavior remains unchanged.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
