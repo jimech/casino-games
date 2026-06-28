@@ -1307,6 +1307,26 @@ Acceptance criteria:
 - Poker same-key changed ante returns `409`.
 - Blackjack and poker action routes are protected by the shared registry before state mutation.
 
+### T64 - Idempotency Action Route Smoke Coverage
+
+Summary: Prove blackjack and poker action-route replay/conflict behavior through the Prisma API smoke.
+
+Implementation status: Complete. The Prisma API smoke now starts dedicated blackjack and poker rounds, applies settling actions with explicit idempotency keys, replays the same action key, and verifies the replay returns the same settled round. It also sends changed actions with the same keys and expects `409`, then confirms exactly one registry row exists for each action key.
+
+Scope:
+- Blackjack action replay smoke using `stand`.
+- Blackjack action conflict smoke using changed action on the same key.
+- Poker action replay smoke using `fold`.
+- Poker action conflict smoke using changed action on the same key.
+- Registry count assertions for blackjack and poker action scopes.
+
+Acceptance criteria:
+- Blackjack same-key action replay returns the same settled round.
+- Blackjack same-key changed action returns `409`.
+- Poker same-key action replay returns the same settled round.
+- Poker same-key changed action returns `409`.
+- Prisma registry records one row per action replay key.
+
 ## First Working Sequence
 
 Start here:

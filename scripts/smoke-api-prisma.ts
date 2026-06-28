@@ -294,6 +294,73 @@ const main = async () => {
     });
   }
 
+  const blackjackActionStartKey = `prisma-api-blackjack-action-start-${suffix}`;
+  let blackjackActionStart = await postJson(`${baseUrl}/api/games/blackjack/start`, userSession.token, {
+    stake: 10,
+    idempotencyKey: blackjackActionStartKey
+  });
+  for (let attempt = 1; blackjackActionStart.round.status !== 'open' && attempt <= 4; attempt += 1) {
+    blackjackActionStart = await postJson(`${baseUrl}/api/games/blackjack/start`, userSession.token, {
+      stake: 10,
+      idempotencyKey: `${blackjackActionStartKey}-${attempt}`
+    });
+  }
+  if (blackjackActionStart.round.status !== 'open') {
+    throw new Error('Expected an open blackjack round for action idempotency smoke');
+  }
+  const blackjackActionKey = `prisma-api-blackjack-action-replay-${suffix}`;
+  const blackjackStand = await postJson(`${baseUrl}/api/games/blackjack/${blackjackActionStart.round.id}/action`, userSession.token, {
+    action: 'stand',
+    idempotencyKey: blackjackActionKey
+  });
+  const blackjackStandReplay = await postJson(`${baseUrl}/api/games/blackjack/${blackjackActionStart.round.id}/action`, userSession.token, {
+    action: 'stand',
+    idempotencyKey: blackjackActionKey
+  });
+  assertEqual(blackjackStandReplay.round.id, blackjackStand.round.id, 'Prisma API blackjack action replay round id');
+  assertEqual(blackjackStandReplay.round.status, 'settled', 'Prisma API blackjack action replay settled status');
+  await postJsonExpectStatus(`${baseUrl}/api/games/blackjack/${blackjackActionStart.round.id}/action`, userSession.token, {
+    action: 'hit',
+    idempotencyKey: blackjackActionKey
+  }, 409);
+  const blackjackActionRegistryCount = await prisma.idempotencyRequest.count({
+    where: {
+      userId: userSession.user.id,
+      scope: 'blackjack.action',
+      idempotencyKey: blackjackActionKey
+    }
+  });
+  assertEqual(blackjackActionRegistryCount, 1, 'Prisma API blackjack action registry record count');
+
+  const pokerActionStartKey = `prisma-api-poker-action-start-${suffix}`;
+  const pokerActionStart = await postJson(`${baseUrl}/api/games/poker/start`, userSession.token, {
+    ante: 10,
+    idempotencyKey: pokerActionStartKey
+  });
+  const pokerActionKey = `prisma-api-poker-action-replay-${suffix}`;
+  const pokerFold = await postJson(`${baseUrl}/api/games/poker/${pokerActionStart.round.id}/action`, userSession.token, {
+    action: 'fold',
+    idempotencyKey: pokerActionKey
+  });
+  const pokerFoldReplay = await postJson(`${baseUrl}/api/games/poker/${pokerActionStart.round.id}/action`, userSession.token, {
+    action: 'fold',
+    idempotencyKey: pokerActionKey
+  });
+  assertEqual(pokerFoldReplay.round.id, pokerFold.round.id, 'Prisma API poker action replay round id');
+  assertEqual(pokerFoldReplay.round.status, 'settled', 'Prisma API poker action replay settled status');
+  await postJsonExpectStatus(`${baseUrl}/api/games/poker/${pokerActionStart.round.id}/action`, userSession.token, {
+    action: 'check',
+    idempotencyKey: pokerActionKey
+  }, 409);
+  const pokerActionRegistryCount = await prisma.idempotencyRequest.count({
+    where: {
+      userId: userSession.user.id,
+      scope: 'poker.action',
+      idempotencyKey: pokerActionKey
+    }
+  });
+  assertEqual(pokerActionRegistryCount, 1, 'Prisma API poker action registry record count');
+
   const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   const stressBet = 10;
   const stressSpins = await Promise.all(
