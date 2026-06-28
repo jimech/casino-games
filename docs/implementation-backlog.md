@@ -1121,6 +1121,24 @@ Acceptance criteria:
 - Smoke is safe to repeat against a persistent database.
 - Smoke remains opt-in because it requires real database credentials.
 
+### T54 - Prisma Smoke Cleanup and Isolation
+
+Summary: Make Prisma smoke checks disposable against persistent databases.
+
+Implementation status: Complete. The direct Prisma smoke script now creates a temporary smoke user with an isolated wallet, runs wallet settlement and provably fair seed lifecycle checks against that user, and deletes the user at the end. The Prisma API smoke script tracks its registered user and admin accounts, stops the bundled server, and deletes those users through Prisma cleanup so repeated smoke runs do not accumulate player accounts, wallets, rounds, ledger entries, sessions, or seed records.
+
+Scope:
+- Disposable service-level Prisma smoke user.
+- Cleanup for Prisma API smoke regular and admin users.
+- Cascading removal of smoke wallet, ledger, round, auth session, and seed records.
+- Repeat-safe smoke behavior for shared persistent databases.
+
+Acceptance criteria:
+- `npm run smoke:prisma` does not mutate the seeded demo account.
+- `npm run smoke:api:prisma` removes registered smoke users after completion.
+- Cleanup runs even when smoke assertions fail after user creation.
+- Existing smoke assertions still cover wallet settlement, slots, proof verification, seed lifecycle, and admin evidence integrity.
+
 ## First Working Sequence
 
 Start here:
