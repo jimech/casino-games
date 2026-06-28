@@ -332,6 +332,49 @@ const main = async () => {
   });
   assertEqual(blackjackActionRegistryCount, 1, 'Prisma API blackjack action registry record count');
 
+  let blackjackHitStart: any | undefined;
+  let blackjackHit: any | undefined;
+  let blackjackHitKey = '';
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const startKey = `prisma-api-blackjack-hit-start-${suffix}-${attempt}`;
+    const candidate = await postJson(`${baseUrl}/api/games/blackjack/start`, userSession.token, {
+      stake: 10,
+      idempotencyKey: startKey
+    });
+    if (candidate.round.status !== 'open') continue;
+    const hitKey = `prisma-api-blackjack-hit-replay-${suffix}-${attempt}`;
+    const hit = await postJson(`${baseUrl}/api/games/blackjack/${candidate.round.id}/action`, userSession.token, {
+      action: 'hit',
+      idempotencyKey: hitKey
+    });
+    if (hit.round.status !== 'open') continue;
+    blackjackHitStart = candidate;
+    blackjackHit = hit;
+    blackjackHitKey = hitKey;
+    break;
+  }
+  if (!blackjackHitStart || !blackjackHit) {
+    throw new Error('Expected an open blackjack hit result for stored response replay smoke');
+  }
+  const blackjackHitReplay = await postJson(`${baseUrl}/api/games/blackjack/${blackjackHitStart.round.id}/action`, userSession.token, {
+    action: 'hit',
+    idempotencyKey: blackjackHitKey
+  });
+  assertEqual(
+    blackjackHitReplay.view.playerHand.length,
+    blackjackHit.view.playerHand.length,
+    'Prisma API blackjack hit replay does not draw another card'
+  );
+  assertEqual(blackjackHitReplay.view.playerScore, blackjackHit.view.playerScore, 'Prisma API blackjack hit replay score');
+  await postJsonExpectStatus(`${baseUrl}/api/games/blackjack/${blackjackHitStart.round.id}/action`, userSession.token, {
+    action: 'stand',
+    idempotencyKey: blackjackHitKey
+  }, 409);
+  await postJson(`${baseUrl}/api/games/blackjack/${blackjackHitStart.round.id}/action`, userSession.token, {
+    action: 'stand',
+    idempotencyKey: `${blackjackHitKey}-cleanup`
+  });
+
   const pokerActionStartKey = `prisma-api-poker-action-start-${suffix}`;
   const pokerActionStart = await postJson(`${baseUrl}/api/games/poker/start`, userSession.token, {
     ante: 10,
@@ -360,6 +403,35 @@ const main = async () => {
     }
   });
   assertEqual(pokerActionRegistryCount, 1, 'Prisma API poker action registry record count');
+
+  const pokerCheckStartKey = `prisma-api-poker-check-start-${suffix}`;
+  const pokerCheckStart = await postJson(`${baseUrl}/api/games/poker/start`, userSession.token, {
+    ante: 10,
+    idempotencyKey: pokerCheckStartKey
+  });
+  const pokerCheckKey = `prisma-api-poker-check-replay-${suffix}`;
+  const pokerCheck = await postJson(`${baseUrl}/api/games/poker/${pokerCheckStart.round.id}/action`, userSession.token, {
+    action: 'check',
+    idempotencyKey: pokerCheckKey
+  });
+  const pokerCheckReplay = await postJson(`${baseUrl}/api/games/poker/${pokerCheckStart.round.id}/action`, userSession.token, {
+    action: 'check',
+    idempotencyKey: pokerCheckKey
+  });
+  assertEqual(pokerCheckReplay.view.stage, pokerCheck.view.stage, 'Prisma API poker check replay stage');
+  assertEqual(
+    pokerCheckReplay.view.communityCards.length,
+    pokerCheck.view.communityCards.length,
+    'Prisma API poker check replay does not advance community cards'
+  );
+  await postJsonExpectStatus(`${baseUrl}/api/games/poker/${pokerCheckStart.round.id}/action`, userSession.token, {
+    action: 'raise',
+    idempotencyKey: pokerCheckKey
+  }, 409);
+  await postJson(`${baseUrl}/api/games/poker/${pokerCheckStart.round.id}/action`, userSession.token, {
+    action: 'fold',
+    idempotencyKey: `${pokerCheckKey}-cleanup`
+  });
 
   const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   const stressBet = 10;

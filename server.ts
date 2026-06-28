@@ -1631,20 +1631,23 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
     const user = await requireAuth(req);
     await assertRoundOwner(req.params.roundId, user.id);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, `blackjack-${req.params.roundId}`);
-    await idempotencyService.assertRequest({
+    const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,
       scope: 'blackjack.action',
       idempotencyKey,
       payload: roundActionIdempotencyPayload(req.params.roundId, req.body.action),
       metadata: { route: '/api/games/blackjack/:roundId/action', roundId: req.params.roundId }
-    });
-    const result = await actBlackjackRound(casinoService, {
-      roundId: req.params.roundId,
-      action: req.body.action,
-      idempotencyKey
-    });
-    broadcastWallet(result.round.userId, result.wallet);
-    if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
+    }, () => actBlackjackRound(casinoService, {
+        roundId: req.params.roundId,
+        action: req.body.action,
+        idempotencyKey
+      })
+    );
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(result.round.userId, result.wallet);
+      if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
+    }
     res.json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -1685,20 +1688,23 @@ app.post('/api/games/poker/:roundId/action', async (req, res) => {
     const user = await requireAuth(req);
     await assertRoundOwner(req.params.roundId, user.id);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, `poker-${req.params.roundId}`);
-    await idempotencyService.assertRequest({
+    const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,
       scope: 'poker.action',
       idempotencyKey,
       payload: roundActionIdempotencyPayload(req.params.roundId, req.body.action),
       metadata: { route: '/api/games/poker/:roundId/action', roundId: req.params.roundId }
-    });
-    const result = await actPokerRound(casinoService, {
-      roundId: req.params.roundId,
-      action: req.body.action,
-      idempotencyKey
-    });
-    broadcastWallet(result.round.userId, result.wallet);
-    if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
+    }, () => actPokerRound(casinoService, {
+        roundId: req.params.roundId,
+        action: req.body.action,
+        idempotencyKey
+      })
+    );
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(result.round.userId, result.wallet);
+      if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
+    }
     res.json(result);
   } catch (error) {
     sendApiError(res, error);

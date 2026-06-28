@@ -1327,6 +1327,28 @@ Acceptance criteria:
 - Poker same-key changed action returns `409`.
 - Prisma registry records one row per action replay key.
 
+### T65 - Safer Action Replay Responses
+
+Summary: Store successful mutation responses for action-route idempotency keys and return those stored bodies on exact replay.
+
+Implementation status: Complete. The shared idempotency service now supports a response replay envelope in memory and Prisma drivers. Blackjack and poker action routes use it so the first successful action stores its response, exact same-key replays return the stored response without running the game engine again, and changed same-key payloads still return `409`. The Prisma API smoke now covers non-settling blackjack `hit` and poker `check` replays, proving that replay does not draw another card or advance community cards. Heavy math simulation tests also have explicit timeouts so the quality gate remains stable on slower local runs.
+
+Scope:
+- Memory idempotency response storage for successful mutation results.
+- Prisma idempotency response storage inside existing `idempotency_requests.metadata`.
+- Stored-response replay for `/api/games/blackjack/:roundId/action`.
+- Stored-response replay for `/api/games/poker/:roundId/action`.
+- Prisma API smoke coverage for non-settling blackjack `hit` replay.
+- Prisma API smoke coverage for non-settling poker `check` replay.
+- Stable test timeouts for heavier math simulation scenarios.
+
+Acceptance criteria:
+- Blackjack same-key `hit` replay returns the original hit response without drawing another card.
+- Poker same-key `check` replay returns the original check response without advancing community cards.
+- Changed same-key action payloads continue to return `409`.
+- Stored response replay does not rebroadcast wallet changes or reassess settled risk.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

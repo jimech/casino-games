@@ -36,4 +36,49 @@ describe('idempotency service', () => {
     expect(fingerprintPayload({ b: 2, a: { d: 4, c: 3 } }))
       .toBe(fingerprintPayload({ a: { c: 3, d: 4 }, b: 2 }));
   });
+
+  it('stores and replays the first successful response without rerunning the handler', async () => {
+    const service = new MemoryIdempotencyService();
+    let calls = 0;
+    const input = {
+      userId: 'user_1',
+      scope: 'blackjack.action',
+      idempotencyKey: 'action-key',
+      payload: {
+        roundId: 'round_1',
+        action: 'hit'
+      }
+    };
+
+    const first = await service.runWithResponse(input, () => {
+      calls += 1;
+      return {
+        stage: 'after-hit',
+        cards: 3
+      };
+    });
+    const replay = await service.runWithResponse(input, () => {
+      calls += 1;
+      return {
+        stage: 'after-second-hit',
+        cards: 4
+      };
+    });
+
+    expect(first).toEqual({
+      body: {
+        stage: 'after-hit',
+        cards: 3
+      },
+      replayed: false
+    });
+    expect(replay).toEqual({
+      body: {
+        stage: 'after-hit',
+        cards: 3
+      },
+      replayed: true
+    });
+    expect(calls).toBe(1);
+  });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { runGameMathSimulation } from '../gameMathSimulationService';
 
+const simulationTimeoutMs = 30_000;
+
 describe('game math simulation service', () => {
   it('reports exact roulette RTP for outside and straight bets', () => {
     const report = runGameMathSimulation({ sampleCount: 1000 });
@@ -11,7 +13,7 @@ describe('game math simulation service', () => {
       expect(scenario.expectedHouseEdge).toBeCloseTo(1 / 37, 4);
       expect(scenario.warnings).toEqual([]);
     }
-  });
+  }, simulationTimeoutMs);
 
   it('enumerates slot machines and warns when advertised RTP drifts from configured strips', () => {
     const report = runGameMathSimulation({ sampleCount: 1000 });
@@ -23,7 +25,7 @@ describe('game math simulation service', () => {
     ]);
     expect(report.slots.every(scenario => scenario.sampleCount > 3000)).toBe(true);
     expect(report.slots.some(scenario => scenario.warnings.includes('advertised_rtp_deviation'))).toBe(true);
-  });
+  }, simulationTimeoutMs);
 
   it('samples crash deterministically for repeatable audit reports', () => {
     const first = runGameMathSimulation({ sampleCount: 2000 }).crash;
@@ -31,7 +33,7 @@ describe('game math simulation service', () => {
 
     expect(first).toEqual(second);
     expect(first.every(scenario => scenario.theoreticalRtp > 0.9 && scenario.theoreticalRtp < 1.05)).toBe(true);
-  });
+  }, simulationTimeoutMs);
 
   it('samples blackjack strategy scenarios deterministically', () => {
     const first = runGameMathSimulation({ sampleCount: 2000 }).blackjack;
@@ -43,7 +45,7 @@ describe('game math simulation service', () => {
     ]);
     expect(first).toEqual(second);
     expect(first.every(scenario => scenario.theoreticalRtp > 0.9 && scenario.theoreticalRtp < 1)).toBe(true);
-  });
+  }, simulationTimeoutMs);
 
   it('samples poker showdown scenarios with explicit rake assumptions', () => {
     const poker = runGameMathSimulation({ sampleCount: 2000 }).poker;
@@ -55,5 +57,5 @@ describe('game math simulation service', () => {
     expect(poker[0].theoreticalRtp).toBeGreaterThan(0.96);
     expect(poker[0].theoreticalRtp).toBeLessThan(1.04);
     expect(poker[1].theoreticalRtp).toBeLessThan(poker[0].theoreticalRtp);
-  });
+  }, simulationTimeoutMs);
 });
