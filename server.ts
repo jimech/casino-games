@@ -1542,6 +1542,7 @@ app.post('/api/games/slots/spin', async (req, res) => {
   try {
     const user = await requireAuth(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'slots');
+    await assertSlotsIdempotencyCompatible(user.id, idempotencyKey, req.body);
     const seed = await revealProvablyFairSeed(
       await commitProvablyFairSeed(user.id, 'slots', idempotencyKey, req.body.clientSeed)
     );
@@ -1675,7 +1676,7 @@ app.listen(port, '0.0.0.0', () => {
 
 function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
-  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /required|invalid|insufficient|already|not open|not ready|consent|replay/i.test(message) ? 400 : 500;
+  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /idempotency conflict/i.test(message) ? 409 : /required|invalid|insufficient|already|not open|not ready|consent|replay/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
 }
 
@@ -2438,6 +2439,31 @@ function buildRoundProvablyFairEvidence(round: GameRoundRecord) {
 
 function requestIdempotencyKey(value: unknown, prefix: string): string {
   return typeof value === 'string' && value ? value : `${prefix}-${randomBytes(16).toString('hex')}`;
+}
+
+async function assertSlotsIdempotencyCompatible(userId: string, idempotencyKey: string, body: unknown): Promise<void> {
+  if (!isRecord(body)) return;
+  const existingRound = (await casinoService.listRounds(userId))
+    .find(round => round.lockIdempotencyKey === `${idempotencyKey}:lock`);
+  if (!existingRound) return;
+  if (!isRecord(existingRound.outcome) || existingRound.outcome.game !== 'slots') {
+    throw new Error('Idempotency conflict: key was previously used for a different operation');
+  }
+
+  const requestedMachineId = String(body.machineId ?? '');
+  const requestedBet = Number(body.bet);
+  const requestedFreeSpin = Boolean(body.freeSpin);
+  const requestedBonusMultiplier = Number(body.bonusMultiplier ?? (requestedFreeSpin ? 3 : 1));
+  const existingBonusMultiplier = Number(existingRound.outcome.bonusMultiplier ?? 1);
+
+  if (
+    existingRound.outcome.machineId !== requestedMachineId ||
+    Number(existingRound.outcome.bet) !== requestedBet ||
+    Boolean(existingRound.outcome.freeSpin) !== requestedFreeSpin ||
+    existingBonusMultiplier !== requestedBonusMultiplier
+  ) {
+    throw new Error('Idempotency conflict: key was replayed with different slots parameters');
+  }
 }
 
 async function commitProvablyFairSeed(

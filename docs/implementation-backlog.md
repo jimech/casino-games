@@ -1231,6 +1231,24 @@ Acceptance criteria:
 - Ledger contains one lock and one settlement entry for the replay key.
 - Provably fair seed lifecycle records are not duplicated for the replayed round.
 
+### T60 - Prisma Idempotency Conflict Semantics
+
+Summary: Reject same-key API replays when material request parameters change.
+
+Implementation status: Complete. Slot-spin API requests now check an existing idempotency key against the persisted round outcome before committing new seed or wallet work. Exact same-key replays remain safe, but a reused key with different slot parameters returns a `409 Idempotency conflict`. The Prisma API smoke verifies the conflict response and confirms wallet balance, locked balance, ledger counts, and linked seed records remain unchanged after the rejected request.
+
+Scope:
+- Slots idempotency compatibility check for machine, bet, free-spin flag, and bonus multiplier.
+- `409` API status for idempotency conflicts.
+- Prisma API smoke coverage for conflicting same-key replay.
+- No extra wallet, ledger, round, or seed effects after conflict rejection.
+
+Acceptance criteria:
+- Same-key replays with changed slots parameters are rejected.
+- Conflict responses use HTTP 409.
+- Wallet and locked balances stay unchanged after conflict rejection.
+- Ledger and seed counts for the original replayed round stay unchanged.
+
 ## First Working Sequence
 
 Start here:

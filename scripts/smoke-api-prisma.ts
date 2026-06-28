@@ -144,6 +144,34 @@ const main = async () => {
   );
   assertEqual(replaySeedMatches.length, 1, 'Prisma API replay seed record count');
 
+  const conflict = await postJsonExpectStatus(`${baseUrl}/api/games/slots/spin`, userSession.token, {
+    machineId: 'fruit-mania',
+    bet: replayBet * 2,
+    idempotencyKey: replayKey
+  }, 409);
+  if (!String(conflict.error ?? '').includes('Idempotency conflict')) {
+    throw new Error(`Expected idempotency conflict error, received ${JSON.stringify(conflict)}`);
+  }
+  const walletAfterConflict = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
+  assertEqual(walletAfterConflict.available, walletAfterReplay.available, 'Prisma API conflict wallet available unchanged');
+  assertEqual(walletAfterConflict.locked, walletAfterReplay.locked, 'Prisma API conflict wallet locked unchanged');
+
+  const conflictLedger = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}/ledger`, userSession.token);
+  const conflictReplayLocks = conflictLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === `${replayKey}:lock` && entry.type === 'lock'
+  );
+  const conflictReplaySettlements = conflictLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === `${replayKey}:settle` && (entry.type === 'settleWin' || entry.type === 'settleLoss')
+  );
+  assertEqual(conflictReplayLocks.length, 1, 'Prisma API conflict lock ledger count unchanged');
+  assertEqual(conflictReplaySettlements.length, 1, 'Prisma API conflict settlement ledger count unchanged');
+
+  const conflictSeeds = await getJson(`${baseUrl}/api/provably-fair/seeds`, userSession.token);
+  const conflictSeedMatches = conflictSeeds.seeds.filter((seed: { status: string; roundId?: string; serverSeed?: string }) =>
+    seed.status === 'revealed' && seed.roundId === firstReplay.round.id && typeof seed.serverSeed === 'string'
+  );
+  assertEqual(conflictSeedMatches.length, 1, 'Prisma API conflict seed record count unchanged');
+
   const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   const stressBet = 10;
   const stressSpins = await Promise.all(
@@ -240,6 +268,22 @@ const postJson = async (url: string, token: string, body: Record<string, unknown
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(`POST ${url} failed: ${response.status} ${JSON.stringify(payload)}`);
+  return payload;
+};
+
+const postJsonExpectStatus = async (url: string, token: string, body: Record<string, unknown>, status: number) => {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json();
+  if (response.status !== status) {
+    throw new Error(`POST ${url} expected ${status}, received ${response.status} ${JSON.stringify(payload)}`);
+  }
   return payload;
 };
 
