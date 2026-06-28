@@ -105,7 +105,51 @@ const main = async () => {
   assertEqual(adminEvidence.provablyFair.valid, true, 'Prisma admin evidence proof valid');
   assertEqual(adminEvidence.integrity.provablyFairProofCount, 1, 'Prisma admin evidence proof count');
 
-  console.log('API Prisma smoke passed');
+  const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
+  const stressBet = 10;
+  const stressSpins = await Promise.all(
+    Array.from({ length: 6 }, (_, index) =>
+      postJson(`${baseUrl}/api/games/slots/spin`, userSession.token, {
+        machineId: 'fruit-mania',
+        bet: stressBet,
+        idempotencyKey: `prisma-api-stress-slots-${suffix}-${index}`
+      })
+    )
+  );
+  const walletAfterStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
+  const stressPayout = stressSpins.reduce((sum, result) => sum + Number(result.round?.payout ?? 0), 0);
+  const expectedAvailable = walletBeforeStress.available - (stressBet * stressSpins.length) + stressPayout;
+  assertEqual(walletAfterStress.available, expectedAvailable, 'Prisma API concurrent slots wallet available');
+  assertEqual(walletAfterStress.locked, 0, 'Prisma API concurrent slots wallet locked');
+
+  const stressLedger = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}/ledger`, userSession.token);
+  const stressLedgerEntries = stressLedger.entries.filter((entry: {
+    idempotencyKey: string;
+    type: string;
+    metadata?: { gameId?: string };
+  }) => entry.idempotencyKey.startsWith(`prisma-api-stress-slots-${suffix}-`) && entry.metadata?.gameId === 'slots');
+  const stressLocks = stressLedgerEntries.filter((entry: { type: string }) => entry.type === 'lock');
+  const stressSettlements = stressLedgerEntries.filter((entry: { type: string }) =>
+    entry.type === 'settleWin' || entry.type === 'settleLoss'
+  );
+  assertEqual(stressLocks.length, stressSpins.length, 'Prisma API concurrent slots lock ledger count');
+  assertEqual(stressSettlements.length, stressSpins.length, 'Prisma API concurrent slots settlement ledger count');
+
+  const stressRounds = await getJson(`${baseUrl}/api/rounds`, userSession.token);
+  const stressRoundIds = new Set(stressSpins.map(result => result.round.id));
+  const persistedStressRounds = stressRounds.rounds.filter((round: { id: string; status: string }) =>
+    stressRoundIds.has(round.id)
+  );
+  assertEqual(persistedStressRounds.length, stressSpins.length, 'Prisma API concurrent slots round count');
+  if (!persistedStressRounds.every((round: { status: string }) => round.status === 'settled')) {
+    throw new Error('Expected all Prisma API stress slot rounds to be settled');
+  }
+
+  console.log('API Prisma smoke passed', {
+    stressSpins: stressSpins.length,
+    stressPayout,
+    walletAfterStress
+  });
 };
 
 const waitForServerReady = async () => {

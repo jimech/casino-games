@@ -1195,6 +1195,24 @@ Acceptance criteria:
 - Idempotent replay behavior remains intact when writers race.
 - `npm run smoke:prisma` proves the wallet stress path against the configured database.
 
+### T58 - API-Level Wallet Concurrency Smoke
+
+Summary: Stress concurrent Prisma wallet writes through the production Express API.
+
+Implementation status: Complete. The Prisma API smoke now runs multiple concurrent slot spins for one authenticated user through `/api/games/slots/spin`, then verifies the final wallet balance from actual returned payouts, checks locked balance returns to zero, confirms one lock and one settlement ledger entry per stress spin through `/api/wallet/:userId/ledger`, and verifies the stress rounds are persisted as settled through `/api/rounds`.
+
+Scope:
+- Concurrent Prisma-backed slot spins through the bundled Express server.
+- Wallet invariant assertion using actual spin payouts.
+- Ledger lock/settlement count assertions through HTTP.
+- Persisted settled-round assertions through HTTP.
+
+Acceptance criteria:
+- API-level concurrent slot spins cannot leave stale locked balance.
+- Final wallet available balance matches charged stakes and returned payouts.
+- Ledger entries prove one lock and one settlement per stress spin.
+- The stress path runs inside `npm run smoke:api:prisma`.
+
 ## First Working Sequence
 
 Start here:
