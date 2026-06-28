@@ -1599,6 +1599,14 @@ app.post('/api/games/slots/spin', async (req, res) => {
 app.post('/api/games/blackjack/start', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'blackjack');
+    await idempotencyService.assertRequest({
+      userId: user.id,
+      scope: 'blackjack.start',
+      idempotencyKey,
+      payload: blackjackStartIdempotencyPayload(req.body),
+      metadata: { route: '/api/games/blackjack/start' }
+    });
     const intervention = await evaluateResponsiblePlay({
       userId: user.id,
       triggerGameId: 'blackjack',
@@ -1607,7 +1615,7 @@ app.post('/api/games/blackjack/start', async (req, res) => {
     const result = await startBlackjackRound(casinoService, {
       userId: user.id,
       stake: Number(req.body.stake),
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+      idempotencyKey
     });
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
@@ -1622,10 +1630,18 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
   try {
     const user = await requireAuth(req);
     await assertRoundOwner(req.params.roundId, user.id);
+    const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, `blackjack-${req.params.roundId}`);
+    await idempotencyService.assertRequest({
+      userId: user.id,
+      scope: 'blackjack.action',
+      idempotencyKey,
+      payload: roundActionIdempotencyPayload(req.params.roundId, req.body.action),
+      metadata: { route: '/api/games/blackjack/:roundId/action', roundId: req.params.roundId }
+    });
     const result = await actBlackjackRound(casinoService, {
       roundId: req.params.roundId,
       action: req.body.action,
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+      idempotencyKey
     });
     broadcastWallet(result.round.userId, result.wallet);
     if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
@@ -1638,6 +1654,14 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
 app.post('/api/games/poker/start', async (req, res) => {
   try {
     const user = await requireAuth(req);
+    const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'poker');
+    await idempotencyService.assertRequest({
+      userId: user.id,
+      scope: 'poker.start',
+      idempotencyKey,
+      payload: pokerStartIdempotencyPayload(req.body),
+      metadata: { route: '/api/games/poker/start' }
+    });
     const intervention = await evaluateResponsiblePlay({
       userId: user.id,
       triggerGameId: 'poker',
@@ -1646,7 +1670,7 @@ app.post('/api/games/poker/start', async (req, res) => {
     const result = await startPokerRound(casinoService, {
       userId: user.id,
       ante: Number(req.body.ante),
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+      idempotencyKey
     });
     broadcastWallet(result.round.userId, result.wallet);
     await assessRoundStarted(result.round);
@@ -1660,10 +1684,18 @@ app.post('/api/games/poker/:roundId/action', async (req, res) => {
   try {
     const user = await requireAuth(req);
     await assertRoundOwner(req.params.roundId, user.id);
+    const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, `poker-${req.params.roundId}`);
+    await idempotencyService.assertRequest({
+      userId: user.id,
+      scope: 'poker.action',
+      idempotencyKey,
+      payload: roundActionIdempotencyPayload(req.params.roundId, req.body.action),
+      metadata: { route: '/api/games/poker/:roundId/action', roundId: req.params.roundId }
+    });
     const result = await actPokerRound(casinoService, {
       roundId: req.params.roundId,
       action: req.body.action,
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined
+      idempotencyKey
     });
     broadcastWallet(result.round.userId, result.wallet);
     if (result.round.status !== 'open') await riskService.assessRoundSettled(result.round);
@@ -2483,6 +2515,27 @@ function crashStartIdempotencyPayload(body: unknown) {
   const record = isRecord(body) ? body : {};
   return {
     stake: Number(record.stake)
+  };
+}
+
+function blackjackStartIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    stake: Number(record.stake)
+  };
+}
+
+function pokerStartIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    ante: Number(record.ante)
+  };
+}
+
+function roundActionIdempotencyPayload(roundId: string, action: unknown) {
+  return {
+    roundId,
+    action: String(action ?? '')
   };
 }
 

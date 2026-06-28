@@ -1287,6 +1287,26 @@ Acceptance criteria:
 - Crash start same-key changed stake returns `409`.
 - Prisma registry records one row per user/scope/key for these replay checks.
 
+### T63 - Extend Idempotency Registry to Blackjack and Poker
+
+Summary: Apply shared idempotency fingerprints to blackjack and poker routes.
+
+Implementation status: Complete. Blackjack and poker start/action routes now use the shared idempotency registry before mutating game state. Start requests fingerprint stake/ante, while action requests fingerprint round and action. The Prisma API smoke verifies exact replay and changed-parameter conflict behavior for blackjack and poker start routes and confirms one registry row per replay key.
+
+Scope:
+- Registry-backed `/api/games/blackjack/start` requests.
+- Registry-backed `/api/games/blackjack/:roundId/action` requests.
+- Registry-backed `/api/games/poker/start` requests.
+- Registry-backed `/api/games/poker/:roundId/action` requests.
+- Prisma API smoke replay/conflict assertions for blackjack and poker starts.
+
+Acceptance criteria:
+- Blackjack same-key exact start replay returns the original round.
+- Blackjack same-key changed stake returns `409`.
+- Poker same-key exact start replay returns the original round.
+- Poker same-key changed ante returns `409`.
+- Blackjack and poker action routes are protected by the shared registry before state mutation.
+
 ## First Working Sequence
 
 Start here:

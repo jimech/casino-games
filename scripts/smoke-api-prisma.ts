@@ -236,6 +236,64 @@ const main = async () => {
     idempotencyKey: `${crashKey}-cashout`
   });
 
+  const blackjackKey = `prisma-api-blackjack-replay-${suffix}`;
+  const blackjackFirst = await postJson(`${baseUrl}/api/games/blackjack/start`, userSession.token, {
+    stake: 10,
+    idempotencyKey: blackjackKey
+  });
+  const blackjackReplay = await postJson(`${baseUrl}/api/games/blackjack/start`, userSession.token, {
+    stake: 10,
+    idempotencyKey: blackjackKey
+  });
+  assertEqual(blackjackReplay.round.id, blackjackFirst.round.id, 'Prisma API blackjack replay round id');
+  await postJsonExpectStatus(`${baseUrl}/api/games/blackjack/start`, userSession.token, {
+    stake: 20,
+    idempotencyKey: blackjackKey
+  }, 409);
+  const blackjackRegistryCount = await prisma.idempotencyRequest.count({
+    where: {
+      userId: userSession.user.id,
+      scope: 'blackjack.start',
+      idempotencyKey: blackjackKey
+    }
+  });
+  assertEqual(blackjackRegistryCount, 1, 'Prisma API blackjack registry record count');
+  if (blackjackFirst.round.status === 'open') {
+    await postJson(`${baseUrl}/api/rounds/${blackjackFirst.round.id}/refund`, userSession.token, {
+      idempotencyKey: `${blackjackKey}-refund`,
+      reason: 'prisma-api-smoke-cleanup'
+    });
+  }
+
+  const pokerKey = `prisma-api-poker-replay-${suffix}`;
+  const pokerFirst = await postJson(`${baseUrl}/api/games/poker/start`, userSession.token, {
+    ante: 10,
+    idempotencyKey: pokerKey
+  });
+  const pokerReplay = await postJson(`${baseUrl}/api/games/poker/start`, userSession.token, {
+    ante: 10,
+    idempotencyKey: pokerKey
+  });
+  assertEqual(pokerReplay.round.id, pokerFirst.round.id, 'Prisma API poker replay round id');
+  await postJsonExpectStatus(`${baseUrl}/api/games/poker/start`, userSession.token, {
+    ante: 20,
+    idempotencyKey: pokerKey
+  }, 409);
+  const pokerRegistryCount = await prisma.idempotencyRequest.count({
+    where: {
+      userId: userSession.user.id,
+      scope: 'poker.start',
+      idempotencyKey: pokerKey
+    }
+  });
+  assertEqual(pokerRegistryCount, 1, 'Prisma API poker registry record count');
+  if (pokerFirst.round.status === 'open') {
+    await postJson(`${baseUrl}/api/rounds/${pokerFirst.round.id}/refund`, userSession.token, {
+      idempotencyKey: `${pokerKey}-refund`,
+      reason: 'prisma-api-smoke-cleanup'
+    });
+  }
+
   const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   const stressBet = 10;
   const stressSpins = await Promise.all(
