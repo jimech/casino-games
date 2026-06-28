@@ -51,9 +51,23 @@ const main = async () => {
       commitmentKey: `${key}-seed`,
       clientSeed: 'ignored'
     });
+    const concurrentSeeds = await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        seedService.commit({
+          userId: user.id,
+          gameId: 'slots',
+          commitmentKey: `${key}-seed-concurrent-${index}`,
+          clientSeed: `prisma-smoke-client-${index}`
+        })
+      )
+    );
     const revealedSeed = await seedService.reveal({ seedId: seed.id, roundId: round.id });
     const seedList = await seedService.listForUser(user.id);
     if (duplicateSeed.id !== seed.id) throw new Error('seed commitment was not idempotent');
+    const concurrentNonces = concurrentSeeds.map(record => record.nonce).sort((left, right) => left - right);
+    if (concurrentNonces.join(',') !== '1,2,3,4,5') {
+      throw new Error(`concurrent seed nonces were not contiguous: ${concurrentNonces.join(',')}`);
+    }
     if (revealedSeed.status !== 'revealed' || revealedSeed.roundId !== round.id) {
       throw new Error('seed reveal did not persist round linkage');
     }

@@ -1157,6 +1157,26 @@ Acceptance criteria:
 - Existing idempotency behavior remains unchanged.
 - `npm run smoke:api:prisma` can pass without its own write-conflict retry shim.
 
+### T56 - Prisma Seed Nonce Concurrency Hardening
+
+Summary: Allocate provably fair seed nonces through an atomic Prisma counter table.
+
+Implementation status: Complete. Prisma mode now stores one nonce counter row per user/game in `provably_fair_seed_nonces`, backfilled from existing seed records during migration. Seed commitment takes a transaction-scoped Postgres advisory lock for the user/game pair, then reserves the next nonce with a transactional upsert/increment before inserting the seed, replacing the previous latest-seed scan. This explicit critical section runs at `ReadCommitted`, while the existing unique `(userId, gameId, nonce)` constraint remains as a final database invariant and transaction retries handle transient contention. The direct Prisma smoke now commits multiple seeds concurrently for the same user/game and asserts contiguous unique nonces.
+
+Scope:
+- Prisma model and migration for per-user/game seed nonce counters.
+- Migration backfill from existing `provably_fair_seeds`.
+- Transaction-scoped advisory lock for per-user/game seed allocation.
+- Atomic nonce reservation in `PrismaProvablyFairSeedService.commit`.
+- Concurrent nonce assertion in `npm run smoke:prisma`.
+- Preserve idempotent commitment-key behavior and seed cleanup cascades.
+
+Acceptance criteria:
+- Concurrent Prisma seed commits do not allocate the same nonce by reading stale latest rows.
+- Existing databases get counters initialized to `MAX(nonce) + 1`.
+- Deleting a user cascades seed records and nonce counters.
+- Prisma service and API smoke checks continue to pass against the configured database.
+
 ## First Working Sequence
 
 Start here:

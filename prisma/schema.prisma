@@ -121,6 +121,7 @@ model User {
   tournamentPayouts TournamentPayout[]
   tournamentRefunds TournamentRefund[]
   provablyFairSeeds ProvablyFairSeed[]
+  provablyFairSeedNonces ProvablyFairSeedNonce[]
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
@@ -607,6 +608,21 @@ model ProvablyFairSeed {
   @@index([status])
   @@index([roundId])
   @@map("provably_fair_seeds")
+}
+
+model ProvablyFairSeedNonce {
+  id        String   @id @default(cuid())
+  userId    String
+  gameId    String
+  nextNonce Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gameId])
+  @@index([gameId])
+  @@map("provably_fair_seed_nonces")
 }
 
 model GameRoundEvent {

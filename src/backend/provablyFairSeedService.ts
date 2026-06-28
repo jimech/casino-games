@@ -125,19 +125,32 @@ export class PrismaProvablyFairSeedService {
     assertText(input.userId, 'userId');
     assertText(input.commitmentKey, 'commitmentKey');
     return withPrismaTransactionRetry(() => this.prisma.$transaction(async tx => {
+      await lockSeedNonceAllocation(tx, input.userId, input.gameId);
+
       const existing = await tx.provablyFairSeed.findUnique({
         where: { commitmentKey: input.commitmentKey }
       });
       if (existing) return prismaSeedRecord(existing);
 
-      const latest = await tx.provablyFairSeed.findFirst({
+      const nonceCounter = await tx.provablyFairSeedNonce.upsert({
         where: {
-          userId: input.userId,
-          gameId: input.gameId
+          userId_gameId: {
+            userId: input.userId,
+            gameId: input.gameId
+          }
         },
-        orderBy: { nonce: 'desc' }
+        create: {
+          userId: input.userId,
+          gameId: input.gameId,
+          nextNonce: 1
+        },
+        update: {
+          nextNonce: {
+            increment: 1
+          }
+        }
       });
-      const nonce = (latest?.nonce ?? -1) + 1;
+      const nonce = nonceCounter.nextNonce - 1;
       const serverSeed = randomBytes(32).toString('hex');
       const created = await tx.provablyFairSeed.create({
         data: {
@@ -152,7 +165,7 @@ export class PrismaProvablyFairSeedService {
         }
       });
       return prismaSeedRecord(created);
-    }, { isolationLevel: 'Serializable' }));
+    }, { isolationLevel: 'ReadCommitted' }));
   }
 
   async reveal(input: { seedId: string; roundId?: string }): Promise<ProvablyFairSeedRecord> {
@@ -235,6 +248,14 @@ const assertText = (value: string, field: string) => {
   if (!value || typeof value !== 'string') {
     throw new Error(`${field} is required`);
   }
+};
+
+const lockSeedNonceAllocation = async (
+  tx: Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
+  userId: string,
+  gameId: string
+) => {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`provably-fair-seed:${userId}:${gameId}`}))`;
 };
 
 const prismaSeedRecord = (record: {
