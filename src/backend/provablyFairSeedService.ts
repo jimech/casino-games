@@ -6,6 +6,7 @@ import {
   ProvablyFairSeedLifecycle,
   hashServerSeed
 } from '../domain/provablyFair';
+import { withPrismaTransactionRetry } from './db/prismaTransaction';
 
 export type ProvablyFairGameId = ProvablyFairProof['gameId'];
 export type ProvablyFairSeedStatus = 'committed' | 'revealed';
@@ -123,7 +124,7 @@ export class PrismaProvablyFairSeedService {
   }): Promise<ProvablyFairSeedRecord> {
     assertText(input.userId, 'userId');
     assertText(input.commitmentKey, 'commitmentKey');
-    return this.prisma.$transaction(async tx => {
+    return withPrismaTransactionRetry(() => this.prisma.$transaction(async tx => {
       const existing = await tx.provablyFairSeed.findUnique({
         where: { commitmentKey: input.commitmentKey }
       });
@@ -151,12 +152,12 @@ export class PrismaProvablyFairSeedService {
         }
       });
       return prismaSeedRecord(created);
-    }, { isolationLevel: 'Serializable' });
+    }, { isolationLevel: 'Serializable' }));
   }
 
   async reveal(input: { seedId: string; roundId?: string }): Promise<ProvablyFairSeedRecord> {
     assertText(input.seedId, 'seedId');
-    return this.prisma.$transaction(async tx => {
+    return withPrismaTransactionRetry(() => this.prisma.$transaction(async tx => {
       const record = await tx.provablyFairSeed.findUnique({
         where: { id: input.seedId }
       });
@@ -181,7 +182,7 @@ export class PrismaProvablyFairSeedService {
         }
       });
       return prismaSeedRecord(revealed);
-    }, { isolationLevel: 'Serializable' });
+    }, { isolationLevel: 'Serializable' }));
   }
 
   async get(seedId: string): Promise<ProvablyFairSeedRecord | undefined> {

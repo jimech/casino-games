@@ -79,7 +79,7 @@ const main = async () => {
   const wallet = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   assertEqual(wallet.available, 100000, 'initial Prisma wallet balance');
 
-  const spin = await postJsonWithRetry(`${baseUrl}/api/games/slots/spin`, userSession.token, {
+  const spin = await postJson(`${baseUrl}/api/games/slots/spin`, userSession.token, {
     machineId: 'fruit-mania',
     bet: 10,
     idempotencyKey: `prisma-api-slots-${suffix}`
@@ -157,27 +157,6 @@ const postJson = async (url: string, token: string, body: Record<string, unknown
   const payload = await response.json();
   if (!response.ok) throw new Error(`POST ${url} failed: ${response.status} ${JSON.stringify(payload)}`);
   return payload;
-};
-
-const postJsonWithRetry = async (url: string, token: string, body: Record<string, unknown>) => {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      return await postJson(url, token, body);
-    } catch (error) {
-      lastError = error;
-      if (!isTransientWriteConflict(error) || attempt === 3) break;
-      await delay(250 * attempt);
-    }
-  }
-
-  throw lastError;
-};
-
-const isTransientWriteConflict = (error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('write conflict') || message.includes('deadlock');
 };
 
 const assertEqual = (actual: unknown, expected: unknown, label: string) => {

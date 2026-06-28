@@ -1139,6 +1139,24 @@ Acceptance criteria:
 - Cleanup runs even when smoke assertions fail after user creation.
 - Existing smoke assertions still cover wallet settlement, slots, proof verification, seed lifecycle, and admin evidence integrity.
 
+### T55 - Prisma Transaction Retry Hardening
+
+Summary: Retry transient serializable transaction conflicts in the Prisma casino wallet service.
+
+Implementation status: Complete. Prisma casino money-moving writes and provably fair seed lifecycle writes now run through a shared serializable transaction wrapper that retries transient write-conflict, deadlock, and serialization-failure errors. The retry stays behind existing idempotency keys for wallet credits, debits, bet locks, settlement, refunds, outcome updates, added stakes, and seed commitments, preserving business invariants while making the persistent backend more tolerant of real database contention.
+
+Scope:
+- Shared retry wrapper for Prisma serializable write transactions.
+- Retry detection for Prisma `P2034` conflicts and equivalent database messages.
+- Coverage across wallet credit/debit, bet lock, settlement, refund, outcome update, added stake, seed commit, and seed reveal paths.
+- Keep smoke scripts as plain API checks so resilience is proven in the backend service.
+
+Acceptance criteria:
+- Transient Prisma write conflicts are retried before surfacing to API callers.
+- Non-transient validation and business-rule errors are not retried.
+- Existing idempotency behavior remains unchanged.
+- `npm run smoke:api:prisma` can pass without its own write-conflict retry shim.
+
 ## First Working Sequence
 
 Start here:

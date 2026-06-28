@@ -13,6 +13,7 @@ import {
 } from './casinoService';
 import { LedgerEntry, WalletState } from '../domain/ledger';
 import { asMoney } from '../domain/money';
+import { withPrismaTransactionRetry } from './db/prismaTransaction';
 
 type TransactionClient = Omit<
   PrismaClient,
@@ -61,7 +62,7 @@ export class PrismaCasinoService {
     const amount = BigInt(asMoney(input.amount));
     const userId = await this.resolveUserId(input.userId);
 
-    return this.prisma.$transaction(async tx => {
+    return this.writeTransaction(async tx => {
       const existing = await tx.walletLedgerEntry.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
         include: { wallet: true }
@@ -97,7 +98,7 @@ export class PrismaCasinoService {
       });
 
       return walletToState(updatedWallet);
-    }, { isolationLevel: SERIALIZABLE });
+    });
   }
 
   async debitWallet(input: DebitWalletInput): Promise<WalletState> {
@@ -106,7 +107,7 @@ export class PrismaCasinoService {
     const amount = BigInt(asMoney(input.amount));
     const userId = await this.resolveUserId(input.userId);
 
-    return this.prisma.$transaction(async tx => {
+    return this.writeTransaction(async tx => {
       const existing = await tx.walletLedgerEntry.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
         include: { wallet: true }
@@ -145,7 +146,7 @@ export class PrismaCasinoService {
       });
 
       return walletToState(updatedWallet);
-    }, { isolationLevel: SERIALIZABLE });
+    });
   }
 
   async listRounds(userId?: string): Promise<GameRoundRecord[]> {
@@ -170,7 +171,7 @@ export class PrismaCasinoService {
     const stake = BigInt(asMoney(input.stake));
     const userId = await this.resolveUserId(input.userId);
 
-    return this.prisma.$transaction(async tx => {
+    return this.writeTransaction(async tx => {
       const existing = await tx.gameRound.findUnique({
         where: { lockIdempotencyKey: input.idempotencyKey }
       });
@@ -230,7 +231,7 @@ export class PrismaCasinoService {
       });
 
       return roundToRecord(round);
-    }, { isolationLevel: SERIALIZABLE });
+    });
   }
 
   async settleRound(input: SettleRoundInput): Promise<GameRoundRecord> {
@@ -238,7 +239,7 @@ export class PrismaCasinoService {
     assertText(input.idempotencyKey, 'idempotencyKey');
     const payout = BigInt(asMoney(input.payout));
 
-    return this.prisma.$transaction(async tx => {
+    return this.writeTransaction(async tx => {
       const round = await requireRound(tx, input.roundId);
       const outcome = toJson(input.outcome);
       if (round.status === 'settled') {
@@ -305,14 +306,14 @@ export class PrismaCasinoService {
       });
 
       return roundToRecord(settled);
-    }, { isolationLevel: SERIALIZABLE });
+    });
   }
 
   async refundRound(input: RefundRoundInput): Promise<GameRoundRecord> {
     assertText(input.roundId, 'roundId');
     assertText(input.idempotencyKey, 'idempotencyKey');
 
-    return this.prisma.$transaction(async tx => {
+    return this.writeTransaction(async tx => {
       const round = await requireRound(tx, input.roundId);
       if (round.status === 'refunded') {
         if (round.settlementIdempotencyKey === input.idempotencyKey) return roundToRecord(round);
@@ -373,12 +374,12 @@ export class PrismaCasinoService {
       });
 
       return roundToRecord(refunded);
-    }, { isolationLevel: SERIALIZABLE });
+    });
   }
 
   async updateRoundOutcome(input: UpdateRoundOutcomeInput): Promise<GameRoundRecord> {
     assertText(input.roundId, 'roundId');
-    return this.prisma.$transaction(async tx => {
+    return this.writeTransaction(async tx => {
       const round = await requireRound(tx, input.roundId);
       if (round.status !== 'open') throw new Error(`Round ${round.id} is not open`);
       const outcome = toJson(input.outcome);
@@ -398,7 +399,7 @@ export class PrismaCasinoService {
         }
       });
       return roundToRecord(updated);
-    }, { isolationLevel: SERIALIZABLE });
+    });
   }
 
   async addRoundStake(input: AddRoundStakeInput): Promise<GameRoundRecord> {
@@ -406,7 +407,7 @@ export class PrismaCasinoService {
     assertText(input.idempotencyKey, 'idempotencyKey');
     const amount = BigInt(asMoney(input.amount));
 
-    return this.prisma.$transaction(async tx => {
+    return this.writeTransaction(async tx => {
       const existingLedger = await tx.walletLedgerEntry.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
         include: { round: true }
@@ -470,7 +471,7 @@ export class PrismaCasinoService {
       });
 
       return roundToRecord(updatedRound);
-    }, { isolationLevel: SERIALIZABLE });
+    });
   }
 
   private async resolveUserId(userIdOrUsername: string): Promise<string> {
@@ -486,6 +487,12 @@ export class PrismaCasinoService {
     });
     if (!user) throw new Error(`User not found: ${userIdOrUsername}`);
     return user.id;
+  }
+
+  private async writeTransaction<T>(operation: (tx: TransactionClient) => Promise<T>): Promise<T> {
+    return withPrismaTransactionRetry(() =>
+      this.prisma.$transaction(operation, { isolationLevel: SERIALIZABLE })
+    );
   }
 }
 
