@@ -27,7 +27,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService } = createServices();
+const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService, idempotencyService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
@@ -1542,7 +1542,13 @@ app.post('/api/games/slots/spin', async (req, res) => {
   try {
     const user = await requireAuth(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'slots');
-    await assertSlotsIdempotencyCompatible(user.id, idempotencyKey, req.body);
+    await idempotencyService.assertRequest({
+      userId: user.id,
+      scope: 'slots.spin',
+      idempotencyKey,
+      payload: slotsSpinIdempotencyPayload(req.body),
+      metadata: { route: '/api/games/slots/spin' }
+    });
     const seed = await revealProvablyFairSeed(
       await commitProvablyFairSeed(user.id, 'slots', idempotencyKey, req.body.clientSeed)
     );
@@ -2441,29 +2447,15 @@ function requestIdempotencyKey(value: unknown, prefix: string): string {
   return typeof value === 'string' && value ? value : `${prefix}-${randomBytes(16).toString('hex')}`;
 }
 
-async function assertSlotsIdempotencyCompatible(userId: string, idempotencyKey: string, body: unknown): Promise<void> {
-  if (!isRecord(body)) return;
-  const existingRound = (await casinoService.listRounds(userId))
-    .find(round => round.lockIdempotencyKey === `${idempotencyKey}:lock`);
-  if (!existingRound) return;
-  if (!isRecord(existingRound.outcome) || existingRound.outcome.game !== 'slots') {
-    throw new Error('Idempotency conflict: key was previously used for a different operation');
-  }
-
-  const requestedMachineId = String(body.machineId ?? '');
-  const requestedBet = Number(body.bet);
-  const requestedFreeSpin = Boolean(body.freeSpin);
-  const requestedBonusMultiplier = Number(body.bonusMultiplier ?? (requestedFreeSpin ? 3 : 1));
-  const existingBonusMultiplier = Number(existingRound.outcome.bonusMultiplier ?? 1);
-
-  if (
-    existingRound.outcome.machineId !== requestedMachineId ||
-    Number(existingRound.outcome.bet) !== requestedBet ||
-    Boolean(existingRound.outcome.freeSpin) !== requestedFreeSpin ||
-    existingBonusMultiplier !== requestedBonusMultiplier
-  ) {
-    throw new Error('Idempotency conflict: key was replayed with different slots parameters');
-  }
+function slotsSpinIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  const freeSpin = Boolean(record.freeSpin);
+  return {
+    machineId: String(record.machineId ?? ''),
+    bet: Number(record.bet),
+    freeSpin,
+    bonusMultiplier: Number(record.bonusMultiplier ?? (freeSpin ? 3 : 1))
+  };
 }
 
 async function commitProvablyFairSeed(

@@ -171,6 +171,14 @@ const main = async () => {
     seed.status === 'revealed' && seed.roundId === firstReplay.round.id && typeof seed.serverSeed === 'string'
   );
   assertEqual(conflictSeedMatches.length, 1, 'Prisma API conflict seed record count unchanged');
+  const replayRegistryCount = await prisma.idempotencyRequest.count({
+    where: {
+      userId: userSession.user.id,
+      scope: 'slots.spin',
+      idempotencyKey: replayKey
+    }
+  });
+  assertEqual(replayRegistryCount, 1, 'Prisma API replay registry record count');
 
   const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   const stressBet = 10;

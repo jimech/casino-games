@@ -122,6 +122,7 @@ model User {
   tournamentRefunds TournamentRefund[]
   provablyFairSeeds ProvablyFairSeed[]
   provablyFairSeedNonces ProvablyFairSeedNonce[]
+  idempotencyRequests IdempotencyRequest[]
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
@@ -583,6 +584,24 @@ model GameRound {
   @@index([gameId, createdAt])
   @@index([status])
   @@map("game_rounds")
+}
+
+model IdempotencyRequest {
+  id             String   @id @default(cuid())
+  userId         String
+  scope          String
+  idempotencyKey String
+  fingerprint    String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([scope, createdAt])
+  @@map("idempotency_requests")
 }
 
 model ProvablyFairSeed {

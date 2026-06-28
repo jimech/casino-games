@@ -1249,6 +1249,25 @@ Acceptance criteria:
 - Wallet and locked balances stay unchanged after conflict rejection.
 - Ledger and seed counts for the original replayed round stay unchanged.
 
+### T61 - General Idempotency Conflict Registry
+
+Summary: Persist request fingerprints for idempotency keys and use them for conflict detection.
+
+Implementation status: Complete. The platform now has a shared memory/Prisma idempotency service that stores a stable request fingerprint per user, scope, and idempotency key. Prisma mode persists those fingerprints in `idempotency_requests` with user cascade cleanup and a unique `(userId, scope, idempotencyKey)` constraint. Slot spins now use the registry for exact replay/conflict semantics, replacing the previous route-specific round comparison. The Prisma API smoke verifies the replay key is recorded once while exact replay succeeds and changed-parameter replay returns `409`.
+
+Scope:
+- Memory and Prisma idempotency request registry.
+- Prisma model and migration for durable request fingerprints.
+- Stable canonical payload hashing for replay comparison.
+- Slot-spin route integration as the first registry-backed operation.
+- Prisma API smoke assertion for persisted registry count.
+
+Acceptance criteria:
+- Exact same-key request fingerprints are accepted as replays.
+- Changed same-key fingerprints are rejected with `409`.
+- Prisma mode persists one registry record per user/scope/key.
+- Deleting smoke users cascades registry records during cleanup.
+
 ## First Working Sequence
 
 Start here:
