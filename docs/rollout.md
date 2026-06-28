@@ -51,7 +51,7 @@ npm run db:deploy
 npm run db:seed
 ```
 
-4. Smoke test Prisma persistence.
+4. Smoke test Prisma persistence. This now covers wallet settlement and provably fair seed commit/reveal/list persistence.
 
 ```bash
 npm run smoke:prisma

@@ -1,3 +1,10 @@
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'NotificationType') THEN
+    CREATE TYPE "NotificationType" AS ENUM ('system', 'bonus', 'wallet', 'risk', 'support', 'admin');
+  END IF;
+END $$;
+
 CREATE TABLE "notification_preferences" (
   "id" TEXT NOT NULL,
   "userId" TEXT NOT NULL,

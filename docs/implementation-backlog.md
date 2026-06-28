@@ -1085,6 +1085,24 @@ Acceptance criteria:
 - Revealed records can link to settled rounds.
 - Public seed lists hide server seeds until reveal.
 
+### T52 - Prisma Seed Lifecycle Smoke Path
+
+Summary: Extend Prisma-mode smoke coverage for persisted provably fair seed lifecycle records.
+
+Implementation status: Complete. The Prisma smoke script now verifies the persisted seed lifecycle path in addition to wallet settlement. It commits a provably fair seed through `PrismaProvablyFairSeedService`, verifies duplicate commitment idempotency, reveals the seed with round linkage, and confirms the user-visible seed list exposes the revealed server seed. This gives production-mode operators a focused smoke check after running `npm run db:deploy`.
+
+Scope:
+- Prisma smoke coverage for seed commit/reveal/list.
+- Duplicate commitment idempotency assertion.
+- Round-linked reveal assertion.
+- Revealed server seed visibility assertion.
+
+Acceptance criteria:
+- `npm run smoke:prisma` exercises persisted seed lifecycle records.
+- The smoke fails if commitment idempotency breaks.
+- The smoke fails if reveal or round linkage is not persisted.
+- The smoke remains separate from memory-mode `npm run quality` because it requires a real configured database.
+
 ## First Working Sequence
 
 Start here:
