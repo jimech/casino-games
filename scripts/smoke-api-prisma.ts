@@ -180,6 +180,62 @@ const main = async () => {
   });
   assertEqual(replayRegistryCount, 1, 'Prisma API replay registry record count');
 
+  const rouletteKey = `prisma-api-roulette-replay-${suffix}`;
+  const roulettePayload = {
+    bets: {
+      outside: {
+        red: 10
+      }
+    },
+    idempotencyKey: rouletteKey
+  };
+  const rouletteFirst = await postJson(`${baseUrl}/api/games/roulette/spin`, userSession.token, roulettePayload);
+  const rouletteReplay = await postJson(`${baseUrl}/api/games/roulette/spin`, userSession.token, roulettePayload);
+  assertEqual(rouletteReplay.round.id, rouletteFirst.round.id, 'Prisma API roulette replay round id');
+  await postJsonExpectStatus(`${baseUrl}/api/games/roulette/spin`, userSession.token, {
+    bets: {
+      outside: {
+        black: 10
+      }
+    },
+    idempotencyKey: rouletteKey
+  }, 409);
+  const rouletteRegistryCount = await prisma.idempotencyRequest.count({
+    where: {
+      userId: userSession.user.id,
+      scope: 'roulette.spin',
+      idempotencyKey: rouletteKey
+    }
+  });
+  assertEqual(rouletteRegistryCount, 1, 'Prisma API roulette registry record count');
+
+  const crashKey = `prisma-api-crash-replay-${suffix}`;
+  const crashFirst = await postJson(`${baseUrl}/api/games/crash/start`, userSession.token, {
+    stake: 10,
+    idempotencyKey: crashKey
+  });
+  const crashReplay = await postJson(`${baseUrl}/api/games/crash/start`, userSession.token, {
+    stake: 10,
+    idempotencyKey: crashKey
+  });
+  assertEqual(crashReplay.round.id, crashFirst.round.id, 'Prisma API crash replay round id');
+  await postJsonExpectStatus(`${baseUrl}/api/games/crash/start`, userSession.token, {
+    stake: 20,
+    idempotencyKey: crashKey
+  }, 409);
+  const crashRegistryCount = await prisma.idempotencyRequest.count({
+    where: {
+      userId: userSession.user.id,
+      scope: 'crash.start',
+      idempotencyKey: crashKey
+    }
+  });
+  assertEqual(crashRegistryCount, 1, 'Prisma API crash registry record count');
+  await postJson(`${baseUrl}/api/games/crash/${crashFirst.round.id}/cashout`, userSession.token, {
+    cashoutMultiplier: 1,
+    idempotencyKey: `${crashKey}-cashout`
+  });
+
   const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   const stressBet = 10;
   const stressSpins = await Promise.all(

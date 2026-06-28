@@ -1451,6 +1451,13 @@ app.post('/api/games/roulette/spin', async (req, res) => {
   try {
     const user = await requireAuth(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'roulette');
+    await idempotencyService.assertRequest({
+      userId: user.id,
+      scope: 'roulette.spin',
+      idempotencyKey,
+      payload: rouletteSpinIdempotencyPayload(req.body),
+      metadata: { route: '/api/games/roulette/spin' }
+    });
     const seed = await revealProvablyFairSeed(
       await commitProvablyFairSeed(user.id, 'roulette', idempotencyKey, req.body.clientSeed)
     );
@@ -1485,6 +1492,13 @@ app.post('/api/games/crash/start', async (req, res) => {
   try {
     const user = await requireAuth(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'crash');
+    await idempotencyService.assertRequest({
+      userId: user.id,
+      scope: 'crash.start',
+      idempotencyKey,
+      payload: crashStartIdempotencyPayload(req.body),
+      metadata: { route: '/api/games/crash/start' }
+    });
     const seed = await commitProvablyFairSeed(user.id, 'crash', idempotencyKey, req.body.clientSeed);
     const intervention = await evaluateResponsiblePlay({
       userId: user.id,
@@ -2456,6 +2470,27 @@ function slotsSpinIdempotencyPayload(body: unknown) {
     freeSpin,
     bonusMultiplier: Number(record.bonusMultiplier ?? (freeSpin ? 3 : 1))
   };
+}
+
+function rouletteSpinIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    bets: normalizeJson(record.bets)
+  };
+}
+
+function crashStartIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    stake: Number(record.stake)
+  };
+}
+
+function normalizeJson(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(normalizeJson);
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(Object.keys(record).sort().map(key => [key, normalizeJson(record[key])]));
 }
 
 async function commitProvablyFairSeed(

@@ -1268,6 +1268,25 @@ Acceptance criteria:
 - Prisma mode persists one registry record per user/scope/key.
 - Deleting smoke users cascades registry records during cleanup.
 
+### T62 - Expand Idempotency Registry to Roulette and Crash
+
+Summary: Apply shared idempotency request fingerprints to roulette spin and crash start APIs.
+
+Implementation status: Complete. Roulette spins and crash round starts now use the shared idempotency registry before seed or wallet work begins. Roulette fingerprints canonicalize the bet slip, while crash-start fingerprints capture the stake. The Prisma API smoke now verifies exact replay and changed-parameter conflict behavior for slots, roulette, and crash start, and confirms each scope persists exactly one registry row for the replay key.
+
+Scope:
+- Registry-backed `/api/games/roulette/spin` requests.
+- Registry-backed `/api/games/crash/start` requests.
+- Canonical roulette bet-slip payloads for request fingerprinting.
+- Prisma API smoke replay/conflict assertions for roulette and crash start.
+
+Acceptance criteria:
+- Roulette same-key exact replay returns the original round.
+- Roulette same-key changed bet slip returns `409`.
+- Crash start same-key exact replay returns the original round.
+- Crash start same-key changed stake returns `409`.
+- Prisma registry records one row per user/scope/key for these replay checks.
+
 ## First Working Sequence
 
 Start here:
