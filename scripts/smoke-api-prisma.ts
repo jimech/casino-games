@@ -105,6 +105,45 @@ const main = async () => {
   assertEqual(adminEvidence.provablyFair.valid, true, 'Prisma admin evidence proof valid');
   assertEqual(adminEvidence.integrity.provablyFairProofCount, 1, 'Prisma admin evidence proof count');
 
+  const walletBeforeReplay = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
+  const replayBet = 10;
+  const replayKey = `prisma-api-replay-slots-${suffix}`;
+  const [firstReplay, secondReplay] = await Promise.all([
+    postJson(`${baseUrl}/api/games/slots/spin`, userSession.token, {
+      machineId: 'fruit-mania',
+      bet: replayBet,
+      idempotencyKey: replayKey
+    }),
+    postJson(`${baseUrl}/api/games/slots/spin`, userSession.token, {
+      machineId: 'fruit-mania',
+      bet: replayBet,
+      idempotencyKey: replayKey
+    })
+  ]);
+  assertEqual(secondReplay.round.id, firstReplay.round.id, 'Prisma API replay round id');
+  assertEqual(secondReplay.round.payout, firstReplay.round.payout, 'Prisma API replay payout');
+
+  const walletAfterReplay = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
+  const expectedReplayAvailable = walletBeforeReplay.available - replayBet + Number(firstReplay.round.payout ?? 0);
+  assertEqual(walletAfterReplay.available, expectedReplayAvailable, 'Prisma API replay wallet available');
+  assertEqual(walletAfterReplay.locked, 0, 'Prisma API replay wallet locked');
+
+  const replayLedger = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}/ledger`, userSession.token);
+  const replayLocks = replayLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === `${replayKey}:lock` && entry.type === 'lock'
+  );
+  const replaySettlements = replayLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === `${replayKey}:settle` && (entry.type === 'settleWin' || entry.type === 'settleLoss')
+  );
+  assertEqual(replayLocks.length, 1, 'Prisma API replay lock ledger count');
+  assertEqual(replaySettlements.length, 1, 'Prisma API replay settlement ledger count');
+
+  const replaySeeds = await getJson(`${baseUrl}/api/provably-fair/seeds`, userSession.token);
+  const replaySeedMatches = replaySeeds.seeds.filter((seed: { status: string; roundId?: string; serverSeed?: string }) =>
+    seed.status === 'revealed' && seed.roundId === firstReplay.round.id && typeof seed.serverSeed === 'string'
+  );
+  assertEqual(replaySeedMatches.length, 1, 'Prisma API replay seed record count');
+
   const walletBeforeStress = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   const stressBet = 10;
   const stressSpins = await Promise.all(
@@ -146,6 +185,7 @@ const main = async () => {
   }
 
   console.log('API Prisma smoke passed', {
+    replayRoundId: firstReplay.round.id,
     stressSpins: stressSpins.length,
     stressPayout,
     walletAfterStress

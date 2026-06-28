@@ -1213,6 +1213,24 @@ Acceptance criteria:
 - Ledger entries prove one lock and one settlement per stress spin.
 - The stress path runs inside `npm run smoke:api:prisma`.
 
+### T59 - Idempotency Replay API Smoke
+
+Summary: Prove concurrent HTTP replay requests with the same idempotency key do not double-apply wallet or seed effects.
+
+Implementation status: Complete. The Prisma API smoke now sends two concurrent `/api/games/slots/spin` requests with the same idempotency key, verifies both responses resolve to the same settled round and payout, checks the final wallet balance only reflects one charged stake and one payout, confirms exactly one lock and one settlement ledger entry exist for the replay key, and verifies exactly one revealed provably fair seed record is linked to the replayed round.
+
+Scope:
+- Concurrent same-key slot spin replay through the bundled Express server.
+- Wallet available/locked invariant after replay.
+- Ledger idempotency assertions for lock and settlement entries.
+- Provably fair seed replay assertion for the linked round.
+
+Acceptance criteria:
+- Same-key concurrent API replays return the same round.
+- Wallet balance changes once, not once per replay request.
+- Ledger contains one lock and one settlement entry for the replay key.
+- Provably fair seed lifecycle records are not duplicated for the replayed round.
+
 ## First Working Sequence
 
 Start here:
