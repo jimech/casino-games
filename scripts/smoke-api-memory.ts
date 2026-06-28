@@ -139,6 +139,9 @@ const main = async () => {
     idempotencyKey: 'quality-bonus-welcome'
   });
   assertEqual(bonus.wallet.available, 100500, 'bonus wallet credit');
+  await postJsonExpectStatus(`${baseUrl}/api/bonuses/daily-free-credits-100/claim`, adminSession.token, {
+    idempotencyKey: 'quality-bonus-welcome'
+  }, 409);
 
   const notificationList = await getJson(`${baseUrl}/api/notifications`, adminSession.token);
   if (!notificationList.notifications.some((notification: { type: string }) => notification.type === 'bonus')) {
@@ -180,6 +183,11 @@ const main = async () => {
     idempotencyKey: 'quality-risk-bet'
   });
   assertEqual(bet.wallet.available, 99000, 'high-stake bet wallet lock');
+  await postJsonExpectStatus(`${baseUrl}/api/bets`, adminSession.token, {
+    gameId: 'roulette',
+    stake: 500,
+    idempotencyKey: 'quality-risk-bet'
+  }, 409);
 
   const roundEvidence = await getJson(`${baseUrl}/api/admin/rounds/${bet.round.id}`, adminSession.token);
   assertEqual(roundEvidence.round.id, bet.round.id, 'admin round evidence id');
@@ -208,6 +216,11 @@ const main = async () => {
     outcome: { source: 'vip-smoke-loss' }
   });
   assertEqual(settledVipRound.round.status, 'settled', 'vip smoke round settled');
+  await postJsonExpectStatus(`${baseUrl}/api/rounds/${bet.round.id}/settle`, adminSession.token, {
+    payout: 100,
+    idempotencyKey: 'quality-vip-settle',
+    outcome: { source: 'vip-smoke-loss' }
+  }, 409);
   const vipStatus = await getJson(`${baseUrl}/api/vip/status`, adminSession.token);
   assertEqual(vipStatus.status.tier.id, 'silver', 'vip tier after settled stake');
   if (vipStatus.status.availableCashback <= 0) {
@@ -217,6 +230,10 @@ const main = async () => {
     idempotencyKey: 'quality-vip-cashback'
   });
   assertEqual(vipCashback.claim.campaignId, 'vip-weekly-cashback', 'vip cashback campaign id');
+  const vipCashbackReplay = await postJson(`${baseUrl}/api/vip/cashback/claim`, adminSession.token, {
+    idempotencyKey: 'quality-vip-cashback'
+  });
+  assertEqual(vipCashbackReplay.claim.id, vipCashback.claim.id, 'vip cashback exact replay claim id');
   if (vipCashback.wallet.available <= 99000) {
     throw new Error('Expected VIP cashback to credit the wallet');
   }
@@ -244,6 +261,9 @@ const main = async () => {
     idempotencyKey: 'quality-tournament-entry'
   });
   assertEqual(tournamentEntry.wallet.available, walletBeforeTournament - activeTournament.entryFee, 'tournament entry fee wallet debit');
+  await postJsonExpectStatus(`${baseUrl}/api/tournaments/${cancellableTournament.id}/enter`, adminSession.token, {
+    idempotencyKey: 'quality-tournament-entry'
+  }, 409);
   const duplicateTournamentEntry = await postJson(`${baseUrl}/api/tournaments/${activeTournament.id}/enter`, adminSession.token, {
     idempotencyKey: 'quality-tournament-entry-duplicate'
   });
@@ -259,6 +279,10 @@ const main = async () => {
   if (!tournamentCancellation.cancellation.refunds.some((refund: { userId: string; amount: number }) => refund.userId === adminSession.user.id && refund.amount === cancellableTournament.entryFee)) {
     throw new Error('Expected tournament cancellation to refund the entry fee');
   }
+  await postJsonExpectStatus(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/cancel`, adminSession.token, {
+    reason: 'Changed cancellation reason',
+    idempotencyKey: 'quality-tournament-cancel'
+  }, 409);
   const duplicateTournamentCancellation = await postJson(`${baseUrl}/api/admin/tournaments/${cancellableTournament.id}/cancel`, adminSession.token, {
     reason: 'Duplicate cancellation',
     idempotencyKey: 'quality-tournament-cancel-duplicate'
@@ -321,6 +345,11 @@ const main = async () => {
     now: new Date(new Date(activeTournament.endAt).getTime() + 1000).toISOString()
   });
   assertEqual(settlementJob.report.mode, 'dry_run', 'tournament settlement job dry-run mode');
+  await postJsonExpectStatus(`${baseUrl}/api/admin/tournaments/jobs/settlement-scan`, adminSession.token, {
+    autoSettle: true,
+    idempotencyKey: 'quality-tournament-job-dry-run',
+    now: new Date(new Date(activeTournament.endAt).getTime() + 1000).toISOString()
+  }, 409);
   if (!settlementJob.report.rows.some((row: { tournament: { id: string }; flags: { needsSettlement: boolean } }) => row.tournament.id === activeTournament.id && row.flags.needsSettlement)) {
     throw new Error('Expected tournament settlement job to detect ended unsettled tournament');
   }
@@ -362,6 +391,10 @@ const main = async () => {
   if (!tournamentSettlement.settlement.payouts.some((payout: { userId: string; amount: number; rank: number }) => payout.userId === adminSession.user.id && payout.amount === activeTournament.prizePool && payout.rank === 1)) {
     throw new Error('Expected tournament settlement to pay the ranked winner');
   }
+  await postJsonExpectStatus(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/settle`, adminSession.token, {
+    idempotencyKey: 'quality-tournament-settle',
+    now: new Date(new Date(activeTournament.endAt).getTime() + 2000).toISOString()
+  }, 409);
   const duplicateTournamentSettlement = await postJson(`${baseUrl}/api/admin/tournaments/${activeTournament.id}/settle`, adminSession.token, {
     idempotencyKey: 'quality-tournament-settle-duplicate',
     now: new Date(new Date(activeTournament.endAt).getTime() + 1000).toISOString()
@@ -698,6 +731,22 @@ const postJson = async (url: string, token: string, body: Record<string, unknown
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(`POST ${url} failed: ${response.status} ${JSON.stringify(payload)}`);
+  return payload;
+};
+
+const postJsonExpectStatus = async (url: string, token: string, body: Record<string, unknown>, status: number) => {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (response.status !== status) {
+    throw new Error(`POST ${url} expected ${status}, received ${response.status}: ${JSON.stringify(payload)}`);
+  }
   return payload;
 };
 

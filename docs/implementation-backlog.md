@@ -1349,6 +1349,26 @@ Acceptance criteria:
 - Stored response replay does not rebroadcast wallet changes or reassess settled risk.
 - Local quality gate passes.
 
+### T66 - Registry-Backed Non-Game Idempotency
+
+Summary: Apply shared idempotency fingerprints and stored-response replay to non-game money and operations routes.
+
+Implementation status: Complete. Bonus claim, VIP cashback, raw wallet bet, round settlement, round refund, tournament entry, admin tournament cancellation, admin tournament settlement, and tournament settlement-scan routes now use the shared idempotency registry before mutating state. Successful exact replays return stored responses and skip duplicate wallet broadcasts, notifications, AI/audit events, and risk assessment side effects. Changed same-key payloads return `409 Idempotency conflict`. The memory API smoke verifies conflict behavior across bonus, wallet bet, round settlement, tournament entry, tournament cancellation, settlement job, and tournament settlement routes; the Prisma API smoke is prepared with focused raw-wallet and bonus replay/conflict checks for approved live DB runs.
+
+Scope:
+- Stored-response idempotency for bonus claim and VIP cashback claim.
+- Stored-response idempotency for `/api/bets`, `/api/rounds/:roundId/settle`, and `/api/rounds/:roundId/refund`.
+- Stored-response idempotency for tournament entry, cancellation, settlement, and settlement-scan job routes.
+- Canonical payload fingerprints for non-game mutation parameters.
+- Memory API smoke coverage for non-game changed-parameter conflicts.
+- Prisma API smoke coverage for wallet bet and bonus claim replay/conflict paths.
+
+Acceptance criteria:
+- Changed same-key non-game mutation payloads return `409`.
+- Exact replays return stored responses instead of duplicating notifications, AI events, risk events, or wallet broadcasts.
+- Existing service-level idempotency remains intact behind route-level conflict protection.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

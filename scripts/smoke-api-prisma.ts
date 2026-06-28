@@ -79,6 +79,40 @@ const main = async () => {
   const wallet = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   assertEqual(wallet.available, 100000, 'initial Prisma wallet balance');
 
+  const walletBetKey = `prisma-api-wallet-bet-${suffix}`;
+  const walletBet = await postJson(`${baseUrl}/api/bets`, userSession.token, {
+    gameId: 'roulette',
+    stake: 15,
+    idempotencyKey: walletBetKey
+  });
+  const walletBetReplay = await postJson(`${baseUrl}/api/bets`, userSession.token, {
+    gameId: 'roulette',
+    stake: 15,
+    idempotencyKey: walletBetKey
+  });
+  assertEqual(walletBetReplay.round.id, walletBet.round.id, 'Prisma API wallet bet replay round id');
+  await postJsonExpectStatus(`${baseUrl}/api/bets`, userSession.token, {
+    gameId: 'roulette',
+    stake: 20,
+    idempotencyKey: walletBetKey
+  }, 409);
+  await postJson(`${baseUrl}/api/rounds/${walletBet.round.id}/refund`, userSession.token, {
+    idempotencyKey: `${walletBetKey}-refund`,
+    reason: 'prisma-api-smoke-cleanup'
+  });
+
+  const bonusKey = `prisma-api-bonus-claim-${suffix}`;
+  const bonusClaim = await postJson(`${baseUrl}/api/bonuses/welcome-match-500/claim`, userSession.token, {
+    idempotencyKey: bonusKey
+  });
+  const bonusClaimReplay = await postJson(`${baseUrl}/api/bonuses/welcome-match-500/claim`, userSession.token, {
+    idempotencyKey: bonusKey
+  });
+  assertEqual(bonusClaimReplay.claim.id, bonusClaim.claim.id, 'Prisma API bonus claim replay claim id');
+  await postJsonExpectStatus(`${baseUrl}/api/bonuses/daily-free-credits-100/claim`, userSession.token, {
+    idempotencyKey: bonusKey
+  }, 409);
+
   const spin = await postJson(`${baseUrl}/api/games/slots/spin`, userSession.token, {
     machineId: 'fruit-mania',
     bet: 10,

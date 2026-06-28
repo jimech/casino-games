@@ -226,23 +226,34 @@ app.get('/api/tournaments', async (req, res) => {
 app.post('/api/tournaments/:id/enter', async (req, res) => {
   try {
     const user = await requireAuth(req);
-    const result = await tournamentService.enter({
-      tournamentId: req.params.id,
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,
-      idempotencyKey: String(req.body.idempotencyKey ?? '')
-    });
-    broadcastWallet(user.id, result.wallet);
-    await trackAiEventSafely({
-      userId: user.id,
-      category: 'game',
-      name: 'tournament_entered',
-      context: {
-        tournamentId: result.tournament.id,
-        entryId: result.entry.id,
-        entryFee: result.entry.entryFee,
-        ledgerEntryId: result.entry.ledgerEntryId
-      }
-    });
+      scope: 'tournament.enter',
+      idempotencyKey,
+      payload: tournamentEnterIdempotencyPayload(req.params.id),
+      metadata: { route: '/api/tournaments/:id/enter', tournamentId: req.params.id }
+    }, () => tournamentService.enter({
+        tournamentId: req.params.id,
+        userId: user.id,
+        idempotencyKey
+      })
+    );
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(user.id, result.wallet);
+      await trackAiEventSafely({
+        userId: user.id,
+        category: 'game',
+        name: 'tournament_entered',
+        context: {
+          tournamentId: result.tournament.id,
+          entryId: result.entry.id,
+          entryFee: result.entry.entryFee,
+          ledgerEntryId: result.entry.ledgerEntryId
+        }
+      });
+    }
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -310,13 +321,23 @@ app.get('/api/provably-fair/seeds', async (req, res) => {
 app.post('/api/admin/tournaments/jobs/settlement-scan', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
-    const report = await runTournamentSettlementJob({
-      adminUserId: admin.id,
-      autoSettle: Boolean(req.body.autoSettle),
-      idempotencyKey: typeof req.body.idempotencyKey === 'string' ? req.body.idempotencyKey : undefined,
-      now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
-    });
-    res.status(201).json({ report });
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
+      userId: admin.id,
+      scope: 'admin.tournament.settlement-scan',
+      idempotencyKey,
+      payload: tournamentSettlementJobIdempotencyPayload(req.body),
+      metadata: { route: '/api/admin/tournaments/jobs/settlement-scan' }
+    }, async () => ({
+        report: await runTournamentSettlementJob({
+          adminUserId: admin.id,
+          autoSettle: Boolean(req.body.autoSettle),
+          idempotencyKey,
+          now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
+        })
+      })
+    );
+    res.status(201).json(idempotentResult.body);
   } catch (error) {
     sendApiError(res, error);
   }
@@ -371,40 +392,53 @@ app.get('/api/admin/tournaments/:id/evidence-export', async (req, res) => {
 app.post('/api/admin/tournaments/:id/cancel', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
-    const cancellation = await tournamentService.cancel({
-      tournamentId: req.params.id,
-      reason: String(req.body.reason ?? ''),
-      idempotencyKey: String(req.body.idempotencyKey ?? ''),
-      now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
-    });
-    await Promise.all(cancellation.refunds.map(async refund => {
-      broadcastWallet(refund.userId, await casinoService.getWallet(refund.userId));
-      await notificationService.create({
-        userId: refund.userId,
-        type: 'wallet',
-        title: 'Tournament entry refunded',
-        message: `Tournament cancellation refund credited: +$${refund.amount}`,
-        metadata: {
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
+      userId: admin.id,
+      scope: 'admin.tournament.cancel',
+      idempotencyKey,
+      payload: tournamentCancelIdempotencyPayload(req.params.id, req.body),
+      metadata: { route: '/api/admin/tournaments/:id/cancel', tournamentId: req.params.id }
+    }, async () => ({
+        cancellation: await tournamentService.cancel({
+          tournamentId: req.params.id,
+          reason: String(req.body.reason ?? ''),
+          idempotencyKey,
+          now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
+        })
+      })
+    );
+    const { cancellation } = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      await Promise.all(cancellation.refunds.map(async refund => {
+        broadcastWallet(refund.userId, await casinoService.getWallet(refund.userId));
+        await notificationService.create({
+          userId: refund.userId,
+          type: 'wallet',
+          title: 'Tournament entry refunded',
+          message: `Tournament cancellation refund credited: +$${refund.amount}`,
+          metadata: {
+            tournamentId: cancellation.tournamentId,
+            cancellationId: cancellation.id,
+            refundId: refund.id,
+            entryId: refund.entryId
+          }
+        });
+      }));
+      await trackAiEventSafely({
+        userId: admin.id,
+        category: 'admin',
+        name: 'tournament_cancelled',
+        context: {
           tournamentId: cancellation.tournamentId,
           cancellationId: cancellation.id,
-          refundId: refund.id,
-          entryId: refund.entryId
+          refundCount: cancellation.refunds.length,
+          refundTotal: cancellation.refunds.reduce((sum, refund) => sum + refund.amount, 0),
+          reason: cancellation.reason
         }
       });
-    }));
-    await trackAiEventSafely({
-      userId: admin.id,
-      category: 'admin',
-      name: 'tournament_cancelled',
-      context: {
-        tournamentId: cancellation.tournamentId,
-        cancellationId: cancellation.id,
-        refundCount: cancellation.refunds.length,
-        refundTotal: cancellation.refunds.reduce((sum, refund) => sum + refund.amount, 0),
-        reason: cancellation.reason
-      }
-    });
-    res.status(201).json({ cancellation });
+    }
+    res.status(201).json(idempotentResult.body);
   } catch (error) {
     sendApiError(res, error);
   }
@@ -464,38 +498,51 @@ app.post('/api/admin/tournaments/:id/disputes', async (req, res) => {
 app.post('/api/admin/tournaments/:id/settle', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
-    const settlement = await tournamentService.settle({
-      tournamentId: req.params.id,
-      idempotencyKey: String(req.body.idempotencyKey ?? ''),
-      now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
-    });
-    await Promise.all(settlement.payouts.map(async payout => {
-      broadcastWallet(payout.userId, await casinoService.getWallet(payout.userId));
-      await notificationService.create({
-        userId: payout.userId,
-        type: 'bonus',
-        title: 'Tournament prize credited',
-        message: `Rank #${payout.rank} prize credited: +$${payout.amount}`,
-        metadata: {
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
+      userId: admin.id,
+      scope: 'admin.tournament.settle',
+      idempotencyKey,
+      payload: tournamentSettleIdempotencyPayload(req.params.id, req.body),
+      metadata: { route: '/api/admin/tournaments/:id/settle', tournamentId: req.params.id }
+    }, async () => ({
+        settlement: await tournamentService.settle({
+          tournamentId: req.params.id,
+          idempotencyKey,
+          now: typeof req.body.now === 'string' ? new Date(req.body.now) : undefined
+        })
+      })
+    );
+    const { settlement } = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      await Promise.all(settlement.payouts.map(async payout => {
+        broadcastWallet(payout.userId, await casinoService.getWallet(payout.userId));
+        await notificationService.create({
+          userId: payout.userId,
+          type: 'bonus',
+          title: 'Tournament prize credited',
+          message: `Rank #${payout.rank} prize credited: +$${payout.amount}`,
+          metadata: {
+            tournamentId: settlement.tournamentId,
+            settlementId: settlement.id,
+            payoutId: payout.id,
+            rank: payout.rank
+          }
+        });
+      }));
+      await trackAiEventSafely({
+        userId: admin.id,
+        category: 'admin',
+        name: 'tournament_settled',
+        context: {
           tournamentId: settlement.tournamentId,
           settlementId: settlement.id,
-          payoutId: payout.id,
-          rank: payout.rank
+          payoutCount: settlement.payouts.length,
+          prizePool: settlement.prizePool
         }
       });
-    }));
-    await trackAiEventSafely({
-      userId: admin.id,
-      category: 'admin',
-      name: 'tournament_settled',
-      context: {
-        tournamentId: settlement.tournamentId,
-        settlementId: settlement.id,
-        payoutCount: settlement.payouts.length,
-        prizePool: settlement.prizePool
-      }
-    });
-    res.status(201).json({ settlement });
+    }
+    res.status(201).json(idempotentResult.body);
   } catch (error) {
     sendApiError(res, error);
   }
@@ -1303,13 +1350,22 @@ app.post('/api/notifications/:notificationId/read', async (req, res) => {
 app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
   try {
     const user = await requireAuth(req);
-    const result = await bonusService.claimBonus({
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,
-      campaignId: req.params.campaignId,
-      idempotencyKey: String(req.body.idempotencyKey ?? '')
-    });
-    broadcastWallet(user.id, result.wallet);
-    if (result.claim.idempotencyKey === String(req.body.idempotencyKey ?? '')) {
+      scope: 'bonus.claim',
+      idempotencyKey,
+      payload: bonusClaimIdempotencyPayload(req.params.campaignId),
+      metadata: { route: '/api/bonuses/:campaignId/claim', campaignId: req.params.campaignId }
+    }, () => bonusService.claimBonus({
+        userId: user.id,
+        campaignId: req.params.campaignId,
+        idempotencyKey
+      })
+    );
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(user.id, result.wallet);
       await notificationService.create({
         userId: user.id,
         type: 'bonus',
@@ -1321,18 +1377,18 @@ app.post('/api/bonuses/:campaignId/claim', async (req, res) => {
           claimKey: result.claim.claimKey
         }
       });
+      await trackAiEventSafely({
+        userId: user.id,
+        category: 'bonus',
+        name: 'bonus_claimed',
+        context: {
+          campaignId: result.campaign.id,
+          claimId: result.claim.id,
+          claimKey: result.claim.claimKey,
+          amount: result.claim.amount
+        }
+      });
     }
-    await trackAiEventSafely({
-      userId: user.id,
-      category: 'bonus',
-      name: 'bonus_claimed',
-      context: {
-        campaignId: result.campaign.id,
-        claimId: result.claim.id,
-        claimKey: result.claim.claimKey,
-        amount: result.claim.amount
-      }
-    });
     res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
@@ -1351,12 +1407,23 @@ app.get('/api/vip/status', async (req, res) => {
 app.post('/api/vip/cashback/claim', async (req, res) => {
   try {
     const user = await requireAuth(req);
-    const result = await vipService.claimCashback({
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,
-      idempotencyKey: String(req.body.idempotencyKey ?? '')
-    });
-    broadcastWallet(user.id, result.wallet);
-    if (result.claim) {
+      scope: 'vip.cashback.claim',
+      idempotencyKey,
+      payload: vipCashbackIdempotencyPayload(),
+      metadata: { route: '/api/vip/cashback/claim' }
+    }, () => vipService.claimCashback({
+        userId: user.id,
+        idempotencyKey
+      })
+    );
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(user.id, result.wallet);
+    }
+    if (!idempotentResult.replayed && result.claim) {
       await notificationService.create({
         userId: user.id,
         type: 'bonus',
@@ -1390,21 +1457,34 @@ app.post('/api/vip/cashback/claim', async (req, res) => {
 app.post('/api/bets', async (req, res) => {
   try {
     const user = await requireAuth(req);
-    const intervention = await evaluateResponsiblePlay({
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,
-      triggerGameId: String(req.body.gameId ?? ''),
-      triggerStake: Number(req.body.stake)
+      scope: 'wallet.bet',
+      idempotencyKey,
+      payload: betIdempotencyPayload(req.body),
+      metadata: { route: '/api/bets' }
+    }, async () => {
+      const intervention = await evaluateResponsiblePlay({
+        userId: user.id,
+        triggerGameId: String(req.body.gameId ?? ''),
+        triggerStake: Number(req.body.stake)
+      });
+      const round = await casinoService.placeBet({
+        userId: user.id,
+        gameId: String(req.body.gameId ?? ''),
+        stake: Number(req.body.stake),
+        idempotencyKey
+      });
+      const wallet = await casinoService.getWallet(round.userId);
+      return withResponsiblePlay({ round, wallet }, intervention);
     });
-    const round = await casinoService.placeBet({
-      userId: user.id,
-      gameId: String(req.body.gameId ?? ''),
-      stake: Number(req.body.stake),
-      idempotencyKey: String(req.body.idempotencyKey ?? '')
-    });
-    const wallet = await casinoService.getWallet(round.userId);
-    broadcastWallet(round.userId, wallet);
-    await assessRoundStarted(round);
-    res.status(201).json(withResponsiblePlay({ round, wallet }, intervention));
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(result.round.userId, result.wallet);
+      await assessRoundStarted(result.round);
+    }
+    res.status(201).json(result);
   } catch (error) {
     sendApiError(res, error);
   }
@@ -1414,16 +1494,29 @@ app.post('/api/rounds/:roundId/settle', async (req, res) => {
   try {
     const user = await requireAuth(req);
     await assertRoundOwner(req.params.roundId, user.id);
-    const round = await casinoService.settleRound({
-      roundId: req.params.roundId,
-      payout: Number(req.body.payout),
-      idempotencyKey: String(req.body.idempotencyKey ?? ''),
-      outcome: req.body.outcome
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
+      userId: user.id,
+      scope: 'wallet.round.settle',
+      idempotencyKey,
+      payload: roundSettleIdempotencyPayload(req.params.roundId, req.body),
+      metadata: { route: '/api/rounds/:roundId/settle', roundId: req.params.roundId }
+    }, async () => {
+      const round = await casinoService.settleRound({
+        roundId: req.params.roundId,
+        payout: Number(req.body.payout),
+        idempotencyKey,
+        outcome: req.body.outcome
+      });
+      const wallet = await casinoService.getWallet(round.userId);
+      return { round, wallet };
     });
-    const wallet = await casinoService.getWallet(round.userId);
-    broadcastWallet(round.userId, wallet);
-    await riskService.assessRoundSettled(round);
-    res.json({ round, wallet });
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(result.round.userId, result.wallet);
+      await riskService.assessRoundSettled(result.round);
+    }
+    res.json(result);
   } catch (error) {
     sendApiError(res, error);
   }
@@ -1433,15 +1526,28 @@ app.post('/api/rounds/:roundId/refund', async (req, res) => {
   try {
     const user = await requireAuth(req);
     await assertRoundOwner(req.params.roundId, user.id);
-    const round = await casinoService.refundRound({
-      roundId: req.params.roundId,
-      idempotencyKey: String(req.body.idempotencyKey ?? ''),
-      reason: typeof req.body.reason === 'string' ? req.body.reason : undefined
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    const idempotentResult = await idempotencyService.runWithResponse({
+      userId: user.id,
+      scope: 'wallet.round.refund',
+      idempotencyKey,
+      payload: roundRefundIdempotencyPayload(req.params.roundId, req.body),
+      metadata: { route: '/api/rounds/:roundId/refund', roundId: req.params.roundId }
+    }, async () => {
+      const round = await casinoService.refundRound({
+        roundId: req.params.roundId,
+        idempotencyKey,
+        reason: typeof req.body.reason === 'string' ? req.body.reason : undefined
+      });
+      const wallet = await casinoService.getWallet(round.userId);
+      return { round, wallet };
     });
-    const wallet = await casinoService.getWallet(round.userId);
-    broadcastWallet(round.userId, wallet);
-    await riskService.assessRoundSettled(round);
-    res.json({ round, wallet });
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(result.round.userId, result.wallet);
+      await riskService.assessRoundSettled(result.round);
+    }
+    res.json(result);
   } catch (error) {
     sendApiError(res, error);
   }
@@ -2497,6 +2603,74 @@ function buildRoundProvablyFairEvidence(round: GameRoundRecord) {
 
 function requestIdempotencyKey(value: unknown, prefix: string): string {
   return typeof value === 'string' && value ? value : `${prefix}-${randomBytes(16).toString('hex')}`;
+}
+
+function tournamentEnterIdempotencyPayload(tournamentId: string) {
+  return {
+    tournamentId
+  };
+}
+
+function tournamentSettlementJobIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    autoSettle: Boolean(record.autoSettle),
+    now: typeof record.now === 'string' ? record.now : undefined
+  };
+}
+
+function tournamentCancelIdempotencyPayload(tournamentId: string, body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    tournamentId,
+    reason: String(record.reason ?? ''),
+    now: typeof record.now === 'string' ? record.now : undefined
+  };
+}
+
+function tournamentSettleIdempotencyPayload(tournamentId: string, body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    tournamentId,
+    now: typeof record.now === 'string' ? record.now : undefined
+  };
+}
+
+function bonusClaimIdempotencyPayload(campaignId: string) {
+  return {
+    campaignId
+  };
+}
+
+function vipCashbackIdempotencyPayload() {
+  return {
+    claim: 'weekly-cashback'
+  };
+}
+
+function betIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    gameId: String(record.gameId ?? ''),
+    stake: Number(record.stake)
+  };
+}
+
+function roundSettleIdempotencyPayload(roundId: string, body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    roundId,
+    payout: Number(record.payout),
+    outcome: normalizeJson(record.outcome)
+  };
+}
+
+function roundRefundIdempotencyPayload(roundId: string, body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    roundId,
+    reason: typeof record.reason === 'string' ? record.reason : undefined
+  };
 }
 
 function slotsSpinIdempotencyPayload(body: unknown) {
