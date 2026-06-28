@@ -1103,6 +1103,24 @@ Acceptance criteria:
 - The smoke fails if reveal or round linkage is not persisted.
 - The smoke remains separate from memory-mode `npm run quality` because it requires a real configured database.
 
+### T53 - Prisma Full API Smoke
+
+Summary: Add a focused Prisma-backed Express API smoke test.
+
+Implementation status: Complete. The project now has `npm run smoke:api:prisma`, which starts the bundled server with `CASINO_BACKEND_DRIVER=prisma`, registers unique regular/admin users, verifies wallet creation, spins a real slots round, replays the provably fair proof, checks the player proof inspector endpoint, verifies the persisted seed lifecycle list, and confirms admin round evidence proof integrity. This complements direct Prisma service smoke coverage by exercising the deployed API surface against a configured database.
+
+Scope:
+- Bundled server startup in Prisma mode.
+- Unique smoke users to avoid persistent database collisions.
+- Wallet, slots, proof verification, seed lifecycle, and admin evidence API checks.
+- Package script for repeatable operator use.
+
+Acceptance criteria:
+- Prisma API smoke uses the production bundle.
+- Smoke fails if Prisma auth/wallet/game/proof endpoints break.
+- Smoke is safe to repeat against a persistent database.
+- Smoke remains opt-in because it requires real database credentials.
+
 ## First Working Sequence
 
 Start here:
