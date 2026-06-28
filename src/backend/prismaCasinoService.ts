@@ -20,7 +20,7 @@ type TransactionClient = Omit<
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
 >;
 
-const SERIALIZABLE = Prisma.TransactionIsolationLevel.Serializable;
+const READ_COMMITTED = Prisma.TransactionIsolationLevel.ReadCommitted;
 
 export class PrismaCasinoService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -69,6 +69,13 @@ export class PrismaCasinoService {
       });
       if (existing) return walletToState(existing.wallet);
 
+      await lockWalletMutation(tx, userId);
+      const replayed = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (replayed) return walletToState(replayed.wallet);
+
       const wallet = await requireWallet(tx, userId);
       const updatedWallet = await tx.wallet.update({
         where: { id: wallet.id },
@@ -113,6 +120,13 @@ export class PrismaCasinoService {
         include: { wallet: true }
       });
       if (existing) return walletToState(existing.wallet);
+
+      await lockWalletMutation(tx, userId);
+      const replayed = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (replayed) return walletToState(replayed.wallet);
 
       const wallet = await requireWallet(tx, userId);
       if (wallet.available < amount) {
@@ -177,6 +191,12 @@ export class PrismaCasinoService {
       });
       if (existing) return roundToRecord(existing);
 
+      await lockWalletMutation(tx, userId);
+      const replayed = await tx.gameRound.findUnique({
+        where: { lockIdempotencyKey: input.idempotencyKey }
+      });
+      if (replayed) return roundToRecord(replayed);
+
       const wallet = await requireWallet(tx, userId);
       if (wallet.available < stake) {
         throw new Error(`Insufficient funds: tried to lock ${stake.toString()} from ${wallet.available.toString()}`);
@@ -240,7 +260,9 @@ export class PrismaCasinoService {
     const payout = BigInt(asMoney(input.payout));
 
     return this.writeTransaction(async tx => {
-      const round = await requireRound(tx, input.roundId);
+      let round = await requireRound(tx, input.roundId);
+      await lockWalletMutation(tx, round.userId);
+      round = await requireRound(tx, input.roundId);
       const outcome = toJson(input.outcome);
       if (round.status === 'settled') {
         if (round.settlementIdempotencyKey === input.idempotencyKey) return roundToRecord(round);
@@ -314,7 +336,9 @@ export class PrismaCasinoService {
     assertText(input.idempotencyKey, 'idempotencyKey');
 
     return this.writeTransaction(async tx => {
-      const round = await requireRound(tx, input.roundId);
+      let round = await requireRound(tx, input.roundId);
+      await lockWalletMutation(tx, round.userId);
+      round = await requireRound(tx, input.roundId);
       if (round.status === 'refunded') {
         if (round.settlementIdempotencyKey === input.idempotencyKey) return roundToRecord(round);
         throw new Error(`Round ${round.id} is already refunded`);
@@ -414,7 +438,15 @@ export class PrismaCasinoService {
       });
       if (existingLedger?.round) return roundToRecord(existingLedger.round);
 
-      const round = await requireRound(tx, input.roundId);
+      let round = await requireRound(tx, input.roundId);
+      await lockWalletMutation(tx, round.userId);
+      const replayedLedger = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { round: true }
+      });
+      if (replayedLedger?.round) return roundToRecord(replayedLedger.round);
+
+      round = await requireRound(tx, input.roundId);
       if (round.status !== 'open') throw new Error(`Round ${round.id} is not open`);
 
       const wallet = await requireWallet(tx, round.userId);
@@ -491,10 +523,17 @@ export class PrismaCasinoService {
 
   private async writeTransaction<T>(operation: (tx: TransactionClient) => Promise<T>): Promise<T> {
     return withPrismaTransactionRetry(() =>
-      this.prisma.$transaction(operation, { isolationLevel: SERIALIZABLE })
+      this.prisma.$transaction(operation, {
+        isolationLevel: READ_COMMITTED,
+        timeout: 20_000
+      })
     );
   }
 }
+
+const lockWalletMutation = async (tx: TransactionClient, userId: string) => {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:${userId}`}))`;
+};
 
 const requireWallet = async (tx: TransactionClient, userId: string) => {
   const wallet = await tx.wallet.findUnique({ where: { userId } });

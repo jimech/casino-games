@@ -1141,12 +1141,12 @@ Acceptance criteria:
 
 ### T55 - Prisma Transaction Retry Hardening
 
-Summary: Retry transient serializable transaction conflicts in the Prisma casino wallet service.
+Summary: Retry transient Prisma transaction conflicts in persistent casino services.
 
-Implementation status: Complete. Prisma casino money-moving writes and provably fair seed lifecycle writes now run through a shared serializable transaction wrapper that retries transient write-conflict, deadlock, and serialization-failure errors. The retry stays behind existing idempotency keys for wallet credits, debits, bet locks, settlement, refunds, outcome updates, added stakes, and seed commitments, preserving business invariants while making the persistent backend more tolerant of real database contention.
+Implementation status: Complete. Prisma casino money-moving writes and provably fair seed lifecycle writes now run through a shared transaction retry wrapper that retries transient write-conflict, deadlock, and serialization-failure errors. The retry stays behind existing idempotency keys for wallet credits, debits, bet locks, settlement, refunds, outcome updates, added stakes, and seed commitments, preserving business invariants while making the persistent backend more tolerant of real database contention.
 
 Scope:
-- Shared retry wrapper for Prisma serializable write transactions.
+- Shared retry wrapper for Prisma write transactions.
 - Retry detection for Prisma `P2034` conflicts and equivalent database messages.
 - Coverage across wallet credit/debit, bet lock, settlement, refund, outcome update, added stake, seed commit, and seed reveal paths.
 - Keep smoke scripts as plain API checks so resilience is proven in the backend service.
@@ -1176,6 +1176,24 @@ Acceptance criteria:
 - Existing databases get counters initialized to `MAX(nonce) + 1`.
 - Deleting a user cascades seed records and nonce counters.
 - Prisma service and API smoke checks continue to pass against the configured database.
+
+### T57 - Prisma Round and Wallet Concurrency Stress Smoke
+
+Summary: Stress concurrent Prisma bet and settlement flows against one wallet.
+
+Implementation status: Complete. Prisma wallet mutations now take a transaction-scoped advisory lock per user before changing balances, rechecking idempotency inside the critical section for credits, debits, bet locks, and added stakes. Money-moving transactions run at `ReadCommitted` behind that explicit wallet lock, keeping one authoritative mutation stream per wallet while retaining retry handling for transient database conflicts. The direct Prisma smoke now places and settles multiple rounds concurrently for one user, then verifies ledger counts, final available balance, and zero locked balance.
+
+Scope:
+- Per-user advisory lock for Prisma wallet mutations.
+- Idempotency replay checks after lock acquisition.
+- Concurrent direct Prisma smoke for bet locking and settlement.
+- Ledger-count and wallet-balance invariants after the stress wave.
+
+Acceptance criteria:
+- Concurrent `placeBet` calls against one wallet do not corrupt available or locked balances.
+- Concurrent settlement calls clear locked balances and post one settlement ledger entry per round.
+- Idempotent replay behavior remains intact when writers race.
+- `npm run smoke:prisma` proves the wallet stress path against the configured database.
 
 ## First Working Sequence
 

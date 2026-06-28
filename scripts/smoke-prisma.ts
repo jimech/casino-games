@@ -39,6 +39,27 @@ const main = async () => {
       idempotencyKey: `${key}-settle`,
       outcome: { smoke: true }
     });
+    const stressRounds = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        service.placeBet({
+          userId: user.id,
+          gameId: 'stress',
+          stake: 25,
+          idempotencyKey: `${key}-stress-bet-${index}`
+        })
+      )
+    );
+    await Promise.all(
+      stressRounds.map((stressRound, index) =>
+        service.settleRound({
+          roundId: stressRound.id,
+          payout: index % 2 === 0 ? 50 : 0,
+          idempotencyKey: `${key}-stress-settle-${index}`,
+          outcome: { stress: true, index }
+        })
+      )
+    );
+
     const seed = await seedService.commit({
       userId: user.id,
       gameId: 'slots',
@@ -68,6 +89,17 @@ const main = async () => {
     if (concurrentNonces.join(',') !== '1,2,3,4,5') {
       throw new Error(`concurrent seed nonces were not contiguous: ${concurrentNonces.join(',')}`);
     }
+    const stressLedger = await service.getLedger(user.id);
+    const stressLockEntries = stressLedger.filter(entry => entry.metadata?.gameId === 'stress' && entry.type === 'lock');
+    const stressSettleEntries = stressLedger.filter(entry => entry.metadata?.gameId === 'stress' && (
+      entry.type === 'settleWin' || entry.type === 'settleLoss'
+    ));
+    if (stressLockEntries.length !== stressRounds.length) {
+      throw new Error(`expected ${stressRounds.length} stress lock entries, found ${stressLockEntries.length}`);
+    }
+    if (stressSettleEntries.length !== stressRounds.length) {
+      throw new Error(`expected ${stressRounds.length} stress settlement entries, found ${stressSettleEntries.length}`);
+    }
     if (revealedSeed.status !== 'revealed' || revealedSeed.roundId !== round.id) {
       throw new Error('seed reveal did not persist round linkage');
     }
@@ -76,11 +108,15 @@ const main = async () => {
     }
 
     const after = await service.getWallet(user.id);
+    if (after.available !== before.available + 10 || after.locked !== 0) {
+      throw new Error(`stress wallet invariant failed: available=${after.available}, locked=${after.locked}`);
+    }
     console.log('SMOKE_OK', {
       beforeAvailable: before.available,
       afterAvailable: after.available,
       afterLocked: after.locked,
-      seedStatus: revealedSeed.status
+      seedStatus: revealedSeed.status,
+      stressRounds: stressRounds.length
     });
   } finally {
     await cleanupSmokeUsers();
