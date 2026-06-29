@@ -29,6 +29,7 @@ import {
   claimVipCashback,
   claimBonus,
   createNotification,
+  createStepUpAuth,
   createWalletEventSource,
   depositWallet,
   enterTournament,
@@ -205,6 +206,7 @@ export default function App() {
   const [playerProofLoading, setPlayerProofLoading] = useState(false);
   const [walletDepositLoading, setWalletDepositLoading] = useState<'card' | 'crypto' | 'bank_wire' | null>(null);
   const [walletWithdrawalLoading, setWalletWithdrawalLoading] = useState(false);
+  const [walletWithdrawalStepUpPassword, setWalletWithdrawalStepUpPassword] = useState('');
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [accountClosureRequesting, setAccountClosureRequesting] = useState(false);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
@@ -905,12 +907,28 @@ export default function App() {
 
     setWalletWithdrawalLoading(true);
     try {
+      let stepUpToken: string | undefined;
+      if (amount >= 1000) {
+        const password = walletWithdrawalStepUpPassword.trim();
+        if (!password) {
+          sound.playError();
+          triggerNotification("Enter your account password to authorize high-value withdrawal.", "error");
+          return;
+        }
+        const stepUp = await createStepUpAuth({
+          password,
+          scope: 'wallet:withdrawal'
+        });
+        stepUpToken = stepUp.stepUpToken;
+      }
       const response = await withdrawWallet({
         method: 'bank_wire',
         amount,
-        idempotencyKey: `wallet-withdrawal-bank-wire-${crypto.randomUUID()}`
+        idempotencyKey: `wallet-withdrawal-bank-wire-${crypto.randomUUID()}`,
+        stepUpToken
       });
       setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+      setWalletWithdrawalStepUpPassword('');
       sound.playBigWin();
       triggerNotification(`Bank wire withdrawal recorded: -$${response.withdrawal.amount}`, 'success');
     } catch (error) {
@@ -2234,6 +2252,21 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+
+                  {user.walletBalance >= 1000 && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] uppercase font-bold text-neutral-400">
+                        Withdrawal step-up password
+                      </label>
+                      <input
+                        type="password"
+                        value={walletWithdrawalStepUpPassword}
+                        onChange={(event) => setWalletWithdrawalStepUpPassword(event.target.value)}
+                        placeholder="Required above $1,000"
+                        className="w-full bg-neutral-900 border border-neutral-830 rounded-lg py-2 px-3 text-xs text-white placeholder:text-neutral-600"
+                      />
+                    </div>
+                  )}
 
                   <button
                     onClick={() => void submitWalletWithdrawal()}

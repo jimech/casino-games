@@ -1771,6 +1771,26 @@ Acceptance criteria:
 - Valid step-up token permits the withdrawal and records the debit.
 - Local quality gate passes.
 
+### T87 - High-Value Withdrawal Step-Up UI
+
+Summary: Prompt for step-up credentials in the wallet before submitting high-value withdrawals.
+
+Implementation status: Complete. The wallet panel now shows a step-up password input when the current withdrawal amount is at or above the backend `$1,000` threshold. The withdrawal handler requests a `wallet:withdrawal` step-up token before calling the withdrawal API, passes the token through the typed helper, clears the password after success, and reports missing or failed step-up attempts through the existing notification surface.
+
+Scope:
+- Wallet step-up password state.
+- Conditional high-value withdrawal password input.
+- Frontend step-up token request with `wallet:withdrawal` scope.
+- Withdrawal API call updated to include the returned step-up token.
+- Error handling for missing or failed step-up credentials.
+
+Acceptance criteria:
+- High-value withdrawal UI asks for account password before submission.
+- Missing password does not call the withdrawal endpoint.
+- Valid password obtains a step-up token and submits the withdrawal.
+- Password state clears after successful withdrawal.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
