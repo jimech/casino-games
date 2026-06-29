@@ -665,6 +665,11 @@ const main = async () => {
   if (!responsiblePlay.intervention.requiresAcknowledgement) {
     throw new Error('Expected responsible play intervention to require acknowledgement');
   }
+  await postJsonExpectStatus(`${baseUrl}/api/games/slots/spin`, adminSession.token, {
+    machineId: 'fruit-mania',
+    bet: 10,
+    idempotencyKey: 'quality-responsible-play-ack-block'
+  }, 403);
   const acknowledgedResponsiblePlay = await postJson(`${baseUrl}/api/responsible-play/interventions/${responsiblePlay.intervention.id}/acknowledge`, adminSession.token, {});
   if (!acknowledgedResponsiblePlay.intervention.acknowledgedAt) {
     throw new Error('Expected responsible play acknowledgement timestamp');
@@ -681,6 +686,10 @@ const main = async () => {
   }
   if (!responsiblePlayAuditEvents.events.some((event: { name: string }) => event.name === 'responsible_play_acknowledged')) {
     throw new Error('Expected responsible play acknowledgement to be logged');
+  }
+  const responsiblePlayRisks = await getJson(`${baseUrl}/api/risk/events?userId=${encodeURIComponent(adminSession.user.id)}&limit=50`, adminSession.token);
+  if (!responsiblePlayRisks.events.some((event: { type: string }) => event.type === 'responsible_play_acknowledgement_required')) {
+    throw new Error('Expected responsible play acknowledgement guard risk event');
   }
 
   const explanations = await getJson(`${baseUrl}/api/admin/ai-decision-explanations?limit=25`, adminSession.token);

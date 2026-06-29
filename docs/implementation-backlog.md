@@ -1733,6 +1733,25 @@ Acceptance criteria:
 - Failed acknowledgement shows an error notification.
 - Local quality gate passes.
 
+### T85 - Enforce Responsible Play Acknowledgement Before New Play
+
+Summary: Block new wagering play while a required responsible-play intervention remains unacknowledged.
+
+Implementation status: Complete. The playable-session guard now checks the latest responsible-play intervention after session-timeout enforcement. If the latest intervention requires acknowledgement and has no `acknowledgedAt` timestamp, new wagering entry points return `403` before creating another round and record a `responsible_play_acknowledgement_required` risk event. The acknowledgement endpoint and non-play account/evidence routes remain available through normal authentication. The memory API smoke verifies blocked play before acknowledgement and admin-visible risk-event logging.
+
+Scope:
+- Latest-intervention check inside playable-session guard.
+- `403` status mapping for acknowledgement-required play blocks.
+- Risk event creation for attempted new play before acknowledgement.
+- Memory API smoke coverage for pre-acknowledgement block and risk event.
+
+Acceptance criteria:
+- New play is blocked while a required intervention is unacknowledged.
+- Acknowledgement endpoint remains available.
+- Blocked attempts produce admin-visible risk events.
+- Acknowledged interventions allow the guard to proceed.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

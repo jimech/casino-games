@@ -2027,7 +2027,7 @@ app.listen(port, '0.0.0.0', () => {
 
 function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
-  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up|session timeout exceeded/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /idempotency conflict/i.test(message) ? 409 : /required|invalid|insufficient|already|not open|not ready|consent|replay/i.test(message) ? 400 : 500;
+  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up|session timeout exceeded|responsible play acknowledgement required/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /idempotency conflict/i.test(message) ? 409 : /required|invalid|insufficient|already|not open|not ready|consent|replay/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
 }
 
@@ -2039,25 +2039,45 @@ async function requireAuth(req: express.Request): Promise<AuthUser> {
 async function requirePlayableSession(req: express.Request): Promise<AuthUser> {
   const session = await authService.getSession(extractRequestToken(req));
   const timeoutMs = sessionTimeoutLimitMs(session.user.sessionTimeoutLimit);
-  if (timeoutMs === undefined) return session.user;
 
-  const ageMs = playableSessionNow(req).getTime() - new Date(session.createdAt).getTime();
-  if (ageMs <= timeoutMs) return session.user;
-
-  await riskService.recordEvent({
-    userId: session.user.id,
-    type: 'responsible_play_session_timeout',
-    severity: 'medium',
-    score: 60,
-    context: {
-      sessionCreatedAt: session.createdAt,
-      sessionTimeoutLimit: session.user.sessionTimeoutLimit,
-      sessionAgeMinutes: Math.floor(ageMs / 60_000),
-      route: req.path,
-      method: req.method
+  if (timeoutMs !== undefined) {
+    const ageMs = playableSessionNow(req).getTime() - new Date(session.createdAt).getTime();
+    if (ageMs > timeoutMs) {
+      await riskService.recordEvent({
+        userId: session.user.id,
+        type: 'responsible_play_session_timeout',
+        severity: 'medium',
+        score: 60,
+        context: {
+          sessionCreatedAt: session.createdAt,
+          sessionTimeoutLimit: session.user.sessionTimeoutLimit,
+          sessionAgeMinutes: Math.floor(ageMs / 60_000),
+          route: req.path,
+          method: req.method
+        }
+      });
+      throw new Error(`Session timeout exceeded for responsible play limit: ${session.user.sessionTimeoutLimit}`);
     }
-  });
-  throw new Error(`Session timeout exceeded for responsible play limit: ${session.user.sessionTimeoutLimit}`);
+  }
+
+  const latestIntervention = await responsiblePlayService.latest({ userId: session.user.id });
+  if (latestIntervention?.requiresAcknowledgement && !latestIntervention.acknowledgedAt) {
+    await riskService.recordEvent({
+      userId: session.user.id,
+      type: 'responsible_play_acknowledgement_required',
+      severity: latestIntervention.level === 'cooldown' ? 'high' : 'medium',
+      score: Math.max(60, latestIntervention.score),
+      context: {
+        interventionId: latestIntervention.id,
+        level: latestIntervention.level,
+        route: req.path,
+        method: req.method
+      }
+    });
+    throw new Error('Responsible play acknowledgement required before new play');
+  }
+
+  return session.user;
 }
 
 function sessionTimeoutLimitMs(limit: string): number | undefined {
