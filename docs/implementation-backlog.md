@@ -1942,6 +1942,24 @@ Acceptance criteria:
 - Prisma API smoke verifies compliance-case-linked settlement and release ledger entries.
 - Local quality gate passes.
 
+### T96 - Immutable Closed Compliance Outcomes
+
+Summary: Prevent closed compliance cases from changing status or outcome after resolution.
+
+Implementation status: Complete. Compliance case services now reject status or outcome changes once a case is closed, while still allowing plain follow-up notes without status/outcome mutations. The guard lives in both memory and Prisma service implementations so admin APIs and future service callers share the same invariant. The memory API smoke attempts to rewrite an approved withdrawal review into a rejected payout, expects a `400`, and verifies the wallet remains settled with no funds re-locked or released.
+
+Scope:
+- Closed-case resolution guard in memory compliance case service.
+- Closed-case resolution guard in Prisma compliance case service.
+- Smoke coverage for blocked withdrawal review outcome rewrite.
+- Wallet stability assertions after blocked rewrite.
+
+Acceptance criteria:
+- Closed compliance cases cannot change status or outcome.
+- Plain notes on closed cases remain possible.
+- Blocked review rewrites do not mutate wallet balances.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

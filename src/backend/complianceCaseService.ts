@@ -135,6 +135,7 @@ export class MemoryComplianceCaseService implements ComplianceCaseService {
     validateNoteInput(input);
     const caseRecord = this.cases.find(item => item.id === input.caseId);
     if (!caseRecord) throw new Error(`Compliance case not found: ${input.caseId}`);
+    assertCaseResolutionMutable(caseRecord, input);
     const now = new Date().toISOString();
     if (input.status) {
       caseRecord.status = input.status;
@@ -230,6 +231,9 @@ export class PrismaComplianceCaseService implements ComplianceCaseService {
     evidence?: Record<string, unknown>;
   }): Promise<ComplianceCaseRecord> {
     validateNoteInput(input);
+    const existing = await this.prisma.complianceCase.findUnique({ where: { id: input.caseId } });
+    if (!existing) throw new Error(`Compliance case not found: ${input.caseId}`);
+    assertCaseResolutionMutable(complianceCaseToRecord({ ...existing, notes: [] }), input);
     const now = new Date();
     const updated = await this.prisma.complianceCase.update({
       where: { id: input.caseId },
@@ -272,6 +276,15 @@ const validateNoteInput = (input: { caseId: string; authorId: string; note: stri
   assertText(input.authorId, 'authorId');
   assertText(input.note, 'note');
   if (input.status && !isComplianceCaseStatus(input.status)) throw new Error('Invalid compliance case status');
+};
+
+const assertCaseResolutionMutable = (
+  caseRecord: { status: ComplianceCaseStatus; outcome?: string },
+  input: { status?: ComplianceCaseStatus; outcome?: string }
+) => {
+  if (caseRecord.status !== 'closed') return;
+  if (!input.status && !input.outcome) return;
+  throw new Error('Compliance case is already closed and cannot change status or outcome');
 };
 
 export const isComplianceCaseType = (value: unknown): value is ComplianceCaseType =>

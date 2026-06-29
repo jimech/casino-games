@@ -242,6 +242,25 @@ const main = async () => {
   const walletAfterWithdrawalApproval = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}`, depositSession.token);
   assertEqual(walletAfterWithdrawalApproval.available, 97550, 'approved withdrawal keeps available balance debited');
   assertEqual(walletAfterWithdrawalApproval.locked, 0, 'approved withdrawal settles held funds');
+  await postJsonExpectStatus(`${baseUrl}/api/admin/compliance/cases/${withdrawalReviewCase.id}/notes`, adminSession.token, {
+    note: 'Smoke attempt to rewrite approved payout review.',
+    action: 'closed',
+    status: 'closed',
+    outcome: 'rejected_private_payout',
+    evidence: {
+      source: 'wallet_withdrawal_review',
+      reference: steppedUpWithdrawal.withdrawal.reference
+    }
+  }, 400);
+  const walletAfterBlockedRewrite = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}`, depositSession.token);
+  assertEqual(walletAfterBlockedRewrite.available, 97550, 'blocked review rewrite keeps available balance stable');
+  assertEqual(walletAfterBlockedRewrite.locked, 0, 'blocked review rewrite keeps locked balance stable');
+  const closedCaseFollowUpNote = await postJson(`${baseUrl}/api/admin/compliance/cases/${withdrawalReviewCase.id}/notes`, adminSession.token, {
+    note: 'Smoke follow-up note after payout review resolution.',
+    action: 'follow_up_note'
+  });
+  assertEqual(closedCaseFollowUpNote.case.status, 'closed', 'closed case follow-up note keeps status');
+  assertEqual(closedCaseFollowUpNote.case.outcome, 'approved_for_private_payout', 'closed case follow-up note keeps outcome');
   const approvedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
   if (!approvedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { reference?: string } }) =>
     entry.type === 'lock' && entry.metadata?.reference === steppedUpWithdrawal.withdrawal.reference
