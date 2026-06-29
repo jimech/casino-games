@@ -13,6 +13,7 @@ export interface AuthUserDto {
   ageGateAcceptedAt?: string;
   termsAcceptedAt?: string;
   privacyAcceptedAt?: string;
+  sessionTimeoutLimit: string;
   createdAt: string;
 }
 
@@ -935,6 +936,7 @@ export const updateConsentSettings = async (input: {
   acceptAgeGate: boolean;
   acceptTerms: boolean;
   acceptPrivacy: boolean;
+  sessionTimeoutLimit?: string;
 }): Promise<AuthSessionDto> => {
   const response = await fetch('/api/auth/consent', {
     method: 'POST',

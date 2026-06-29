@@ -12,6 +12,7 @@ export interface AuthUser {
   ageGateAcceptedAt?: string;
   termsAcceptedAt?: string;
   privacyAcceptedAt?: string;
+  sessionTimeoutLimit: string;
   createdAt: string;
 }
 
@@ -47,6 +48,7 @@ export interface UpdateConsentInput {
   acceptAgeGate?: boolean;
   acceptTerms?: boolean;
   acceptPrivacy?: boolean;
+  sessionTimeoutLimit?: string;
 }
 
 export interface UpdateProfileInput {
@@ -87,6 +89,8 @@ type StoredSession = {
 };
 
 const SESSION_DAYS = 7;
+const SESSION_TIMEOUT_LIMITS = ['15 mins', '30 mins', '1 hour', 'Unlimited'] as const;
+const DEFAULT_SESSION_TIMEOUT_LIMIT = '30 mins';
 
 export class MemoryAuthService implements AuthService {
   private users = new Map<string, StoredUser>();
@@ -114,6 +118,7 @@ export class MemoryAuthService implements AuthService {
       ageGateAcceptedAt: input.acceptAgeGate ? now : undefined,
       termsAcceptedAt: input.acceptTerms ? now : undefined,
       privacyAcceptedAt: input.acceptPrivacy ? now : undefined,
+      sessionTimeoutLimit: DEFAULT_SESSION_TIMEOUT_LIMIT,
       createdAt: now,
       passwordHash: hashPasswordForStorage(input.password)
     };
@@ -152,6 +157,9 @@ export class MemoryAuthService implements AuthService {
     if (input.acceptAgeGate) user.ageGateAcceptedAt = now;
     if (input.acceptTerms) user.termsAcceptedAt = now;
     if (input.acceptPrivacy) user.privacyAcceptedAt = now;
+    if (input.sessionTimeoutLimit !== undefined) {
+      user.sessionTimeoutLimit = normalizeSessionTimeoutLimit(input.sessionTimeoutLimit);
+    }
     return { token: session.token, expiresAt: session.expiresAt, user: publicUser(user) };
   }
 
@@ -287,7 +295,10 @@ export class PrismaAuthService implements AuthService {
       data: {
         ageGateAcceptedAt: input.acceptAgeGate ? now : undefined,
         termsAcceptedAt: input.acceptTerms ? now : undefined,
-        privacyAcceptedAt: input.acceptPrivacy ? now : undefined
+        privacyAcceptedAt: input.acceptPrivacy ? now : undefined,
+        sessionTimeoutLimit: input.sessionTimeoutLimit !== undefined
+          ? normalizeSessionTimeoutLimit(input.sessionTimeoutLimit)
+          : undefined
       }
     });
     return this.getSession(input.token);
@@ -409,6 +420,11 @@ const cleanOptionalText = (value: string | undefined): string | undefined => {
   return cleaned ? cleaned.slice(0, 80) : undefined;
 };
 
+const normalizeSessionTimeoutLimit = (value: string): string => {
+  if ((SESSION_TIMEOUT_LIMITS as readonly string[]).includes(value)) return value;
+  throw new Error('Session timeout limit is invalid');
+};
+
 const normalizeSearchQuery = (value: string | undefined): string | undefined => {
   const cleaned = value?.trim().toLowerCase();
   return cleaned ? cleaned.slice(0, 120) : undefined;
@@ -444,6 +460,7 @@ const publicUser = (user: StoredUser): AuthUser => ({
   ageGateAcceptedAt: user.ageGateAcceptedAt,
   termsAcceptedAt: user.termsAcceptedAt,
   privacyAcceptedAt: user.privacyAcceptedAt,
+  sessionTimeoutLimit: user.sessionTimeoutLimit,
   createdAt: user.createdAt
 });
 
@@ -457,6 +474,7 @@ const prismaUserToAuthUser = (user: {
   ageGateAcceptedAt: Date | null;
   termsAcceptedAt: Date | null;
   privacyAcceptedAt: Date | null;
+  sessionTimeoutLimit?: string | null;
   createdAt: Date;
 }): AuthUser => ({
   id: user.id,
@@ -468,6 +486,7 @@ const prismaUserToAuthUser = (user: {
   ageGateAcceptedAt: user.ageGateAcceptedAt?.toISOString(),
   termsAcceptedAt: user.termsAcceptedAt?.toISOString(),
   privacyAcceptedAt: user.privacyAcceptedAt?.toISOString(),
+  sessionTimeoutLimit: user.sessionTimeoutLimit ?? DEFAULT_SESSION_TIMEOUT_LIMIT,
   createdAt: user.createdAt.toISOString()
 });
 

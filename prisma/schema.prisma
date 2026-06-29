@@ -97,6 +97,7 @@ model User {
   ageGateAcceptedAt DateTime?
   termsAcceptedAt   DateTime?
   privacyAcceptedAt DateTime?
+  sessionTimeoutLimit String  @default("30 mins")
   lastLoginAt       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

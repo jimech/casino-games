@@ -1653,6 +1653,26 @@ Acceptance criteria:
 - Smoke coverage verifies delivered `account_closure` metadata.
 - Local quality gate passes.
 
+### T81 - Persist Responsible Play Session Timeout
+
+Summary: Store the Settings responsible-play session timeout selection in backend user state.
+
+Implementation status: Complete. The Settings timeout select now saves through `/api/auth/consent` together with the consent flags instead of firing a local-only notification. Auth session payloads include `sessionTimeoutLimit`, restored sessions hydrate the select from the backend, and invalid timeout values are rejected. A Prisma migration adds the persisted user field with the existing `30 mins` default, and the memory API smoke verifies save, validation, and session restore behavior.
+
+Scope:
+- User `sessionTimeoutLimit` schema field and migration.
+- Auth service validation and default timeout behavior.
+- Consent/settings API payload extension.
+- Settings UI hydration and Save Changes persistence.
+- Memory API smoke coverage for valid, invalid, and restored timeout values.
+
+Acceptance criteria:
+- Timeout changes are not treated as saved until Save Changes is used.
+- Saved timeout values return in the auth session.
+- Restored sessions hydrate the Settings select from backend state.
+- Invalid timeout values return `400`.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

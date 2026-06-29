@@ -66,11 +66,19 @@ const main = async () => {
   const consentSession = await postJson(`${baseUrl}/api/auth/consent`, userSession.token, {
     acceptAgeGate: true,
     acceptTerms: true,
-    acceptPrivacy: true
+    acceptPrivacy: true,
+    sessionTimeoutLimit: '15 mins'
   });
   if (!consentSession.user.ageGateAcceptedAt || !consentSession.user.termsAcceptedAt || !consentSession.user.privacyAcceptedAt) {
     throw new Error('Expected settings consent save to return updated consent timestamps');
   }
+  assertEqual(consentSession.user.sessionTimeoutLimit, '15 mins', 'settings session timeout update');
+  await postJsonExpectStatus(`${baseUrl}/api/auth/consent`, userSession.token, {
+    acceptAgeGate: true,
+    acceptTerms: true,
+    acceptPrivacy: true,
+    sessionTimeoutLimit: 'forever'
+  }, 400);
   const profileSession = await patchJson(`${baseUrl}/api/auth/profile`, userSession.token, {
     displayName: 'Quality Profile',
     email: 'quality-profile@example.test'
@@ -80,6 +88,7 @@ const main = async () => {
   const restoredProfileSession = await getJson(`${baseUrl}/api/auth/session`, userSession.token);
   assertEqual(restoredProfileSession.user.displayName, 'Quality Profile', 'restored profile display name');
   assertEqual(restoredProfileSession.user.email, 'quality-profile@example.test', 'restored profile email');
+  assertEqual(restoredProfileSession.user.sessionTimeoutLimit, '15 mins', 'restored session timeout');
 
   const adminSession = await register({
     username: 'quality_admin',

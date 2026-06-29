@@ -152,7 +152,8 @@ app.post('/api/auth/consent', async (req, res) => {
       token: extractBearerToken(req.get('authorization')),
       acceptAgeGate: Boolean(req.body.acceptAgeGate),
       acceptTerms: Boolean(req.body.acceptTerms),
-      acceptPrivacy: Boolean(req.body.acceptPrivacy)
+      acceptPrivacy: Boolean(req.body.acceptPrivacy),
+      sessionTimeoutLimit: typeof req.body.sessionTimeoutLimit === 'string' ? req.body.sessionTimeoutLimit : undefined
     }));
   } catch (error) {
     sendApiError(res, error);

@@ -348,6 +348,7 @@ export default function App() {
       }));
       setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
       setProfileEmailInput(session.user.email ?? '');
+      setSessionTimeoutInput(session.user.sessionTimeoutLimit);
     } catch (error) {
       console.warn('Session restore failed', error);
     } finally {
@@ -383,6 +384,7 @@ export default function App() {
       }));
       setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
       setProfileEmailInput(session.user.email ?? '');
+      setSessionTimeoutInput(session.user.sessionTimeoutLimit);
       triggerNotification(authMode === 'register' ? 'Private account created. Session is active.' : 'Session restored. Welcome back.', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Authentication failed';
@@ -1201,7 +1203,8 @@ export default function App() {
       const session = await updateConsentSettings({
         acceptAgeGate: registeredAgeChecked,
         acceptTerms: true,
-        acceptPrivacy: gdprChecked
+        acceptPrivacy: gdprChecked,
+        sessionTimeoutLimit: sessionTimeoutInput
       });
       setAuthSession(session);
       setUser(prev => ({
@@ -3284,7 +3287,6 @@ export default function App() {
                       onChange={(e) => {
                         sound.playClick();
                         setSessionTimeoutInput(e.target.value);
-                        triggerNotification(`Maximum active play flight limited to ${e.target.value}!`, "info");
                       }}
                       className="w-full bg-neutral-900 border border-neutral-830 rounded-lg py-2 px-3 text-xs"
                     >
