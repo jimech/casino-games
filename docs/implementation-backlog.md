@@ -1693,6 +1693,26 @@ Acceptance criteria:
 - Non-play authenticated routes still use normal auth.
 - Local quality gate passes.
 
+### T83 - Responsible Play Acknowledgement Audit
+
+Summary: Persist player acknowledgement for responsible-play warnings and cooldowns.
+
+Implementation status: Complete. Responsible-play interventions now include an optional `acknowledgedAt` audit field, and players can acknowledge required interventions through a dedicated backend endpoint. The acknowledgement updates memory and Prisma-backed services, appears in admin review lists, and logs a `responsible_play_acknowledged` AI/risk audit event. The memory API smoke verifies acknowledgement timestamp persistence, admin visibility, and audit-event logging.
+
+Scope:
+- `acknowledgedAt` schema field and migration.
+- Responsible-play service `acknowledge` method for memory and Prisma drivers.
+- Player acknowledgement endpoint.
+- Typed frontend API helper for acknowledgement.
+- Memory API smoke coverage for acknowledgement and audit visibility.
+
+Acceptance criteria:
+- Required responsible-play interventions can be acknowledged by the owning player.
+- Acknowledgements persist with timestamps.
+- Admin review includes acknowledgement state.
+- Acknowledgement emits an audit event.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

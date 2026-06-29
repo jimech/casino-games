@@ -665,13 +665,22 @@ const main = async () => {
   if (!responsiblePlay.intervention.requiresAcknowledgement) {
     throw new Error('Expected responsible play intervention to require acknowledgement');
   }
+  const acknowledgedResponsiblePlay = await postJson(`${baseUrl}/api/responsible-play/interventions/${responsiblePlay.intervention.id}/acknowledge`, adminSession.token, {});
+  if (!acknowledgedResponsiblePlay.intervention.acknowledgedAt) {
+    throw new Error('Expected responsible play acknowledgement timestamp');
+  }
   const responsiblePlayReview = await getJson(`${baseUrl}/api/admin/responsible-play/interventions?limit=10`, adminSession.token);
-  if (!responsiblePlayReview.interventions.some((intervention: { userId: string }) => intervention.userId === adminSession.user.id)) {
-    throw new Error('Expected responsible play intervention to surface for admin review');
+  if (!responsiblePlayReview.interventions.some((intervention: { userId: string; acknowledgedAt?: string }) =>
+    intervention.userId === adminSession.user.id && typeof intervention.acknowledgedAt === 'string'
+  )) {
+    throw new Error('Expected acknowledged responsible play intervention to surface for admin review');
   }
   const responsiblePlayAuditEvents = await getJson(`${baseUrl}/api/ai/events?category=risk&limit=25`, adminSession.token);
   if (!responsiblePlayAuditEvents.events.some((event: { name: string }) => event.name === 'responsible_play_intervention')) {
     throw new Error('Expected responsible play intervention decision to be logged');
+  }
+  if (!responsiblePlayAuditEvents.events.some((event: { name: string }) => event.name === 'responsible_play_acknowledged')) {
+    throw new Error('Expected responsible play acknowledgement to be logged');
   }
 
   const explanations = await getJson(`${baseUrl}/api/admin/ai-decision-explanations?limit=25`, adminSession.token);

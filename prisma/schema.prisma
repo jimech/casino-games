@@ -221,6 +221,7 @@ model ResponsiblePlayIntervention {
   recommendedActions      String[]
   message                 String
   requiresAcknowledgement Boolean  @default(false)
+  acknowledgedAt          DateTime?
   triggerGameId           String?
   triggerStake            BigInt?
   sourceFeatureSnapshotId String?

@@ -1055,6 +1055,29 @@ app.post('/api/responsible-play/interventions/evaluate', async (req, res) => {
   }
 });
 
+app.post('/api/responsible-play/interventions/:id/acknowledge', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const intervention = await responsiblePlayService.acknowledge({
+      userId: user.id,
+      interventionId: req.params.id
+    });
+    await trackAiEventSafely({
+      userId: user.id,
+      category: 'risk',
+      name: 'responsible_play_acknowledged',
+      context: {
+        interventionId: intervention.id,
+        level: intervention.level,
+        acknowledgedAt: intervention.acknowledgedAt
+      }
+    });
+    res.json({ intervention });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/admin/responsible-play/interventions', async (req, res) => {
   try {
     await requireAdmin(req);

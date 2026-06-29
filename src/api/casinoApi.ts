@@ -662,6 +662,7 @@ export interface ResponsiblePlayInterventionDto {
   recommendedActions: string[];
   message: string;
   requiresAcknowledgement: boolean;
+  acknowledgedAt?: string;
   triggerGameId?: string;
   triggerStake?: number;
   sourceFeatureSnapshotId?: string;
@@ -1303,6 +1304,15 @@ export const evaluateResponsiblePlay = async (input: {
     method: 'POST',
     headers: jsonHeaders(),
     body: JSON.stringify(input)
+  });
+  const payload = await parseJsonResponse<{ intervention: ResponsiblePlayInterventionDto }>(response);
+  return payload.intervention;
+};
+
+export const acknowledgeResponsiblePlayIntervention = async (interventionId: string): Promise<ResponsiblePlayInterventionDto> => {
+  const response = await fetch(`/api/responsible-play/interventions/${encodeURIComponent(interventionId)}/acknowledge`, {
+    method: 'POST',
+    headers: jsonHeaders()
   });
   const payload = await parseJsonResponse<{ intervention: ResponsiblePlayInterventionDto }>(response);
   return payload.intervention;

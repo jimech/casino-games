@@ -16,6 +16,7 @@ export interface ResponsiblePlayInterventionRecord {
   recommendedActions: string[];
   message: string;
   requiresAcknowledgement: boolean;
+  acknowledgedAt?: string;
   triggerGameId?: string;
   triggerStake?: number;
   sourceFeatureSnapshotId?: string;
@@ -35,6 +36,7 @@ export interface ResponsiblePlayService {
   }): Promise<ResponsiblePlayInterventionRecord> | ResponsiblePlayInterventionRecord;
   latest(input: { userId: string }): Promise<ResponsiblePlayInterventionRecord | undefined> | ResponsiblePlayInterventionRecord | undefined;
   list(input?: { userId?: string; level?: ResponsiblePlayLevel; limit?: number }): Promise<ResponsiblePlayInterventionRecord[]> | ResponsiblePlayInterventionRecord[];
+  acknowledge(input: { userId: string; interventionId: string }): Promise<ResponsiblePlayInterventionRecord> | ResponsiblePlayInterventionRecord;
 }
 
 export class MemoryResponsiblePlayService implements ResponsiblePlayService {
@@ -68,6 +70,16 @@ export class MemoryResponsiblePlayService implements ResponsiblePlayService {
       .filter(intervention => !input.userId || intervention.userId === input.userId)
       .filter(intervention => !input.level || intervention.level === input.level)
       .slice(0, normalizeLimit(input.limit));
+  }
+
+  acknowledge(input: { userId: string; interventionId: string }): ResponsiblePlayInterventionRecord {
+    assertText(input.userId, 'userId');
+    assertText(input.interventionId, 'interventionId');
+    const intervention = this.interventions.find(item => item.id === input.interventionId && item.userId === input.userId);
+    if (!intervention) throw new Error('Responsible play intervention not found');
+    if (!intervention.requiresAcknowledgement) throw new Error('Responsible play acknowledgement is not required');
+    intervention.acknowledgedAt = new Date().toISOString();
+    return intervention;
   }
 }
 
@@ -123,6 +135,21 @@ export class PrismaResponsiblePlayService implements ResponsiblePlayService {
       take: normalizeLimit(input.limit)
     });
     return interventions.map(responsiblePlayInterventionToRecord);
+  }
+
+  async acknowledge(input: { userId: string; interventionId: string }): Promise<ResponsiblePlayInterventionRecord> {
+    assertText(input.userId, 'userId');
+    assertText(input.interventionId, 'interventionId');
+    const intervention = await this.prisma.responsiblePlayIntervention.findFirst({
+      where: { id: input.interventionId, userId: input.userId }
+    });
+    if (!intervention) throw new Error('Responsible play intervention not found');
+    if (!intervention.requiresAcknowledgement) throw new Error('Responsible play acknowledgement is not required');
+    const acknowledged = await this.prisma.responsiblePlayIntervention.update({
+      where: { id: intervention.id },
+      data: { acknowledgedAt: new Date() }
+    });
+    return responsiblePlayInterventionToRecord(acknowledged);
   }
 }
 
@@ -260,6 +287,7 @@ const responsiblePlayInterventionToRecord = (intervention: {
   recommendedActions: string[];
   message: string;
   requiresAcknowledgement: boolean;
+  acknowledgedAt: Date | null;
   triggerGameId: string | null;
   triggerStake: bigint | number | null;
   sourceFeatureSnapshotId: string | null;
@@ -276,6 +304,7 @@ const responsiblePlayInterventionToRecord = (intervention: {
   recommendedActions: intervention.recommendedActions,
   message: intervention.message,
   requiresAcknowledgement: intervention.requiresAcknowledgement,
+  acknowledgedAt: intervention.acknowledgedAt?.toISOString(),
   triggerGameId: intervention.triggerGameId ?? undefined,
   triggerStake: intervention.triggerStake === null ? undefined : Number(intervention.triggerStake),
   sourceFeatureSnapshotId: intervention.sourceFeatureSnapshotId ?? undefined,
