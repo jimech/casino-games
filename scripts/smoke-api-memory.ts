@@ -112,6 +112,37 @@ const main = async () => {
     throw new Error('Expected wallet deposit notification to be created');
   }
 
+  const withdrawalKey = 'quality-wallet-withdrawal';
+  const withdrawal = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
+    amount: 75,
+    method: 'bank_wire',
+    idempotencyKey: withdrawalKey
+  });
+  assertEqual(withdrawal.wallet.available, 100050, 'wallet withdrawal debited');
+  const withdrawalReplay = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
+    amount: 75,
+    method: 'bank_wire',
+    idempotencyKey: withdrawalKey
+  });
+  assertEqual(withdrawalReplay.withdrawal.reference, withdrawal.withdrawal.reference, 'wallet withdrawal replay reference');
+  assertEqual(withdrawalReplay.wallet.available, 100050, 'wallet withdrawal replay balance');
+  await postJsonExpectStatus(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
+    amount: 76,
+    method: 'bank_wire',
+    idempotencyKey: withdrawalKey
+  }, 409);
+  const withdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
+  const withdrawalLedgerEntries = withdrawalLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === withdrawalKey && entry.type === 'debit'
+  );
+  assertEqual(withdrawalLedgerEntries.length, 1, 'wallet withdrawal ledger count');
+  const withdrawalNotifications = await getJson(`${baseUrl}/api/notifications`, depositSession.token);
+  if (!withdrawalNotifications.notifications.some((notification: { type: string; metadata?: { reference?: string } }) =>
+    notification.type === 'wallet' && notification.metadata?.reference === withdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected wallet withdrawal notification to be created');
+  }
+
   const proofSession = await register({
     username: 'quality_proof',
     password: 'very-secret-pass',

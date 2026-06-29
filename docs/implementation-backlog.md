@@ -1513,6 +1513,29 @@ Acceptance criteria:
 - Deposit creates a wallet notification.
 - Local quality gate passes.
 
+### T74 - Ledger-Backed Private Wallet Withdrawals
+
+Summary: Move the private payment desk withdrawal action from local balance changes to authoritative backend ledger debits.
+
+Implementation status: Complete. The platform now exposes an authenticated `/api/wallet/withdrawals` route that validates private withdrawal rail method and amount, debits the wallet through the shared ledger service, stores idempotent replay responses, broadcasts wallet updates, creates wallet notifications, and records wallet AI telemetry. The frontend withdrawal button calls this route and updates visible balance from the backend response instead of mutating local state. Memory API smoke coverage verifies withdrawal debiting, exact replay, changed-payload conflict, single ledger entry creation, and wallet notification visibility on the isolated deposit/withdrawal user.
+
+Scope:
+- Authenticated wallet withdrawal API.
+- Method and amount validation for private payment rails.
+- Shared idempotency registry coverage for withdrawal replay/conflict.
+- Ledger-backed debit through `CasinoService.debitWallet`.
+- Wallet broadcast, notification, and AI event telemetry.
+- Frontend withdrawal integration with loading state.
+- Smoke coverage for withdrawal ledger and notification behavior.
+
+Acceptance criteria:
+- Withdrawal button updates wallet balance from backend response.
+- Exact same-key withdrawal replay returns the original withdrawal response.
+- Changed same-key withdrawal payload returns `409`.
+- Withdrawal creates exactly one wallet debit ledger entry.
+- Withdrawal creates a wallet notification.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -86,7 +86,8 @@ import {
   TournamentLeaderboardDto,
   TournamentSettlementDto,
   updateNotificationPreference,
-  VipStatusDto
+  VipStatusDto,
+  withdrawWallet
 } from './api/casinoApi';
 
 // Complete 20-Game Catalog Pre-designed nodes
@@ -194,6 +195,7 @@ export default function App() {
   } | null>(null);
   const [playerProofLoading, setPlayerProofLoading] = useState(false);
   const [walletDepositLoading, setWalletDepositLoading] = useState<'card' | 'crypto' | 'bank_wire' | null>(null);
+  const [walletWithdrawalLoading, setWalletWithdrawalLoading] = useState(false);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
   const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
   const [activeTournamentId, setActiveTournamentId] = useState('');
@@ -869,6 +871,34 @@ export default function App() {
       await syncWalletFromBackend();
     } finally {
       setWalletDepositLoading(null);
+    }
+  };
+
+  const submitWalletWithdrawal = async () => {
+    sound.playClick();
+    const amount = Math.max(0, user.walletBalance);
+    if (amount <= 0) {
+      sound.playError();
+      triggerNotification("Wallet has zero funds available to withdraw!", "error");
+      return;
+    }
+
+    setWalletWithdrawalLoading(true);
+    try {
+      const response = await withdrawWallet({
+        method: 'bank_wire',
+        amount,
+        idempotencyKey: `wallet-withdrawal-bank-wire-${crypto.randomUUID()}`
+      });
+      setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+      sound.playBigWin();
+      triggerNotification(`Bank wire withdrawal recorded: -$${response.withdrawal.amount}`, 'success');
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : 'Withdrawal could not be recorded.', 'error');
+      await syncWalletFromBackend();
+    } finally {
+      setWalletWithdrawalLoading(false);
     }
   };
 
@@ -2037,20 +2067,11 @@ export default function App() {
                   </div>
 
                   <button
-                    onClick={() => {
-                      sound.playClick();
-                      if (user.walletBalance <= 0) {
-                        sound.playError();
-                        triggerNotification("Wallet has zero funds available to withdraw!", "error");
-                      } else {
-                        handleUpdateWallet(-user.walletBalance);
-                        sound.playBigWin();
-                        triggerNotification("Withdrawal request recorded successfully.", "success");
-                      }
-                    }}
-                    className="w-full bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-xs py-3 rounded-xl transition-all block uppercase"
+                    onClick={() => void submitWalletWithdrawal()}
+                    disabled={walletWithdrawalLoading}
+                    className="w-full bg-[#00FF88] hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-neutral-950 font-black text-xs py-3 rounded-xl transition-all block uppercase"
                   >
-                    Withdraw entire reserves
+                    {walletWithdrawalLoading ? 'Recording withdrawal' : 'Withdraw entire reserves'}
                   </button>
                 </div>
 

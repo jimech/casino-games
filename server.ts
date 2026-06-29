@@ -284,6 +284,77 @@ app.post('/api/wallet/deposits', async (req, res) => {
   }
 });
 
+app.post('/api/wallet/withdrawals', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const amount = Number(req.body.amount);
+    const method = parseDepositMethod(req.body.method ?? 'bank_wire');
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Withdrawal amount must be positive');
+    if (amount > 5000) throw new Error('Withdrawal amount exceeds private rail limit');
+
+    const idempotentResult = await idempotencyService.runWithResponse({
+      userId: user.id,
+      scope: 'wallet.withdrawal',
+      idempotencyKey,
+      payload: walletWithdrawalIdempotencyPayload(req.body),
+      metadata: { route: '/api/wallet/withdrawals', method }
+    }, async () => {
+      const wallet = await casinoService.debitWallet({
+        userId: user.id,
+        amount,
+        idempotencyKey,
+        metadata: {
+          source: 'private_payment_rail',
+          method,
+          direction: 'withdrawal'
+        }
+      });
+      return {
+        wallet,
+        withdrawal: {
+          idempotencyKey,
+          amount,
+          method,
+          reference: `wd_${createHash('sha256').update(`${user.id}:${idempotencyKey}`).digest('hex').slice(0, 16)}`,
+          createdAt: new Date().toISOString()
+        }
+      };
+    });
+
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(user.id, result.wallet);
+      await notificationService.create({
+        userId: user.id,
+        type: 'wallet',
+        title: 'Withdrawal recorded',
+        message: `${depositMethodLabel(method)} private withdrawal recorded: -$${result.withdrawal.amount}`,
+        metadata: {
+          amount: result.withdrawal.amount,
+          method,
+          reference: result.withdrawal.reference,
+          idempotencyKey
+        }
+      });
+      await trackAiEventSafely({
+        userId: user.id,
+        category: 'wallet',
+        name: 'withdrawal_recorded',
+        context: {
+          amount: result.withdrawal.amount,
+          method,
+          reference: result.withdrawal.reference
+        }
+      });
+    }
+
+    res.status(idempotentResult.replayed ? 200 : 201).json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/tournaments', async (req, res) => {
   try {
     await requireAuth(req);
@@ -2756,6 +2827,14 @@ function walletDepositIdempotencyPayload(body: unknown) {
   return {
     amount: Number(record.amount),
     method: parseDepositMethod(record.method)
+  };
+}
+
+function walletWithdrawalIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    amount: Number(record.amount),
+    method: parseDepositMethod(record.method ?? 'bank_wire')
   };
 }
 

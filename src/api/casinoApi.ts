@@ -55,6 +55,17 @@ export interface WalletDepositResponseDto {
   };
 }
 
+export interface WalletWithdrawalResponseDto {
+  wallet: WalletDto;
+  withdrawal: {
+    idempotencyKey: string;
+    amount: number;
+    method: WalletDepositResponseDto['deposit']['method'];
+    reference: string;
+    createdAt: string;
+  };
+}
+
 interface RouletteBetSlipDto {
   outside: Partial<Record<'red' | 'black' | 'even' | 'odd' | 'high' | 'low', number>>;
   straight: Record<string, number>;
@@ -938,6 +949,19 @@ export const depositWallet = async (input: {
     body: JSON.stringify(input)
   });
   return parseJsonResponse<WalletDepositResponseDto>(response);
+};
+
+export const withdrawWallet = async (input: {
+  amount: number;
+  method: WalletWithdrawalResponseDto['withdrawal']['method'];
+  idempotencyKey: string;
+}): Promise<WalletWithdrawalResponseDto> => {
+  const response = await fetch('/api/wallet/withdrawals', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  return parseJsonResponse<WalletWithdrawalResponseDto>(response);
 };
 
 export const fetchRounds = async (): Promise<RoundDto[]> => {
