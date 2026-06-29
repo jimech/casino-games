@@ -196,6 +196,7 @@ export default function App() {
   const [playerRounds, setPlayerRounds] = useState<RoundDto[]>([]);
   const [playerRoundsLoading, setPlayerRoundsLoading] = useState(false);
   const [playerComplianceCases, setPlayerComplianceCases] = useState<ComplianceCaseDto[]>([]);
+  const [playerClosedComplianceCases, setPlayerClosedComplianceCases] = useState<ComplianceCaseDto[]>([]);
   const [playerProofEvidence, setPlayerProofEvidence] = useState<{
     round: RoundDto;
     provablyFair: {
@@ -552,7 +553,12 @@ export default function App() {
 
   const loadPlayerComplianceCases = async () => {
     try {
-      setPlayerComplianceCases(await fetchMyComplianceCases({ status: 'open', type: 'security', limit: 5 }));
+      const [openCases, closedCases] = await Promise.all([
+        fetchMyComplianceCases({ status: 'open', type: 'security', limit: 5 }),
+        fetchMyComplianceCases({ status: 'closed', type: 'security', limit: 3 })
+      ]);
+      setPlayerComplianceCases(openCases);
+      setPlayerClosedComplianceCases(closedCases);
     } catch (error) {
       console.warn('Player compliance case load failed', error);
     }
@@ -2308,6 +2314,25 @@ export default function App() {
                           </div>
                           <p className="text-[10px] text-neutral-400 mt-1">
                             {caseRecord.status} / {safeText(caseRecord.evidence?.reference, caseRecord.id)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {playerClosedComplianceCases.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase font-black tracking-widest text-emerald-300">
+                        Recent review outcomes
+                      </div>
+                      {playerClosedComplianceCases.map(caseRecord => (
+                        <div key={caseRecord.id} className="bg-neutral-950 border border-emerald-500/25 rounded-lg p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black uppercase text-white truncate">{caseRecord.title}</span>
+                            <span className="text-[9px] uppercase font-black text-emerald-300">{caseRecord.status}</span>
+                          </div>
+                          <p className="text-[10px] text-neutral-400 mt-1">
+                            {safeText(caseRecord.outcome, 'outcome recorded')} / {safeText(caseRecord.evidence?.reference, caseRecord.id)}
                           </p>
                         </div>
                       ))}

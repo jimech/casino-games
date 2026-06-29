@@ -1865,6 +1865,24 @@ Acceptance criteria:
 - Closed review cases remain visible with their recorded outcome.
 - Local quality gate passes.
 
+### T92 - Player Review Outcome History
+
+Summary: Show recently closed player security reviews in the wallet alongside active review cases.
+
+Implementation status: Complete. The wallet now loads both open and recently closed player-owned security compliance cases. Active cases remain in the warning-style review queue, while recent closed cases render as outcome cards with status, recorded outcome, and withdrawal/reference evidence. This gives the player a visible follow-through after an admin closes a high-value withdrawal review instead of relying only on the notification inbox.
+
+Scope:
+- Separate wallet state for recently closed security review cases.
+- Parallel player compliance case loading for open and closed queues.
+- Wallet UI section for recent review outcomes.
+- Outcome/reference display for closed review cases.
+
+Acceptance criteria:
+- Wallet continues to show active security review cases.
+- Wallet also shows recently closed security review outcomes.
+- Closed cards display status, outcome, and reference evidence.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
