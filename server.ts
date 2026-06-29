@@ -1841,10 +1841,10 @@ app.post('/api/games/poker/:roundId/action', async (req, res) => {
 
 // Production VS Development serving logic
 if (process.env.NODE_ENV === 'production') {
-  // CJS output is bundled to dist/server.cjs; target static files from ../
-  app.use(express.static(path.join(__dirname, '..')));
+  const clientDistPath = __dirname;
+  app.use(express.static(clientDistPath));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../index.html'));
+    res.sendFile(path.join(clientDistPath, 'index.html'));
   });
 } else {
   // Spin up Vite in middleware mode

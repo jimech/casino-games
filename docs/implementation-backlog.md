@@ -1432,6 +1432,25 @@ Acceptance criteria:
 - Critical reports produce an error notification.
 - Local quality gate passes.
 
+### T70 - Production Static Asset Serving
+
+Summary: Serve the built Vite client from `dist` in production instead of the source development HTML.
+
+Implementation status: Complete. The production Express branch now serves static files from the bundled server directory and falls back to `dist/index.html`, which points at hashed production assets under `/assets`. Browser verification confirmed the production URL renders the private access screen instead of a blank shell, console warnings/errors are clean, and the Register/Login tab interaction updates the rendered form.
+
+Scope:
+- Correct production static root for the bundled Express server.
+- Correct SPA fallback path for built `dist/index.html`.
+- Production browser render check for the first meaningful app screen.
+- Interaction check for the auth mode toggle.
+
+Acceptance criteria:
+- `NODE_ENV=production node dist/server.js` serves built HTML with `/assets/...` references.
+- The production browser page is not blank.
+- The first auth screen renders meaningful app content.
+- A visible auth interaction works without console warnings or errors.
+- Local lint and production build pass.
+
 ## First Working Sequence
 
 Start here:
