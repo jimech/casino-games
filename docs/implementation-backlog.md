@@ -1634,6 +1634,25 @@ Acceptance criteria:
 - Existing display-name save behavior remains intact.
 - Local quality gate passes.
 
+### T80 - Backend-Backed Account Closure Request
+
+Summary: Replace the Settings profile reset action with an auditable backend-backed account closure review request.
+
+Implementation status: Complete. The Settings danger-zone action no longer mutates frontend-only profile, wallet, or play totals. It now asks for confirmation, creates a support notification with `account_closure` metadata through the authenticated backend, refreshes notifications, and tells the player that ledger and audit history remain preserved. The memory API smoke verifies that the backend delivers the closure request and stores the request metadata.
+
+Scope:
+- Account closure request loading state.
+- Settings danger-zone handler backed by `/api/notifications`.
+- Copy that preserves ledger and audit history instead of promising browser-side deletion.
+- Memory API smoke coverage for delivered account closure request metadata.
+
+Acceptance criteria:
+- Settings no longer zeroes wallet/profile totals locally.
+- Account closure review requests call the backend.
+- Successful requests refresh notifications and show a success message.
+- Smoke coverage verifies delivered `account_closure` metadata.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

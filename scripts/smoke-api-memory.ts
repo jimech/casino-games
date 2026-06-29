@@ -160,6 +160,17 @@ const main = async () => {
   )) {
     throw new Error('Expected wallet withdrawal notification to be created');
   }
+  const accountClosureRequest = await postJson(`${baseUrl}/api/notifications`, depositSession.token, {
+    type: 'support',
+    title: 'Account closure review requested',
+    message: 'Player requested private account closure review from settings.',
+    metadata: {
+      requestType: 'account_closure',
+      userId: depositSession.user.id
+    }
+  });
+  assertEqual(accountClosureRequest.delivery.status, 'delivered', 'account closure request delivery');
+  assertEqual(accountClosureRequest.notification.metadata.requestType, 'account_closure', 'account closure metadata');
 
   const proofSession = await register({
     username: 'quality_proof',

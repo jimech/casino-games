@@ -203,6 +203,7 @@ export default function App() {
   const [walletDepositLoading, setWalletDepositLoading] = useState<'card' | 'crypto' | 'bank_wire' | null>(null);
   const [walletWithdrawalLoading, setWalletWithdrawalLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [accountClosureRequesting, setAccountClosureRequesting] = useState(false);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
   const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
   const [activeTournamentId, setActiveTournamentId] = useState('');
@@ -1214,6 +1215,33 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Settings could not be saved.", "error");
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const handleAccountClosureRequest = async () => {
+    sound.playClick();
+    const confirmed = window.confirm("Request account closure review? Wallet ledger and audit history will be preserved.");
+    if (!confirmed) return;
+
+    setAccountClosureRequesting(true);
+    try {
+      await createNotification({
+        type: 'support',
+        title: 'Account closure review requested',
+        message: 'Player requested private account closure review from settings.',
+        metadata: {
+          requestType: 'account_closure',
+          userId: activeUserId,
+          username: authSession?.user.username
+        }
+      });
+      await loadNotifications();
+      triggerNotification("Account closure review requested. Ledger and audit history remain preserved.", "success");
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : "Account closure request could not be sent.", "error");
+    } finally {
+      setAccountClosureRequesting(false);
     }
   };
 
@@ -3278,33 +3306,11 @@ export default function App() {
                   </button>
 
                   <button
-                    onClick={() => {
-                      sound.playClick();
-                      if (confirm("Are you sure you want to delete this casino profile and empty your balance?")) {
-                        setUser({
-                          username: 'DeletedPlayer',
-                          avatar: '🎭',
-                          vipTier: 'Bronze',
-                          walletBalance: 0,
-                          isVip: false,
-                          totalSpins: 0,
-                          totalBlackjackWins: 0,
-                          totalRouletteWins: 0,
-                          totalPokerWins: 0,
-                          totalCrashWins: 0,
-                          biggestWin: 0,
-                          joinedDate: '2026-06-16',
-                          dailyStreak: 0,
-                          lastDailyClaim: null,
-                          freeSpinsLeft: 0
-                        });
-                        triggerNotification("Credentials and totals wiped successfully!", "error");
-                        setActiveCasinoTab('home');
-                      }
-                    }}
-                    className="bg-red-805/20 hover:bg-red-900 border border-red-500/30 text-red-400 hover:text-white text-xs py-2 px-4 rounded-lg uppercase transition-all"
+                    onClick={() => void handleAccountClosureRequest()}
+                    disabled={accountClosureRequesting}
+                    className="bg-red-805/20 hover:bg-red-900 disabled:opacity-60 disabled:cursor-not-allowed border border-red-500/30 text-red-400 hover:text-white text-xs py-2 px-4 rounded-lg uppercase transition-all"
                   >
-                    Reset Profile Storage
+                    {accountClosureRequesting ? 'Requesting Review' : 'Request Closure Review'}
                   </button>
                 </div>
               </div>
