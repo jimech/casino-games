@@ -225,6 +225,18 @@ const main = async () => {
   )) {
     throw new Error('Expected pending withdrawal record to link review case');
   }
+  const blockedAdminWithdrawals = await fetch(`${baseUrl}/api/admin/withdrawals?limit=5`, {
+    headers: { Authorization: `Bearer ${depositSession.token}` }
+  });
+  assertEqual(blockedAdminWithdrawals.status, 403, 'regular user admin withdrawal queue access');
+  const adminPendingWithdrawals = await getJson(`${baseUrl}/api/admin/withdrawals?status=pending_review&limit=10`, adminSession.token);
+  if (!adminPendingWithdrawals.withdrawals.some((withdrawal: { reference?: string; userId?: string; complianceCaseId?: string }) =>
+    withdrawal.reference === steppedUpWithdrawal.withdrawal.reference &&
+    withdrawal.userId === depositSession.user.id &&
+    withdrawal.complianceCaseId === withdrawalReviewCase.id
+  )) {
+    throw new Error('Expected admin withdrawal queue to include pending review withdrawal');
+  }
   const playerWithdrawalReviewCases = await getJson(`${baseUrl}/api/compliance/cases?status=open&type=security&limit=5`, depositSession.token);
   if (!playerWithdrawalReviewCases.cases.some((caseRecord: { evidence?: { reference?: string } }) =>
     caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
@@ -278,6 +290,14 @@ const main = async () => {
     typeof withdrawal.resolvedAt === 'string'
   )) {
     throw new Error('Expected approved withdrawal record to resolve with review case');
+  }
+  const adminApprovedWithdrawals = await getJson(`${baseUrl}/api/admin/withdrawals?status=approved&limit=10`, adminSession.token);
+  if (!adminApprovedWithdrawals.withdrawals.some((withdrawal: { reference?: string; userId?: string; complianceCaseId?: string }) =>
+    withdrawal.reference === steppedUpWithdrawal.withdrawal.reference &&
+    withdrawal.userId === depositSession.user.id &&
+    withdrawal.complianceCaseId === withdrawalReviewCase.id
+  )) {
+    throw new Error('Expected admin withdrawal queue to include approved withdrawal');
   }
   const approvedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
   if (!approvedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { reference?: string } }) =>
@@ -352,6 +372,14 @@ const main = async () => {
     typeof withdrawal.resolvedAt === 'string'
   )) {
     throw new Error('Expected rejected withdrawal record to resolve with review case');
+  }
+  const adminRejectedWithdrawals = await getJson(`${baseUrl}/api/admin/withdrawals?status=rejected&limit=10`, adminSession.token);
+  if (!adminRejectedWithdrawals.withdrawals.some((withdrawal: { reference?: string; userId?: string; complianceCaseId?: string }) =>
+    withdrawal.reference === rejectedWithdrawal.withdrawal.reference &&
+    withdrawal.userId === depositSession.user.id &&
+    withdrawal.complianceCaseId === rejectedReviewCase.id
+  )) {
+    throw new Error('Expected admin withdrawal queue to include rejected withdrawal');
   }
   const rejectedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
   if (!rejectedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { complianceCaseId?: string; reference?: string } }) =>

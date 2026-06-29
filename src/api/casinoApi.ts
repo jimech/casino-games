@@ -1020,6 +1020,23 @@ export const fetchWalletWithdrawals = async (input: {
   return payload.withdrawals;
 };
 
+export const fetchAdminWithdrawals = async (input: {
+  userId?: string;
+  status?: WithdrawalRecordDto['status'];
+  limit?: number;
+} = {}): Promise<WithdrawalRecordDto[]> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  if (input.status) params.set('status', input.status);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/withdrawals${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ withdrawals: WithdrawalRecordDto[] }>(response);
+  return payload.withdrawals;
+};
+
 export const fetchRounds = async (): Promise<RoundDto[]> => {
   const response = await fetch('/api/rounds', {
     headers: authHeaders()

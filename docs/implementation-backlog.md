@@ -1999,6 +1999,25 @@ Acceptance criteria:
 - Players can list only their own withdrawal records.
 - Local quality gate passes.
 
+### T99 - Admin Withdrawal Queue API
+
+Summary: Give admins a dedicated withdrawal record queue for payout operations.
+
+Implementation status: Complete. Admins can now load `/api/admin/withdrawals` with optional `userId`, `status`, and `limit` filters to review operational withdrawal records independently of the wallet ledger. Regular users are forbidden from the endpoint, while admins can inspect pending, approved, and rejected payout records linked to compliance cases. The frontend API client includes a typed admin helper, and the memory API smoke verifies blocked user access plus admin visibility for pending, approved, and rejected high-value withdrawal records.
+
+Scope:
+- Admin-only withdrawal queue endpoint.
+- Status, user, and limit filtering.
+- Typed frontend API helper for admin withdrawal records.
+- Smoke coverage for forbidden regular-user access.
+- Smoke coverage for pending/approved/rejected admin queue rows.
+
+Acceptance criteria:
+- Regular users cannot access the admin withdrawal queue.
+- Admins can filter withdrawal records by status and user.
+- Queue rows preserve compliance-case links and player ids.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

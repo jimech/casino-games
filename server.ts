@@ -1209,6 +1209,18 @@ app.get('/api/admin/compliance/cases', async (req, res) => {
   }
 });
 
+app.get('/api/admin/withdrawals', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const status = isWithdrawalStatus(req.query.status) ? req.query.status : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ withdrawals: await withdrawalService.list({ userId, status, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/admin/compliance/cases', async (req, res) => {
   try {
     const admin = await requireAdmin(req);
