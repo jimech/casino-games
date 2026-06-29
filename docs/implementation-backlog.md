@@ -1390,6 +1390,28 @@ Acceptance criteria:
 - Existing idempotency replay/conflict behavior remains unchanged.
 - Local quality gate passes.
 
+### T68 - Wallet and Round Reconciliation Job
+
+Summary: Add a read-only integrity reconciliation report for wallets, ledger entries, rounds, and provably fair seed linkage.
+
+Implementation status: Complete. The platform now has a memory/Prisma reconciliation service and an admin-only `/api/admin/integrity/reconciliation` endpoint. The report checks wallet balances against the latest ledger state, locked balances against open round stake, ledger references to wallets and rounds, round lock/settlement ledger coverage, closed-round settlement keys/timestamps, and Prisma provably fair seed linkage for settled roulette/slots/crash rounds. The endpoint records an admin AI audit event with pass/fail summary and returns `409` only when critical issues are found. Unit coverage verifies a clean memory ledger/round state passes, and the memory API smoke runs the reconciliation after full wallet/tournament flows.
+
+Scope:
+- Read-only reconciliation service for memory mode using casino snapshots.
+- Read-only reconciliation service for Prisma mode using wallets, ledger entries, rounds, and seed tables.
+- Admin reconciliation endpoint with pass/warning/fail status.
+- Wallet-vs-ledger and open-lock invariant checks.
+- Round ledger linkage and closed-round settlement checks.
+- Provably fair seed linkage checks for Prisma settled fair games.
+- Smoke coverage for the admin endpoint.
+
+Acceptance criteria:
+- Clean smoke data returns a passing reconciliation report.
+- Critical integrity mismatches are represented as report issues.
+- Reconciliation does not mutate balances, rounds, ledger entries, or seeds.
+- Admin run is audit-visible through AI event telemetry.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -419,6 +419,12 @@ const main = async () => {
   assertEqual(exportedTournamentEvidence.exportVersion, 'tournament-evidence-v1', 'tournament evidence export version');
   assertEqual(exportedTournamentEvidence.tournament.id, activeTournament.id, 'tournament evidence export id');
 
+  const reconciliation = await postJson(`${baseUrl}/api/admin/integrity/reconciliation`, adminSession.token, {});
+  assertEqual(reconciliation.report.status, 'pass', 'integrity reconciliation status');
+  if (reconciliation.report.summary.criticalIssueCount !== 0 || reconciliation.report.summary.roundCount < 1) {
+    throw new Error('Expected reconciliation report to pass with settled smoke rounds');
+  }
+
   await postJson(`${baseUrl}/api/ai/events`, adminSession.token, {
     category: 'page',
     name: 'tab_viewed',

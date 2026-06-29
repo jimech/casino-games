@@ -8,7 +8,7 @@ const activeTournament = {
   title: 'Test Tournament',
   description: 'Test scoring window',
   startAt: '2026-06-22T00:00:00.000Z',
-  endAt: '2026-06-29T00:00:00.000Z',
+  endAt: '2099-01-01T00:00:00.000Z',
   entryFee: 100,
   prizePool: 1000
 };

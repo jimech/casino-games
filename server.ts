@@ -27,7 +27,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService, idempotencyService } = createServices();
+const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService, idempotencyService, reconciliationService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
@@ -295,6 +295,28 @@ app.get('/api/admin/game-math/simulations', async (req, res) => {
     await requireAdmin(req);
     const sampleCount = typeof req.query.sampleCount === 'string' ? Number(req.query.sampleCount) : undefined;
     res.json({ report: runGameMathSimulation({ sampleCount }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/integrity/reconciliation', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    const report = await reconciliationService.run();
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'integrity_reconciliation_run',
+      context: {
+        status: report.status,
+        mode: report.mode,
+        issueCount: report.summary.issueCount,
+        criticalIssueCount: report.summary.criticalIssueCount,
+        warningIssueCount: report.summary.warningIssueCount
+      }
+    });
+    res.status(report.status === 'fail' ? 409 : 200).json({ report });
   } catch (error) {
     sendApiError(res, error);
   }
