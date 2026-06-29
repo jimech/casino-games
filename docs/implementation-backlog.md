@@ -1536,6 +1536,26 @@ Acceptance criteria:
 - Withdrawal creates a wallet notification.
 - Local quality gate passes.
 
+### T75 - Prisma Payment Rail API Smoke Coverage
+
+Summary: Extend the persistent-backend API smoke to cover private wallet deposits and withdrawals.
+
+Implementation status: Complete. The Prisma API smoke now exercises `/api/wallet/deposits` and `/api/wallet/withdrawals` against the bundled production server in Prisma mode. It verifies deposit crediting, withdrawal debiting, exact replay responses, changed-payload `409` conflicts, and single ledger-entry persistence for both payment-rail directions before continuing through the existing game, seed, idempotency, and concurrency checks.
+
+Scope:
+- Prisma API smoke deposit request and replay.
+- Prisma API smoke deposit conflict check.
+- Prisma API smoke withdrawal request and replay.
+- Prisma API smoke withdrawal conflict check.
+- Ledger count assertions for persisted deposit and withdrawal entries.
+
+Acceptance criteria:
+- Prisma API smoke catches missing deposit persistence.
+- Prisma API smoke catches missing withdrawal persistence.
+- Replayed payment rail requests return original references and balances.
+- Changed same-key payment rail requests return `409`.
+- Local static/type/build quality gate passes.
+
 ## First Working Sequence
 
 Start here:

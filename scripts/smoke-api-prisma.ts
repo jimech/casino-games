@@ -79,6 +79,56 @@ const main = async () => {
   const wallet = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
   assertEqual(wallet.available, 100000, 'initial Prisma wallet balance');
 
+  const depositKey = `prisma-api-wallet-deposit-${suffix}`;
+  const deposit = await postJson(`${baseUrl}/api/wallet/deposits`, userSession.token, {
+    amount: 125,
+    method: 'card',
+    idempotencyKey: depositKey
+  });
+  assertEqual(deposit.wallet.available, 100125, 'Prisma API wallet deposit credited');
+  const depositReplay = await postJson(`${baseUrl}/api/wallet/deposits`, userSession.token, {
+    amount: 125,
+    method: 'card',
+    idempotencyKey: depositKey
+  });
+  assertEqual(depositReplay.deposit.reference, deposit.deposit.reference, 'Prisma API wallet deposit replay reference');
+  assertEqual(depositReplay.wallet.available, 100125, 'Prisma API wallet deposit replay balance');
+  await postJsonExpectStatus(`${baseUrl}/api/wallet/deposits`, userSession.token, {
+    amount: 126,
+    method: 'card',
+    idempotencyKey: depositKey
+  }, 409);
+
+  const withdrawalKey = `prisma-api-wallet-withdrawal-${suffix}`;
+  const withdrawal = await postJson(`${baseUrl}/api/wallet/withdrawals`, userSession.token, {
+    amount: 75,
+    method: 'bank_wire',
+    idempotencyKey: withdrawalKey
+  });
+  assertEqual(withdrawal.wallet.available, 100050, 'Prisma API wallet withdrawal debited');
+  const withdrawalReplay = await postJson(`${baseUrl}/api/wallet/withdrawals`, userSession.token, {
+    amount: 75,
+    method: 'bank_wire',
+    idempotencyKey: withdrawalKey
+  });
+  assertEqual(withdrawalReplay.withdrawal.reference, withdrawal.withdrawal.reference, 'Prisma API wallet withdrawal replay reference');
+  assertEqual(withdrawalReplay.wallet.available, 100050, 'Prisma API wallet withdrawal replay balance');
+  await postJsonExpectStatus(`${baseUrl}/api/wallet/withdrawals`, userSession.token, {
+    amount: 76,
+    method: 'bank_wire',
+    idempotencyKey: withdrawalKey
+  }, 409);
+
+  const paymentRailLedger = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}/ledger`, userSession.token);
+  const depositLedgerEntries = paymentRailLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === depositKey && entry.type === 'credit'
+  );
+  const withdrawalLedgerEntries = paymentRailLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === withdrawalKey && entry.type === 'debit'
+  );
+  assertEqual(depositLedgerEntries.length, 1, 'Prisma API wallet deposit ledger count');
+  assertEqual(withdrawalLedgerEntries.length, 1, 'Prisma API wallet withdrawal ledger count');
+
   const walletBetKey = `prisma-api-wallet-bet-${suffix}`;
   const walletBet = await postJson(`${baseUrl}/api/bets`, userSession.token, {
     gameId: 'roulette',
