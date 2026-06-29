@@ -1575,6 +1575,26 @@ Acceptance criteria:
 - Consent endpoint returns updated timestamps in smoke coverage.
 - Local quality gate passes.
 
+### T77 - Support Request Submission Hardening
+
+Summary: Add frontend failure handling and smoke coverage for backend-backed support requests.
+
+Implementation status: Complete. The support form now tracks an in-flight submit state, disables the submit button while the backend notification request is pending, preserves the existing success confirmation on delivery, and reports backend failures through the standard error notification path. The memory API smoke now verifies a normal support request is delivered with metadata before separately verifying muted support suppression behavior.
+
+Scope:
+- Support form submit loading state.
+- Disabled submit button during in-flight request.
+- Try/catch error handling for backend notification creation.
+- Smoke coverage for delivered support notification metadata.
+- Existing muted support suppression smoke preserved.
+
+Acceptance criteria:
+- Support form cannot double-submit while the request is pending.
+- Backend notification failures show an error.
+- Successful support requests still show the submitted state.
+- Smoke coverage verifies delivered and suppressed support paths.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -232,6 +232,19 @@ const main = async () => {
   if (!preferences.preferences.some((preference: { type: string; mandatory: boolean }) => preference.type === 'risk' && preference.mandatory)) {
     throw new Error('Expected risk notification preference to be mandatory');
   }
+  const deliveredSupport = await postJson(`${baseUrl}/api/notifications`, adminSession.token, {
+    type: 'support',
+    title: 'Support request received',
+    message: 'Quality smoke support request',
+    metadata: {
+      name: 'Quality Admin',
+      email: 'quality@example.test'
+    }
+  });
+  assertEqual(deliveredSupport.delivery.status, 'delivered', 'support notification delivered');
+  if (!deliveredSupport.notification?.metadata || deliveredSupport.notification.metadata.name !== 'Quality Admin') {
+    throw new Error('Expected delivered support notification metadata to be preserved');
+  }
   const mutedSupport = await postJson(`${baseUrl}/api/notifications/preferences/support`, adminSession.token, {
     enabled: false
   });

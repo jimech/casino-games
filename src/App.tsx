@@ -148,6 +148,7 @@ export default function App() {
   // Support State
   const [supportForm, setSupportForm] = useState({ name: '', email: '', message: '' });
   const [supportSubmitted, setSupportSubmitted] = useState(false);
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
 
   // General States
   const [pushNotification, setPushNotification] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -1162,18 +1163,26 @@ export default function App() {
       triggerNotification("Please fill out all support inputs before submitting!", "error");
       return;
     }
-    await createNotification({
-      type: 'support',
-      title: 'Support request received',
-      message: supportForm.message.slice(0, 240),
-      metadata: {
-        name: supportForm.name,
-        email: supportForm.email
-      }
-    });
-    await loadNotifications();
-    setSupportSubmitted(true);
-    triggerNotification("Message dispatched. Support agent response generated immediately!", "success");
+    setSupportSubmitting(true);
+    try {
+      await createNotification({
+        type: 'support',
+        title: 'Support request received',
+        message: supportForm.message.slice(0, 240),
+        metadata: {
+          name: supportForm.name,
+          email: supportForm.email
+        }
+      });
+      await loadNotifications();
+      setSupportSubmitted(true);
+      triggerNotification("Message dispatched. Support agent response generated immediately!", "success");
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : "Support request could not be sent.", "error");
+    } finally {
+      setSupportSubmitting(false);
+    }
   };
 
   const handleSettingsSave = async () => {
@@ -3121,9 +3130,10 @@ export default function App() {
 
                     <button
                       type="submit"
-                      className="w-full bg-[#FF0055] hover:bg-pink-600 font-extrabold uppercase text-xs tracking-wider py-2.5 rounded-lg transition-all"
+                      disabled={supportSubmitting}
+                      className="w-full bg-[#FF0055] hover:bg-pink-600 disabled:opacity-60 disabled:cursor-not-allowed font-extrabold uppercase text-xs tracking-wider py-2.5 rounded-lg transition-all"
                     >
-                      Submit inquiry validation
+                      {supportSubmitting ? 'Submitting' : 'Submit inquiry validation'}
                     </button>
                   </form>
                 )}
