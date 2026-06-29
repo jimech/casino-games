@@ -1847,6 +1847,24 @@ Acceptance criteria:
 - High-value withdrawal review cases appear without admin access.
 - Local quality gate passes.
 
+### T91 - Compliance Case Status Notifications
+
+Summary: Notify players when an admin advances or closes one of their compliance review cases.
+
+Implementation status: Complete. Admin compliance case notes now send a player risk notification whenever the note changes case status or records an outcome. The notification includes the case id, case type, current status, outcome, action, and latest evidence so the player-facing wallet/review UI can refresh around concrete review state. The memory API smoke closes the high-value withdrawal review case, verifies it leaves the player's open review queue, verifies the closed queue preserves the approval outcome, and confirms the closure notification is delivered.
+
+Scope:
+- Player notification hook for admin compliance status/outcome changes.
+- Structured notification metadata for case status transitions.
+- Memory API smoke coverage for high-value withdrawal review closure.
+- Player open/closed compliance case visibility assertions.
+
+Acceptance criteria:
+- Status or outcome changes on admin case notes notify the subject player.
+- Closed review cases leave the player's open review queue.
+- Closed review cases remain visible with their recorded outcome.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

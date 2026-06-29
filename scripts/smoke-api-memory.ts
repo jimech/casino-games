@@ -211,6 +211,7 @@ const main = async () => {
     caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
   );
   assertEqual(highValueWithdrawalCases.length, 1, 'high-value withdrawal review case count');
+  const withdrawalReviewCase = highValueWithdrawalCases[0];
   const playerWithdrawalReviewCases = await getJson(`${baseUrl}/api/compliance/cases?status=open&type=security&limit=5`, depositSession.token);
   if (!playerWithdrawalReviewCases.cases.some((caseRecord: { evidence?: { reference?: string } }) =>
     caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
@@ -222,6 +223,40 @@ const main = async () => {
     notification.type === 'risk' && notification.metadata?.reference === steppedUpWithdrawal.withdrawal.reference
   )) {
     throw new Error('Expected high-value withdrawal review notification');
+  }
+  const closedWithdrawalReview = await postJson(`${baseUrl}/api/admin/compliance/cases/${withdrawalReviewCase.id}/notes`, adminSession.token, {
+    note: 'Smoke high-value withdrawal review completed.',
+    action: 'closed',
+    status: 'closed',
+    outcome: 'approved_for_private_payout',
+    evidence: {
+      source: 'wallet_withdrawal_review',
+      reference: steppedUpWithdrawal.withdrawal.reference
+    }
+  });
+  assertEqual(closedWithdrawalReview.case.status, 'closed', 'high-value withdrawal review closed');
+  assertEqual(closedWithdrawalReview.case.outcome, 'approved_for_private_payout', 'high-value withdrawal review outcome');
+  const openWithdrawalReviewsAfterClose = await getJson(`${baseUrl}/api/compliance/cases?status=open&type=security&limit=5`, depositSession.token);
+  if (openWithdrawalReviewsAfterClose.cases.some((caseRecord: { evidence?: { reference?: string } }) =>
+    caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected closed withdrawal review to leave player open review queue');
+  }
+  const closedPlayerWithdrawalReviews = await getJson(`${baseUrl}/api/compliance/cases?status=closed&type=security&limit=5`, depositSession.token);
+  if (!closedPlayerWithdrawalReviews.cases.some((caseRecord: { evidence?: { reference?: string }; outcome?: string }) =>
+    caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference &&
+    caseRecord.outcome === 'approved_for_private_payout'
+  )) {
+    throw new Error('Expected player closed review queue to include withdrawal outcome');
+  }
+  const closedReviewNotifications = await getJson(`${baseUrl}/api/notifications`, depositSession.token);
+  if (!closedReviewNotifications.notifications.some((notification: { type: string; metadata?: { caseId?: string; status?: string; outcome?: string } }) =>
+    notification.type === 'risk' &&
+    notification.metadata?.caseId === withdrawalReviewCase.id &&
+    notification.metadata?.status === 'closed' &&
+    notification.metadata?.outcome === 'approved_for_private_payout'
+  )) {
+    throw new Error('Expected compliance review closure notification');
   }
   const accountClosureRequest = await postJson(`${baseUrl}/api/notifications`, depositSession.token, {
     type: 'support',

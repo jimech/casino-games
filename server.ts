@@ -1230,6 +1230,7 @@ app.post('/api/admin/compliance/cases/:caseId/notes', async (req, res) => {
       outcome: caseRecord.outcome,
       evidence: caseRecord.notes[0]?.evidence
     });
+    await notifyComplianceCaseStatus(caseRecord.subjectUserId, caseRecord);
     res.status(201).json({ case: caseRecord });
   } catch (error) {
     sendApiError(res, error);
@@ -2372,6 +2373,39 @@ async function auditComplianceCaseAction(adminUserId: string, subjectUserId: str
       adminUserId,
       action,
       ...context
+    }
+  });
+}
+
+function complianceStatusLabel(status: string) {
+  return status.replace(/_/g, ' ');
+}
+
+async function notifyComplianceCaseStatus(userId: string, caseRecord: {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  outcome?: string;
+  notes: Array<{ action: string; status?: string; outcome?: string; evidence?: Record<string, unknown> }>;
+}) {
+  const latestNote = caseRecord.notes[0];
+  if (!latestNote?.status && !latestNote?.outcome) return;
+
+  const statusLabel = complianceStatusLabel(caseRecord.status);
+  const outcomeCopy = caseRecord.outcome ? ` Outcome: ${caseRecord.outcome}.` : '';
+  await notificationService.create({
+    userId,
+    type: 'risk',
+    title: `Compliance review ${statusLabel}`,
+    message: `${caseRecord.title} is now ${statusLabel}.${outcomeCopy}`,
+    metadata: {
+      caseId: caseRecord.id,
+      caseType: caseRecord.type,
+      status: caseRecord.status,
+      outcome: caseRecord.outcome,
+      action: latestNote.action,
+      evidence: latestNote.evidence
     }
   });
 }
