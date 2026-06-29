@@ -1451,6 +1451,25 @@ Acceptance criteria:
 - A visible auth interaction works without console warnings or errors.
 - Local lint and production build pass.
 
+### T71 - Production Client Smoke Regression Guard
+
+Summary: Add automated smoke coverage that catches production blank-page asset regressions.
+
+Implementation status: Complete. The memory API smoke now validates the bundled production client immediately after the server becomes ready. It fetches `/`, rejects development HTML that still points to `/src/main.tsx`, verifies hashed JavaScript and CSS assets under `/assets` are present and readable, and confirms the SPA fallback returns the same built client shell. This places the T70 production serving fix under the regular `npm run quality` gate.
+
+Scope:
+- Production root HTML smoke check.
+- Built JavaScript and CSS asset reachability checks.
+- SPA fallback smoke check for a deep route.
+- Regression failure for development `index.html` served in production.
+
+Acceptance criteria:
+- `npm run smoke:api` fails if production serves `/src/main.tsx`.
+- `npm run smoke:api` fails if built JS or CSS assets are missing/unreadable.
+- `npm run smoke:api` fails if the SPA fallback does not serve the built client shell.
+- Existing memory API smoke coverage still passes.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

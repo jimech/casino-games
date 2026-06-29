@@ -47,6 +47,7 @@ process.on('SIGINT', () => {
 
 const main = async () => {
   await waitForServerReady();
+  await assertProductionClientServed();
 
   const userSession = await register({
     username: 'quality_user',
@@ -713,6 +714,43 @@ const waitForServerReady = async () => {
     await delay(250);
   }
   throw new Error(`Server did not become ready\n${serverOutput}`);
+};
+
+const assertProductionClientServed = async () => {
+  const response = await fetch(`${baseUrl}/`);
+  const html = await response.text();
+  if (!response.ok) {
+    throw new Error(`Production client root failed: ${response.status}`);
+  }
+  if (html.includes('/src/main.tsx')) {
+    throw new Error('Production client served development index.html with /src/main.tsx');
+  }
+
+  const scriptMatch = html.match(/<script[^>]+src="([^"]*\/assets\/[^"]+\.js)"/);
+  const styleMatch = html.match(/<link[^>]+href="([^"]*\/assets\/[^"]+\.css)"/);
+  if (!scriptMatch?.[1]) {
+    throw new Error('Production client index is missing built JavaScript asset');
+  }
+  if (!styleMatch?.[1]) {
+    throw new Error('Production client index is missing built CSS asset');
+  }
+
+  await assertStaticAsset(scriptMatch[1], 'JavaScript');
+  await assertStaticAsset(styleMatch[1], 'CSS');
+
+  const spaFallback = await fetch(`${baseUrl}/admin/audit`);
+  const fallbackHtml = await spaFallback.text();
+  if (!spaFallback.ok || !fallbackHtml.includes(scriptMatch[1])) {
+    throw new Error(`Production SPA fallback failed: ${spaFallback.status}`);
+  }
+};
+
+const assertStaticAsset = async (assetPath: string, label: string) => {
+  const response = await fetch(`${baseUrl}${assetPath}`);
+  const body = await response.text();
+  if (!response.ok || body.length === 0) {
+    throw new Error(`Production ${label} asset failed: ${response.status} ${assetPath}`);
+  }
 };
 
 const register = async (body: Record<string, unknown>) => {
