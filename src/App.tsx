@@ -29,6 +29,7 @@ import {
   claimBonus,
   createNotification,
   createWalletEventSource,
+  depositWallet,
   enterTournament,
   exportAdminRoundEvidence,
   exportAdminTournamentEvidence,
@@ -103,7 +104,7 @@ const GAME_CATALOG_DATA: GameCatalogItem[] = [
   { id: 'poker-omaha', title: 'Omaha Limit Pro', category: 'poker', provider: 'DealerPro', rtp: '97.8%', volatility: 'Medium', img: '🎭', description: '4-hole card omaha rules with automated payout calculations.', winOdds: '1 in 3.8' },
   { id: 'crash-cosmic', title: 'Cosmic Flight Rocket', category: 'crash', provider: 'NexusStudio', rtp: '96.2%', volatility: 'Extreme', img: '🚀', description: 'Lock multipliers in mid-air. Fast cash out limits.', winOdds: '1 in 2.5' },
   { id: 'crash-zeus', title: "Zeus Thunderbolt", category: 'crash', provider: 'Athenian', rtp: '96.8%', volatility: 'High', img: '🌩️', description: 'Multiplier climbs as Zeus constructs visual thunderbolt arcs.', winOdds: '1 in 2.7' },
-  { id: 'live-dealer-bj', title: 'Live Emerald Dealer BJ', category: 'live', provider: 'VegasStream', rtp: '99.5%', volatility: 'Medium', img: '👩‍💼', description: 'Simulated real-time dealer with online multiplayer chat.', winOdds: '1 in 2.0' },
+  { id: 'live-dealer-bj', title: 'Live Emerald Dealer BJ', category: 'live', provider: 'VegasStream', rtp: '99.5%', volatility: 'Medium', img: '👩‍💼', description: 'Real-time dealer table with online multiplayer chat.', winOdds: '1 in 2.0' },
   { id: 'live-dealer-rt', title: 'Live Sunset Casino Wheel', category: 'live', provider: 'VegasStream', rtp: '97.3%', volatility: 'High', img: '🔴', description: 'Direct physical spin telemetry broadcasted globally.', winOdds: '1 in 3.0' },
   { id: 'live-dealer-pk', title: 'Live Holdem Champions', category: 'live', provider: 'VegasStream', rtp: '98.9%', volatility: 'High', img: '🤵', description: 'Real poker tables streamed live. Play with international players.', winOdds: '1 in 4.5' },
   { id: 'slots-cyber-reels', title: 'Retro Byte Reels', category: 'slots', provider: 'RetroCade', rtp: '96.0%', volatility: 'Low', img: '👾', description: 'Chiptune audio score slots with 8-bit retro symbol cards.', winOdds: '1 in 3.5' },
@@ -192,6 +193,7 @@ export default function App() {
     };
   } | null>(null);
   const [playerProofLoading, setPlayerProofLoading] = useState(false);
+  const [walletDepositLoading, setWalletDepositLoading] = useState<'card' | 'crypto' | 'bank_wire' | null>(null);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
   const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
   const [activeTournamentId, setActiveTournamentId] = useState('');
@@ -847,6 +849,26 @@ export default function App() {
     } catch (error) {
       console.warn('Wallet sync failed', error);
       triggerNotification("Backend wallet sync failed. Using local wallet state for now.", "error");
+    }
+  };
+
+  const submitWalletDeposit = async (method: 'card' | 'crypto' | 'bank_wire', amount: number, label: string) => {
+    sound.playClick();
+    setWalletDepositLoading(method);
+    try {
+      const response = await depositWallet({
+        method,
+        amount,
+        idempotencyKey: `wallet-deposit-${method}-${crypto.randomUUID()}`
+      });
+      setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
+      triggerNotification(`${label} private deposit credited: +$${response.deposit.amount}`, 'success');
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : 'Deposit could not be credited.', 'error');
+      await syncWalletFromBackend();
+    } finally {
+      setWalletDepositLoading(null);
     }
   };
 
@@ -1989,36 +2011,27 @@ export default function App() {
                     <span className="text-[10px] text-neutral-400 font-black uppercase block">Deposit Method:</span>
                     <div className="grid grid-cols-3 gap-2">
                       <button
-                        onClick={() => {
-                          sound.playClick();
-                          handleUpdateWallet(100);
-                          triggerNotification("Simulated Credit Card: Loaded +$100!", "success");
-                        }}
-                        className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
+                        onClick={() => void submitWalletDeposit('card', 100, 'Card')}
+                        disabled={walletDepositLoading !== null}
+                        className="bg-neutral-900 hover:bg-neutral-850 disabled:opacity-60 disabled:cursor-not-allowed text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
                       >
-                        Credit Card
+                        {walletDepositLoading === 'card' ? 'Crediting' : 'Credit Card'}
                       </button>
 
                       <button
-                        onClick={() => {
-                          sound.playClick();
-                          handleUpdateWallet(250);
-                          triggerNotification("Simulated Crypto Deposit: Loaded +$250!", "success");
-                        }}
-                        className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
+                        onClick={() => void submitWalletDeposit('crypto', 250, 'Crypto')}
+                        disabled={walletDepositLoading !== null}
+                        className="bg-neutral-900 hover:bg-neutral-850 disabled:opacity-60 disabled:cursor-not-allowed text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
                       >
-                        BTC/ETH
+                        {walletDepositLoading === 'crypto' ? 'Crediting' : 'BTC/ETH'}
                       </button>
 
                       <button
-                        onClick={() => {
-                          sound.playClick();
-                          handleUpdateWallet(500);
-                          triggerNotification("Simulated Bank wire: Loaded +$500!", "success");
-                        }}
-                        className="bg-neutral-900 hover:bg-neutral-850 text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
+                        onClick={() => void submitWalletDeposit('bank_wire', 500, 'Bank wire')}
+                        disabled={walletDepositLoading !== null}
+                        className="bg-neutral-900 hover:bg-neutral-850 disabled:opacity-60 disabled:cursor-not-allowed text-[10px] py-2 px-1.5 rounded-lg font-bold transition-all border border-neutral-800 text-center uppercase cursor-pointer"
                       >
-                        Bank Wire
+                        {walletDepositLoading === 'bank_wire' ? 'Crediting' : 'Bank Wire'}
                       </button>
                     </div>
                   </div>

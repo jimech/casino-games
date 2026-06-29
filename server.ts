@@ -214,6 +214,76 @@ app.get('/api/wallet/:userId/ledger', async (req, res) => {
   }
 });
 
+app.post('/api/wallet/deposits', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const amount = Number(req.body.amount);
+    const method = parseDepositMethod(req.body.method);
+    const idempotencyKey = String(req.body.idempotencyKey ?? '');
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Deposit amount must be positive');
+    if (amount > 5000) throw new Error('Deposit amount exceeds private rail limit');
+
+    const idempotentResult = await idempotencyService.runWithResponse({
+      userId: user.id,
+      scope: 'wallet.deposit',
+      idempotencyKey,
+      payload: walletDepositIdempotencyPayload(req.body),
+      metadata: { route: '/api/wallet/deposits', method }
+    }, async () => {
+      const wallet = await casinoService.creditWallet({
+        userId: user.id,
+        amount,
+        idempotencyKey,
+        metadata: {
+          source: 'private_payment_rail',
+          method
+        }
+      });
+      return {
+        wallet,
+        deposit: {
+          idempotencyKey,
+          amount,
+          method,
+          reference: `dep_${createHash('sha256').update(`${user.id}:${idempotencyKey}`).digest('hex').slice(0, 16)}`,
+          createdAt: new Date().toISOString()
+        }
+      };
+    });
+
+    const result = idempotentResult.body;
+    if (!idempotentResult.replayed) {
+      broadcastWallet(user.id, result.wallet);
+      await notificationService.create({
+        userId: user.id,
+        type: 'wallet',
+        title: 'Deposit credited',
+        message: `${depositMethodLabel(method)} private deposit credited: +$${result.deposit.amount}`,
+        metadata: {
+          amount: result.deposit.amount,
+          method,
+          reference: result.deposit.reference,
+          idempotencyKey
+        }
+      });
+      await trackAiEventSafely({
+        userId: user.id,
+        category: 'wallet',
+        name: 'deposit_credited',
+        context: {
+          amount: result.deposit.amount,
+          method,
+          reference: result.deposit.reference
+        }
+      });
+    }
+
+    res.status(idempotentResult.replayed ? 200 : 201).json(result);
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/tournaments', async (req, res) => {
   try {
     await requireAuth(req);
@@ -2019,6 +2089,17 @@ function parseNotificationType(value: unknown) {
   throw new Error('Unsupported notification type');
 }
 
+function parseDepositMethod(value: unknown): 'card' | 'crypto' | 'bank_wire' {
+  if (value === 'card' || value === 'crypto' || value === 'bank_wire') return value;
+  throw new Error('Invalid deposit method');
+}
+
+function depositMethodLabel(method: 'card' | 'crypto' | 'bank_wire') {
+  if (method === 'card') return 'Card';
+  if (method === 'crypto') return 'Crypto';
+  return 'Bank wire';
+}
+
 async function trackAiEventSafely(input: {
   userId: string;
   category: AiEventCategory;
@@ -2667,6 +2748,14 @@ function bonusClaimIdempotencyPayload(campaignId: string) {
 function vipCashbackIdempotencyPayload() {
   return {
     claim: 'weekly-cashback'
+  };
+}
+
+function walletDepositIdempotencyPayload(body: unknown) {
+  const record = isRecord(body) ? body : {};
+  return {
+    amount: Number(record.amount),
+    method: parseDepositMethod(record.method)
   };
 }
 

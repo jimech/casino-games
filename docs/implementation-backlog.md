@@ -1490,6 +1490,29 @@ Acceptance criteria:
 - No gameplay, wallet, or API behavior changes.
 - Local quality gate passes.
 
+### T73 - Ledger-Backed Private Wallet Deposits
+
+Summary: Move the private payment desk deposit buttons from local balance changes to authoritative backend ledger credits.
+
+Implementation status: Complete. The platform now exposes an authenticated `/api/wallet/deposits` route that validates private deposit rail method and amount, credits the wallet through the shared ledger service, stores idempotent replay responses, broadcasts wallet updates, creates wallet notifications, and records wallet AI telemetry. The frontend payment desk calls this route for card, crypto, and bank-wire test rails instead of mutating local state. Memory API smoke coverage verifies deposit crediting, exact replay, changed-payload conflict, single ledger entry creation, and wallet notification visibility on an isolated deposit user.
+
+Scope:
+- Authenticated wallet deposit API.
+- Method and amount validation for private payment rails.
+- Shared idempotency registry coverage for deposit replay/conflict.
+- Ledger-backed credit through `CasinoService.creditWallet`.
+- Wallet broadcast, notification, and AI event telemetry.
+- Frontend payment desk integration with per-method loading states.
+- Smoke coverage for deposit ledger and notification behavior.
+
+Acceptance criteria:
+- Deposit buttons update wallet balance from backend response.
+- Exact same-key deposit replay returns the original deposit response.
+- Changed same-key deposit payload returns `409`.
+- Deposit creates exactly one wallet credit ledger entry.
+- Deposit creates a wallet notification.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -73,6 +73,45 @@ const main = async () => {
   });
   assertEqual(adminSession.user.role, 'admin', 'admin invite role');
 
+  const depositSession = await register({
+    username: 'quality_deposit',
+    password: 'very-secret-pass',
+    acceptAgeGate: true,
+    acceptTerms: true,
+    acceptPrivacy: true
+  });
+
+  const depositKey = 'quality-wallet-deposit';
+  const deposit = await postJson(`${baseUrl}/api/wallet/deposits`, depositSession.token, {
+    amount: 125,
+    method: 'card',
+    idempotencyKey: depositKey
+  });
+  assertEqual(deposit.wallet.available, 100125, 'wallet deposit credited');
+  const depositReplay = await postJson(`${baseUrl}/api/wallet/deposits`, depositSession.token, {
+    amount: 125,
+    method: 'card',
+    idempotencyKey: depositKey
+  });
+  assertEqual(depositReplay.deposit.reference, deposit.deposit.reference, 'wallet deposit replay reference');
+  assertEqual(depositReplay.wallet.available, 100125, 'wallet deposit replay balance');
+  await postJsonExpectStatus(`${baseUrl}/api/wallet/deposits`, depositSession.token, {
+    amount: 126,
+    method: 'card',
+    idempotencyKey: depositKey
+  }, 409);
+  const depositLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
+  const depositLedgerEntries = depositLedger.entries.filter((entry: { idempotencyKey: string; type: string }) =>
+    entry.idempotencyKey === depositKey && entry.type === 'credit'
+  );
+  assertEqual(depositLedgerEntries.length, 1, 'wallet deposit ledger count');
+  const depositNotifications = await getJson(`${baseUrl}/api/notifications`, depositSession.token);
+  if (!depositNotifications.notifications.some((notification: { type: string; metadata?: { reference?: string } }) =>
+    notification.type === 'wallet' && notification.metadata?.reference === deposit.deposit.reference
+  )) {
+    throw new Error('Expected wallet deposit notification to be created');
+  }
+
   const proofSession = await register({
     username: 'quality_proof',
     password: 'very-secret-pass',

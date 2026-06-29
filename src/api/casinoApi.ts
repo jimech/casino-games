@@ -44,6 +44,17 @@ interface RoundResponse {
   responsiblePlayIntervention?: ResponsiblePlayInterventionDto;
 }
 
+export interface WalletDepositResponseDto {
+  wallet: WalletDto;
+  deposit: {
+    idempotencyKey: string;
+    amount: number;
+    method: 'card' | 'crypto' | 'bank_wire';
+    reference: string;
+    createdAt: string;
+  };
+}
+
 interface RouletteBetSlipDto {
   outside: Partial<Record<'red' | 'black' | 'even' | 'odd' | 'high' | 'low', number>>;
   straight: Record<string, number>;
@@ -914,6 +925,19 @@ export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> =
     headers: authHeaders()
   });
   return parseJsonResponse<WalletDto>(response);
+};
+
+export const depositWallet = async (input: {
+  amount: number;
+  method: WalletDepositResponseDto['deposit']['method'];
+  idempotencyKey: string;
+}): Promise<WalletDepositResponseDto> => {
+  const response = await fetch('/api/wallet/deposits', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  return parseJsonResponse<WalletDepositResponseDto>(response);
 };
 
 export const fetchRounds = async (): Promise<RoundDto[]> => {
