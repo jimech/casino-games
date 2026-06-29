@@ -19,6 +19,7 @@ export interface AuthUserDto {
 
 export interface AuthSessionDto {
   token: string;
+  createdAt: string;
   expiresAt: string;
   user: AuthUserDto;
 }

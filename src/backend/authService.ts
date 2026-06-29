@@ -18,6 +18,7 @@ export interface AuthUser {
 
 export interface AuthSession {
   token: string;
+  createdAt: string;
   expiresAt: string;
   user: AuthUser;
 }
@@ -82,6 +83,7 @@ type StoredSession = {
   userId: string;
   tokenHash: string;
   token: string;
+  createdAt: string;
   expiresAt: string;
   revokedAt?: string;
   userAgent?: string;
@@ -141,7 +143,7 @@ export class MemoryAuthService implements AuthService {
     const session = this.requireStoredSession(token);
     const user = this.users.get(session.userId);
     if (!user) throw new Error('Invalid session');
-    return { token: session.token, expiresAt: session.expiresAt, user: publicUser(user) };
+    return { token: session.token, createdAt: session.createdAt, expiresAt: session.expiresAt, user: publicUser(user) };
   }
 
   async logout(token: string): Promise<void> {
@@ -160,7 +162,7 @@ export class MemoryAuthService implements AuthService {
     if (input.sessionTimeoutLimit !== undefined) {
       user.sessionTimeoutLimit = normalizeSessionTimeoutLimit(input.sessionTimeoutLimit);
     }
-    return { token: session.token, expiresAt: session.expiresAt, user: publicUser(user) };
+    return { token: session.token, createdAt: session.createdAt, expiresAt: session.expiresAt, user: publicUser(user) };
   }
 
   async updateProfile(input: UpdateProfileInput): Promise<AuthSession> {
@@ -178,7 +180,7 @@ export class MemoryAuthService implements AuthService {
       user.email = email;
       this.emailIndex.set(emailKey, user.id);
     }
-    return { token: session.token, expiresAt: session.expiresAt, user: publicUser(user) };
+    return { token: session.token, createdAt: session.createdAt, expiresAt: session.expiresAt, user: publicUser(user) };
   }
 
   async verifyPassword(input: { userId: string; password: string }): Promise<boolean> {
@@ -210,12 +212,13 @@ export class MemoryAuthService implements AuthService {
       userId: user.id,
       token,
       tokenHash: hashToken(token),
+      createdAt: new Date().toISOString(),
       expiresAt,
       userAgent: input.userAgent,
       ipAddress: input.ipAddress
     };
     this.sessions.set(session.tokenHash, session);
-    return { token, expiresAt, user: publicUser(user) };
+    return { token, createdAt: session.createdAt, expiresAt, user: publicUser(user) };
   }
 
   private requireStoredSession(token: string): StoredSession {
@@ -275,6 +278,7 @@ export class PrismaAuthService implements AuthService {
     await this.prisma.authSession.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } });
     return {
       token,
+      createdAt: session.createdAt.toISOString(),
       expiresAt: session.expiresAt.toISOString(),
       user: prismaUserToAuthUser(session.user)
     };
@@ -363,6 +367,7 @@ export class PrismaAuthService implements AuthService {
     });
     return {
       token,
+      createdAt: session.createdAt.toISOString(),
       expiresAt: session.expiresAt.toISOString(),
       user: prismaUserToAuthUser(session.user)
     };

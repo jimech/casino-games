@@ -1620,7 +1620,7 @@ app.post('/api/vip/cashback/claim', async (req, res) => {
 
 app.post('/api/bets', async (req, res) => {
   try {
-    const user = await requireAuth(req);
+    const user = await requirePlayableSession(req);
     const idempotencyKey = String(req.body.idempotencyKey ?? '');
     const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,
@@ -1719,7 +1719,7 @@ app.post('/api/rounds/:roundId/refund', async (req, res) => {
 
 app.post('/api/games/roulette/spin', async (req, res) => {
   try {
-    const user = await requireAuth(req);
+    const user = await requirePlayableSession(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'roulette');
     await idempotencyService.assertRequest({
       userId: user.id,
@@ -1760,7 +1760,7 @@ app.post('/api/games/roulette/spin', async (req, res) => {
 
 app.post('/api/games/crash/start', async (req, res) => {
   try {
-    const user = await requireAuth(req);
+    const user = await requirePlayableSession(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'crash');
     await idempotencyService.assertRequest({
       userId: user.id,
@@ -1824,7 +1824,7 @@ app.post('/api/games/crash/:roundId/cashout', async (req, res) => {
 
 app.post('/api/games/slots/spin', async (req, res) => {
   try {
-    const user = await requireAuth(req);
+    const user = await requirePlayableSession(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'slots');
     await idempotencyService.assertRequest({
       userId: user.id,
@@ -1868,7 +1868,7 @@ app.post('/api/games/slots/spin', async (req, res) => {
 
 app.post('/api/games/blackjack/start', async (req, res) => {
   try {
-    const user = await requireAuth(req);
+    const user = await requirePlayableSession(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'blackjack');
     await idempotencyService.assertRequest({
       userId: user.id,
@@ -1926,7 +1926,7 @@ app.post('/api/games/blackjack/:roundId/action', async (req, res) => {
 
 app.post('/api/games/poker/start', async (req, res) => {
   try {
-    const user = await requireAuth(req);
+    const user = await requirePlayableSession(req);
     const idempotencyKey = requestIdempotencyKey(req.body.idempotencyKey, 'poker');
     await idempotencyService.assertRequest({
       userId: user.id,
@@ -2004,13 +2004,52 @@ app.listen(port, '0.0.0.0', () => {
 
 function sendApiError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'Unknown server error';
-  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /idempotency conflict/i.test(message) ? 409 : /required|invalid|insufficient|already|not open|not ready|consent|replay/i.test(message) ? 400 : 500;
+  const status = /too many requests/i.test(message) ? 429 : /unauthorized/i.test(message) ? 401 : /forbidden|step-up|session timeout exceeded/i.test(message) ? 403 : /not found/i.test(message) ? 404 : /idempotency conflict/i.test(message) ? 409 : /required|invalid|insufficient|already|not open|not ready|consent|replay/i.test(message) ? 400 : 500;
   res.status(status).json({ error: message });
 }
 
 async function requireAuth(req: express.Request): Promise<AuthUser> {
   const session = await authService.getSession(extractRequestToken(req));
   return session.user;
+}
+
+async function requirePlayableSession(req: express.Request): Promise<AuthUser> {
+  const session = await authService.getSession(extractRequestToken(req));
+  const timeoutMs = sessionTimeoutLimitMs(session.user.sessionTimeoutLimit);
+  if (timeoutMs === undefined) return session.user;
+
+  const ageMs = playableSessionNow(req).getTime() - new Date(session.createdAt).getTime();
+  if (ageMs <= timeoutMs) return session.user;
+
+  await riskService.recordEvent({
+    userId: session.user.id,
+    type: 'responsible_play_session_timeout',
+    severity: 'medium',
+    score: 60,
+    context: {
+      sessionCreatedAt: session.createdAt,
+      sessionTimeoutLimit: session.user.sessionTimeoutLimit,
+      sessionAgeMinutes: Math.floor(ageMs / 60_000),
+      route: req.path,
+      method: req.method
+    }
+  });
+  throw new Error(`Session timeout exceeded for responsible play limit: ${session.user.sessionTimeoutLimit}`);
+}
+
+function sessionTimeoutLimitMs(limit: string): number | undefined {
+  if (limit === '15 mins') return 15 * 60_000;
+  if (limit === '30 mins') return 30 * 60_000;
+  if (limit === '1 hour') return 60 * 60_000;
+  if (limit === 'Unlimited') return undefined;
+  return 30 * 60_000;
+}
+
+function playableSessionNow(req: express.Request): Date {
+  if (process.env.CASINO_BACKEND_DRIVER !== 'memory') return new Date();
+  const smokeAgeMinutes = Number(req.get('x-smoke-session-age-minutes'));
+  if (!Number.isFinite(smokeAgeMinutes) || smokeAgeMinutes <= 0) return new Date();
+  return new Date(Date.now() + Math.min(smokeAgeMinutes, 24 * 60) * 60_000);
 }
 
 async function requireAdmin(req: express.Request): Promise<AuthUser> {

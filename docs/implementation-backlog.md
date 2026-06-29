@@ -1673,6 +1673,26 @@ Acceptance criteria:
 - Invalid timeout values return `400`.
 - Local quality gate passes.
 
+### T82 - Enforce Responsible Play Session Timeout
+
+Summary: Block new wagering play when an authenticated session exceeds the saved responsible-play timeout.
+
+Implementation status: Complete. Auth sessions now expose `createdAt`, and new wagering entry points use a `requirePlayableSession` guard that compares session age with the saved `sessionTimeoutLimit`. Timed-out sessions receive a `403` response before new rounds are created, and the platform records a `responsible_play_session_timeout` risk event for admin review. Existing account, wallet, evidence, and in-round ownership flows remain available through normal auth. The memory API smoke uses a memory-only session-age header to verify timeout enforcement without waiting in real time.
+
+Scope:
+- Auth session `createdAt` DTO support.
+- Session timeout duration enforcement helper.
+- New-play route guards for bets and game starts/spins.
+- Risk event creation when timeout enforcement blocks play.
+- Memory API smoke coverage for blocked timed-out play and admin-visible risk event.
+
+Acceptance criteria:
+- New play is blocked after the saved session timeout.
+- Timeout enforcement returns `403` before a new round is created.
+- Timeout blocks generate a responsible-play risk event.
+- Non-play authenticated routes still use normal auth.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

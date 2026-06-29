@@ -79,6 +79,11 @@ const main = async () => {
     acceptPrivacy: true,
     sessionTimeoutLimit: 'forever'
   }, 400);
+  await postJsonExpectStatus(`${baseUrl}/api/games/slots/spin`, userSession.token, {
+    machineId: 'fruit-mania',
+    bet: 10,
+    idempotencyKey: 'quality-session-timeout-block'
+  }, 403, { 'x-smoke-session-age-minutes': '16' });
   const profileSession = await patchJson(`${baseUrl}/api/auth/profile`, userSession.token, {
     displayName: 'Quality Profile',
     email: 'quality-profile@example.test'
@@ -99,6 +104,10 @@ const main = async () => {
     acceptPrivacy: true
   });
   assertEqual(adminSession.user.role, 'admin', 'admin invite role');
+  const timeoutRiskEvents = await getJson(`${baseUrl}/api/risk/events?userId=${encodeURIComponent(userSession.user.id)}&limit=20`, adminSession.token);
+  if (!timeoutRiskEvents.events.some((event: { type: string }) => event.type === 'responsible_play_session_timeout')) {
+    throw new Error('Expected responsible play session timeout risk event to be created');
+  }
 
   const depositSession = await register({
     username: 'quality_deposit',
@@ -923,12 +932,19 @@ const patchJson = async (url: string, token: string, body: Record<string, unknow
   return payload;
 };
 
-const postJsonExpectStatus = async (url: string, token: string, body: Record<string, unknown>, status: number) => {
+const postJsonExpectStatus = async (
+  url: string,
+  token: string,
+  body: Record<string, unknown>,
+  status: number,
+  headers: Record<string, string> = {}
+) => {
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
+      ...headers
     },
     body: JSON.stringify(body)
   });
