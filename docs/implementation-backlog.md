@@ -1412,6 +1412,26 @@ Acceptance criteria:
 - Admin run is audit-visible through AI event telemetry.
 - Local quality gate passes.
 
+### T69 - Admin Integrity Dashboard
+
+Summary: Surface the wallet and round reconciliation report in the Admin Audit dashboard.
+
+Implementation status: Complete. The Admin Audit view now includes an Integrity Reconciliation panel that can run the read-only reconciliation endpoint, show pass/warning/fail status, display wallet, ledger, round, seed, critical, and warning counts, and list the latest reconciliation issues. The typed API client now exposes the reconciliation report DTO and admin run helper. Browser verification confirmed the dashboard renders the report and lists current Prisma seed-link warnings without layout breakage.
+
+Scope:
+- Typed reconciliation report DTOs in the frontend API client.
+- Admin-only UI action for `/api/admin/integrity/reconciliation`.
+- Status, mode, timestamp, summary metrics, and issue rows in Admin Audit.
+- Operator notification for pass, warning, fail, and request failure outcomes.
+- Browser verification of the dashboard report panel.
+
+Acceptance criteria:
+- Admin users can run reconciliation from the Admin Audit dashboard.
+- The panel shows summary counts and up to six current issues.
+- Clean reports show an explicit no-issues row.
+- Critical reports produce an error notification.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -367,6 +367,35 @@ export interface AdminTournamentSettlementJobReportDto {
   }>;
 }
 
+export interface ReconciliationIssueDto {
+  id: string;
+  severity: 'info' | 'warning' | 'critical';
+  type: string;
+  userId?: string;
+  roundId?: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface ReconciliationReportDto {
+  generatedAt: string;
+  mode: 'memory' | 'prisma';
+  status: 'pass' | 'warning' | 'fail';
+  summary: {
+    walletCount: number;
+    ledgerEntryCount: number;
+    roundCount: number;
+    openRoundCount: number;
+    settledRoundCount: number;
+    refundedRoundCount: number;
+    provablyFairSeedCount: number;
+    issueCount: number;
+    criticalIssueCount: number;
+    warningIssueCount: number;
+  };
+  issues: ReconciliationIssueDto[];
+}
+
 export interface GameMathScenarioReportDto {
   gameId: string;
   scenarioId: string;
@@ -998,6 +1027,16 @@ export const fetchGameMathSimulationReport = async (input: { sampleCount?: numbe
     headers: authHeaders()
   });
   const payload = await parseJsonResponse<{ report: GameMathSimulationReportDto }>(response);
+  return payload.report;
+};
+
+export const runIntegrityReconciliation = async (): Promise<ReconciliationReportDto> => {
+  const response = await fetch('/api/admin/integrity/reconciliation', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({})
+  });
+  const payload = await parseJsonResponse<{ report: ReconciliationReportDto }>(response);
   return payload.report;
 };
 

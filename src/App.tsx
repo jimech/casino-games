@@ -66,7 +66,9 @@ import {
   placeBet,
   registerAccount,
   ResponsiblePlayInterventionDto,
+  ReconciliationReportDto,
   RoundDto,
+  runIntegrityReconciliation,
   runTournamentSettlementJob,
   searchAdminUsers,
   settleRound,
@@ -201,12 +203,14 @@ export default function App() {
   const [adminTournamentJobReport, setAdminTournamentJobReport] = useState<AdminTournamentSettlementJobReportDto | null>(null);
   const [adminTournamentEvidence, setAdminTournamentEvidence] = useState<AdminTournamentEvidenceDto | null>(null);
   const [adminTournamentEvidencePreview, setAdminTournamentEvidencePreview] = useState('');
+  const [adminReconciliationReport, setAdminReconciliationReport] = useState<ReconciliationReportDto | null>(null);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
   const [adminTournamentQueueLoading, setAdminTournamentQueueLoading] = useState(false);
   const [adminTournamentJobLoading, setAdminTournamentJobLoading] = useState(false);
   const [tournamentSettlementLoading, setTournamentSettlementLoading] = useState(false);
   const [tournamentCancellationLoading, setTournamentCancellationLoading] = useState(false);
   const [adminTournamentEvidenceLoading, setAdminTournamentEvidenceLoading] = useState(false);
+  const [adminReconciliationLoading, setAdminReconciliationLoading] = useState(false);
   const [vipStatus, setVipStatus] = useState<VipStatusDto | null>(null);
   const [vipLoading, setVipLoading] = useState(false);
   const [aiUiFallbacks, setAiUiFallbacks] = useState<Record<string, string>>({});
@@ -385,10 +389,28 @@ export default function App() {
     try {
       setAdminSummary(await fetchAdminSummary());
       void loadAdminTournamentQueue(adminTournamentQueueFilter);
+      void loadAdminReconciliation();
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Admin summary failed to load.", "error");
     } finally {
       setAdminLoading(false);
+    }
+  };
+
+  const loadAdminReconciliation = async () => {
+    setAdminReconciliationLoading(true);
+    try {
+      const report = await runIntegrityReconciliation();
+      setAdminReconciliationReport(report);
+      if (report.status === 'fail') {
+        triggerNotification(`Integrity reconciliation found ${report.summary.criticalIssueCount} critical issues.`, 'error');
+      } else {
+        triggerNotification(`Integrity reconciliation ${report.status}: ${report.summary.issueCount} issues.`, report.status === 'pass' ? 'success' : 'info');
+      }
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Integrity reconciliation failed.", "error");
+    } finally {
+      setAdminReconciliationLoading(false);
     }
   };
 
@@ -2128,6 +2150,59 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-5">
+                  <AdminPanel title="Integrity Reconciliation">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <AdminRow
+                        left={`Status / ${adminReconciliationReport?.status ?? 'not run'}`}
+                        right={adminReconciliationReport?.mode ?? 'system'}
+                        detail={adminReconciliationReport ? safeDateTime(adminReconciliationReport.generatedAt) : 'Run a read-only wallet, ledger, round, and seed integrity check'}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void loadAdminReconciliation()}
+                        className="shrink-0 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-[#00FF88] font-black text-[10px] uppercase px-3 py-2 rounded-lg transition-all"
+                      >
+                        {adminReconciliationLoading ? 'Running' : 'Run check'}
+                      </button>
+                    </div>
+                    {adminReconciliationReport && (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            ['Wallets', adminReconciliationReport.summary.walletCount],
+                            ['Ledger', adminReconciliationReport.summary.ledgerEntryCount],
+                            ['Rounds', adminReconciliationReport.summary.roundCount],
+                            ['Critical', adminReconciliationReport.summary.criticalIssueCount],
+                            ['Open', adminReconciliationReport.summary.openRoundCount],
+                            ['Settled', adminReconciliationReport.summary.settledRoundCount],
+                            ['Seeds', adminReconciliationReport.summary.provablyFairSeedCount],
+                            ['Warnings', adminReconciliationReport.summary.warningIssueCount]
+                          ].map(([label, value]) => (
+                            <div key={label} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2">
+                              <span className="block text-[9px] uppercase font-black text-neutral-500">{label}</span>
+                              <span className={`block text-sm font-black font-mono truncate ${label === 'Critical' && Number(value) > 0 ? 'text-red-400' : label === 'Warnings' && Number(value) > 0 ? 'text-yellow-400' : 'text-[#00FF88]'}`}>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {adminReconciliationReport.issues.slice(0, 6).map(issue => (
+                          <AdminRow
+                            key={issue.id}
+                            left={`${issue.severity} / ${issue.type}`}
+                            right={issue.roundId ? 'round' : issue.userId ? 'user' : 'system'}
+                            detail={`${issue.message}${issue.roundId ? ` / ${issue.roundId}` : issue.userId ? ` / ${issue.userId}` : ''}`}
+                          />
+                        ))}
+                        {adminReconciliationReport.issues.length === 0 && (
+                          <AdminRow
+                            left="No reconciliation issues"
+                            right="pass"
+                            detail="Wallet balances, locks, ledger links, rounds, and seed references are consistent"
+                          />
+                        )}
+                      </>
+                    )}
+                  </AdminPanel>
+
                   <AdminPanel title="User Search">
                     <form
                       onSubmit={event => {
