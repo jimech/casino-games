@@ -1903,6 +1903,26 @@ Acceptance criteria:
 - Ledger entries preserve withdrawal reference and compliance case evidence.
 - Local quality gate passes.
 
+### T94 - Rejected Withdrawal Hold Release
+
+Summary: Return locked withdrawal funds when a high-value payout review is rejected.
+
+Implementation status: Complete. Compliance case closure now resolves high-value withdrawal holds in both directions: `approved_for_private_payout` settles the locked amount, while `rejected_private_payout` releases the locked amount back to the player's available wallet balance. The release path is idempotent, broadcasts the updated wallet, and sends a wallet notification explaining that the held funds were returned. The memory API smoke covers a second high-value withdrawal that is rejected, verifies the locked funds return to available balance, and asserts the release ledger entry is linked to the withdrawal reference and compliance case.
+
+Scope:
+- Shared withdrawal hold resolution helper.
+- Rejected withdrawal review release behavior.
+- Player wallet notification for released withdrawal holds.
+- Memory API smoke coverage for rejected review release.
+- Ledger evidence linking release entries to review case and withdrawal reference.
+
+Acceptance criteria:
+- Rejected high-value withdrawal reviews release locked funds.
+- Released funds return to available balance and clear locked balance.
+- Release ledger entry is tied to the compliance case and withdrawal reference.
+- Player receives a wallet notification for the release.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

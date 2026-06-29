@@ -277,6 +277,53 @@ const main = async () => {
   )) {
     throw new Error('Expected compliance review closure notification');
   }
+  const rejectedWithdrawal = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
+    amount: 2600,
+    method: 'bank_wire',
+    idempotencyKey: 'quality-wallet-withdrawal-rejected-review'
+  }, {
+    'X-Step-Up-Token': withdrawalStepUp.stepUpToken
+  });
+  assertEqual(rejectedWithdrawal.wallet.available, 94950, 'rejected-review withdrawal hold debits available balance');
+  assertEqual(rejectedWithdrawal.wallet.locked, 2600, 'rejected-review withdrawal funds held');
+  const rejectedWithdrawalCases = await getJson(`${baseUrl}/api/admin/compliance/cases?subjectUserId=${encodeURIComponent(depositSession.user.id)}&type=security&limit=10`, adminSession.token);
+  const rejectedReviewCase = rejectedWithdrawalCases.cases.find((caseRecord: { evidence?: { reference?: string } }) =>
+    caseRecord.evidence?.reference === rejectedWithdrawal.withdrawal.reference
+  );
+  if (!rejectedReviewCase) {
+    throw new Error('Expected rejected withdrawal review case');
+  }
+  const rejectedWithdrawalReview = await postJson(`${baseUrl}/api/admin/compliance/cases/${rejectedReviewCase.id}/notes`, adminSession.token, {
+    note: 'Smoke high-value withdrawal review rejected.',
+    action: 'closed',
+    status: 'closed',
+    outcome: 'rejected_private_payout',
+    evidence: {
+      source: 'wallet_withdrawal_review',
+      reference: rejectedWithdrawal.withdrawal.reference
+    }
+  });
+  assertEqual(rejectedWithdrawalReview.case.status, 'closed', 'rejected withdrawal review closed');
+  assertEqual(rejectedWithdrawalReview.case.outcome, 'rejected_private_payout', 'rejected withdrawal review outcome');
+  const walletAfterWithdrawalRejection = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}`, depositSession.token);
+  assertEqual(walletAfterWithdrawalRejection.available, 97550, 'rejected withdrawal returns held funds');
+  assertEqual(walletAfterWithdrawalRejection.locked, 0, 'rejected withdrawal clears held funds');
+  const rejectedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
+  if (!rejectedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { complianceCaseId?: string; reference?: string } }) =>
+    entry.type === 'release' &&
+    entry.metadata?.complianceCaseId === rejectedReviewCase.id &&
+    entry.metadata?.reference === rejectedWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected rejected withdrawal release ledger entry');
+  }
+  const rejectionNotifications = await getJson(`${baseUrl}/api/notifications`, depositSession.token);
+  if (!rejectionNotifications.notifications.some((notification: { type: string; metadata?: { caseId?: string; status?: string } }) =>
+    notification.type === 'wallet' &&
+    notification.metadata?.caseId === rejectedReviewCase.id &&
+    notification.metadata?.status === 'rejected_private_payout'
+  )) {
+    throw new Error('Expected rejected withdrawal release notification');
+  }
   const accountClosureRequest = await postJson(`${baseUrl}/api/notifications`, depositSession.token, {
     type: 'support',
     title: 'Account closure review requested',
