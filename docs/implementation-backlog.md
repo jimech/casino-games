@@ -1923,6 +1923,25 @@ Acceptance criteria:
 - Player receives a wallet notification for the release.
 - Local quality gate passes.
 
+### T95 - Prisma Withdrawal Review Smoke Coverage
+
+Summary: Prove high-value withdrawal hold approval and rejection flows against the persistent Prisma API driver.
+
+Implementation status: Complete. The Prisma API smoke now covers the high-value withdrawal lifecycle added in the memory smoke. It verifies step-up blocking, step-up authorization, review-case creation, `pending_review` response status, locked funds during review, approved payout settlement, rejected payout release, and persisted ledger evidence for both `settleLoss` and `release` entries linked to their compliance cases and withdrawal references.
+
+Scope:
+- Prisma API smoke step-up requirement for high-value withdrawals.
+- Persistent review-case lookup for approved and rejected withdrawals.
+- Persistent wallet locked-balance assertions.
+- Persistent settlement and release ledger evidence assertions.
+
+Acceptance criteria:
+- Prisma API smoke fails if high-value withdrawals bypass step-up.
+- Prisma API smoke fails if approved reviews do not settle held funds.
+- Prisma API smoke fails if rejected reviews do not release held funds.
+- Prisma API smoke verifies compliance-case-linked settlement and release ledger entries.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -129,6 +129,95 @@ const main = async () => {
   assertEqual(depositLedgerEntries.length, 1, 'Prisma API wallet deposit ledger count');
   assertEqual(withdrawalLedgerEntries.length, 1, 'Prisma API wallet withdrawal ledger count');
 
+  await postJsonExpectStatus(`${baseUrl}/api/wallet/withdrawals`, userSession.token, {
+    amount: 1500,
+    method: 'bank_wire',
+    idempotencyKey: `prisma-api-wallet-step-up-block-${suffix}`
+  }, 403);
+  const withdrawalStepUp = await postJson(`${baseUrl}/api/auth/step-up`, userSession.token, {
+    password: 'very-secret-pass',
+    scope: 'wallet:withdrawal'
+  });
+  if (typeof withdrawalStepUp.stepUpToken !== 'string' || withdrawalStepUp.stepUpToken.length < 20) {
+    throw new Error('Expected Prisma API withdrawal step-up token');
+  }
+
+  const approvedHighValueWithdrawal = await postJson(`${baseUrl}/api/wallet/withdrawals`, userSession.token, {
+    amount: 2500,
+    method: 'bank_wire',
+    idempotencyKey: `prisma-api-wallet-review-approved-${suffix}`
+  }, {
+    'X-Step-Up-Token': withdrawalStepUp.stepUpToken
+  });
+  assertEqual(approvedHighValueWithdrawal.wallet.available, 97550, 'Prisma API approved-review withdrawal holds available balance');
+  assertEqual(approvedHighValueWithdrawal.wallet.locked, 2500, 'Prisma API approved-review withdrawal locks funds');
+  assertEqual(approvedHighValueWithdrawal.withdrawal.status, 'pending_review', 'Prisma API approved-review withdrawal status');
+  const approvedWithdrawalCases = await getJson(`${baseUrl}/api/admin/compliance/cases?subjectUserId=${encodeURIComponent(userSession.user.id)}&type=security&limit=10`, adminSession.token);
+  const approvedReviewCase = approvedWithdrawalCases.cases.find((caseRecord: { evidence?: { reference?: string } }) =>
+    caseRecord.evidence?.reference === approvedHighValueWithdrawal.withdrawal.reference
+  );
+  if (!approvedReviewCase) {
+    throw new Error('Expected Prisma API approved withdrawal review case');
+  }
+  await postJson(`${baseUrl}/api/admin/compliance/cases/${approvedReviewCase.id}/notes`, adminSession.token, {
+    note: 'Prisma smoke approved payout review.',
+    action: 'closed',
+    status: 'closed',
+    outcome: 'approved_for_private_payout',
+    evidence: {
+      source: 'wallet_withdrawal_review',
+      reference: approvedHighValueWithdrawal.withdrawal.reference
+    }
+  });
+  const walletAfterApprovedReview = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
+  assertEqual(walletAfterApprovedReview.available, 97550, 'Prisma API approved-review keeps available balance debited');
+  assertEqual(walletAfterApprovedReview.locked, 0, 'Prisma API approved-review settles held funds');
+
+  const rejectedHighValueWithdrawal = await postJson(`${baseUrl}/api/wallet/withdrawals`, userSession.token, {
+    amount: 2600,
+    method: 'bank_wire',
+    idempotencyKey: `prisma-api-wallet-review-rejected-${suffix}`
+  }, {
+    'X-Step-Up-Token': withdrawalStepUp.stepUpToken
+  });
+  assertEqual(rejectedHighValueWithdrawal.wallet.available, 94950, 'Prisma API rejected-review withdrawal holds available balance');
+  assertEqual(rejectedHighValueWithdrawal.wallet.locked, 2600, 'Prisma API rejected-review withdrawal locks funds');
+  const rejectedWithdrawalCases = await getJson(`${baseUrl}/api/admin/compliance/cases?subjectUserId=${encodeURIComponent(userSession.user.id)}&type=security&limit=10`, adminSession.token);
+  const rejectedReviewCase = rejectedWithdrawalCases.cases.find((caseRecord: { evidence?: { reference?: string } }) =>
+    caseRecord.evidence?.reference === rejectedHighValueWithdrawal.withdrawal.reference
+  );
+  if (!rejectedReviewCase) {
+    throw new Error('Expected Prisma API rejected withdrawal review case');
+  }
+  await postJson(`${baseUrl}/api/admin/compliance/cases/${rejectedReviewCase.id}/notes`, adminSession.token, {
+    note: 'Prisma smoke rejected payout review.',
+    action: 'closed',
+    status: 'closed',
+    outcome: 'rejected_private_payout',
+    evidence: {
+      source: 'wallet_withdrawal_review',
+      reference: rejectedHighValueWithdrawal.withdrawal.reference
+    }
+  });
+  const walletAfterRejectedReview = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}`, userSession.token);
+  assertEqual(walletAfterRejectedReview.available, 97550, 'Prisma API rejected-review returns held funds');
+  assertEqual(walletAfterRejectedReview.locked, 0, 'Prisma API rejected-review clears held funds');
+  const reviewedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}/ledger`, userSession.token);
+  if (!reviewedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { complianceCaseId?: string; reference?: string } }) =>
+    entry.type === 'settleLoss' &&
+    entry.metadata?.complianceCaseId === approvedReviewCase.id &&
+    entry.metadata?.reference === approvedHighValueWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected Prisma API approved withdrawal settlement ledger entry');
+  }
+  if (!reviewedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { complianceCaseId?: string; reference?: string } }) =>
+    entry.type === 'release' &&
+    entry.metadata?.complianceCaseId === rejectedReviewCase.id &&
+    entry.metadata?.reference === rejectedHighValueWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected Prisma API rejected withdrawal release ledger entry');
+  }
+
   const walletBetKey = `prisma-api-wallet-bet-${suffix}`;
   const walletBet = await postJson(`${baseUrl}/api/bets`, userSession.token, {
     gameId: 'roulette',
