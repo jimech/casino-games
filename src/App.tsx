@@ -151,6 +151,7 @@ export default function App() {
   const [supportSubmitted, setSupportSubmitted] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [profileDisplayNameInput, setProfileDisplayNameInput] = useState('Neon Private');
+  const [profileEmailInput, setProfileEmailInput] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
 
   // General States
@@ -345,6 +346,7 @@ export default function App() {
         joinedDate: session.user.createdAt.slice(0, 10)
       }));
       setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
+      setProfileEmailInput(session.user.email ?? '');
     } catch (error) {
       console.warn('Session restore failed', error);
     } finally {
@@ -379,6 +381,7 @@ export default function App() {
         joinedDate: session.user.createdAt.slice(0, 10)
       }));
       setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
+      setProfileEmailInput(session.user.email ?? '');
       triggerNotification(authMode === 'register' ? 'Private account created. Session is active.' : 'Session restored. Welcome back.', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Authentication failed';
@@ -1225,7 +1228,10 @@ export default function App() {
 
     setProfileSaving(true);
     try {
-      const session = await updateProfileSettings({ displayName });
+      const session = await updateProfileSettings({
+        displayName,
+        email: profileEmailInput.trim() || undefined
+      });
       setAuthSession(session);
       setUser(prev => ({
         ...prev,
@@ -1233,6 +1239,7 @@ export default function App() {
         joinedDate: session.user.createdAt.slice(0, 10)
       }));
       setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
+      setProfileEmailInput(session.user.email ?? '');
       triggerNotification("Profile settings saved.", "success");
     } catch (error) {
       sound.playError();
@@ -1792,6 +1799,14 @@ export default function App() {
                     type="text"
                     value={profileDisplayNameInput}
                     onChange={(event) => setProfileDisplayNameInput(event.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-830 rounded-lg py-2 px-3 text-xs text-neutral-100 focus:outline-none focus:border-[#FF0055]"
+                  />
+                  <label className="text-[10px] uppercase font-bold text-neutral-400 block pt-2">Registered email</label>
+                  <input
+                    type="email"
+                    value={profileEmailInput}
+                    onChange={(event) => setProfileEmailInput(event.target.value)}
+                    placeholder="private@example.com"
                     className="w-full bg-neutral-900 border border-neutral-830 rounded-lg py-2 px-3 text-xs text-neutral-100 focus:outline-none focus:border-[#FF0055]"
                   />
                 </div>

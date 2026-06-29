@@ -72,11 +72,14 @@ const main = async () => {
     throw new Error('Expected settings consent save to return updated consent timestamps');
   }
   const profileSession = await patchJson(`${baseUrl}/api/auth/profile`, userSession.token, {
-    displayName: 'Quality Profile'
+    displayName: 'Quality Profile',
+    email: 'quality-profile@example.test'
   });
   assertEqual(profileSession.user.displayName, 'Quality Profile', 'profile display name update');
+  assertEqual(profileSession.user.email, 'quality-profile@example.test', 'profile email update');
   const restoredProfileSession = await getJson(`${baseUrl}/api/auth/session`, userSession.token);
   assertEqual(restoredProfileSession.user.displayName, 'Quality Profile', 'restored profile display name');
+  assertEqual(restoredProfileSession.user.email, 'quality-profile@example.test', 'restored profile email');
 
   const adminSession = await register({
     username: 'quality_admin',

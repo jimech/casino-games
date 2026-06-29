@@ -1615,6 +1615,25 @@ Acceptance criteria:
 - Restored auth session includes the updated display name.
 - Local quality gate passes.
 
+### T79 - Backend-Backed Profile Email Save
+
+Summary: Extend the Personal Desk profile save flow to update registered email through the backend profile endpoint.
+
+Implementation status: Complete. The Personal Desk now exposes a registered-email input, synchronizes it from the active auth session, and submits it together with display name through `/api/auth/profile`. Successful saves refresh the active auth session and input state from the backend response. Memory API smoke coverage verifies that profile email updates persist through `/api/auth/session`.
+
+Scope:
+- Personal Desk registered-email input.
+- Auth-session synchronization for profile email state.
+- Profile save payload includes optional email.
+- Smoke coverage for profile email update and session restore.
+
+Acceptance criteria:
+- Personal Desk can save a registered email.
+- Successful save updates the active session email.
+- Restored auth session includes the updated email.
+- Existing display-name save behavior remains intact.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
