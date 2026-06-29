@@ -85,6 +85,7 @@ import {
   TournamentCancellationDto,
   TournamentLeaderboardDto,
   TournamentSettlementDto,
+  updateConsentSettings,
   updateNotificationPreference,
   VipStatusDto,
   withdrawWallet
@@ -196,6 +197,7 @@ export default function App() {
   const [playerProofLoading, setPlayerProofLoading] = useState(false);
   const [walletDepositLoading, setWalletDepositLoading] = useState<'card' | 'crypto' | 'bank_wire' | null>(null);
   const [walletWithdrawalLoading, setWalletWithdrawalLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [targetedBonuses, setTargetedBonuses] = useState<TargetedBonusOfferDto[]>([]);
   const [tournaments, setTournaments] = useState<TournamentDto[]>([]);
   const [activeTournamentId, setActiveTournamentId] = useState('');
@@ -1172,6 +1174,30 @@ export default function App() {
     await loadNotifications();
     setSupportSubmitted(true);
     triggerNotification("Message dispatched. Support agent response generated immediately!", "success");
+  };
+
+  const handleSettingsSave = async () => {
+    sound.playClick();
+    setSettingsSaving(true);
+    try {
+      const session = await updateConsentSettings({
+        acceptAgeGate: registeredAgeChecked,
+        acceptTerms: true,
+        acceptPrivacy: gdprChecked
+      });
+      setAuthSession(session);
+      setUser(prev => ({
+        ...prev,
+        username: session.user.displayName ?? session.user.username,
+        joinedDate: session.user.createdAt.slice(0, 10)
+      }));
+      triggerNotification("Settings saved for this private profile.", "success");
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : "Settings could not be saved.", "error");
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   // Filter components variables
@@ -3178,13 +3204,11 @@ export default function App() {
 
                 <div className="border-t border-neutral-850/40 pt-4 flex gap-3">
                   <button
-                    onClick={() => {
-                      sound.playClick();
-                      triggerNotification("Settings saved for this private profile.", "success");
-                    }}
-                    className="bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-xs py-2 px-6 rounded-lg uppercase"
+                    onClick={() => void handleSettingsSave()}
+                    disabled={settingsSaving}
+                    className="bg-[#00FF88] hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-neutral-950 font-black text-xs py-2 px-6 rounded-lg uppercase"
                   >
-                    Save Changes
+                    {settingsSaving ? 'Saving' : 'Save Changes'}
                   </button>
 
                   <button

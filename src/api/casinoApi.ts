@@ -931,6 +931,19 @@ export const createStepUpAuth = async (input: {
   return parseJsonResponse<StepUpAuthDto>(response);
 };
 
+export const updateConsentSettings = async (input: {
+  acceptAgeGate: boolean;
+  acceptTerms: boolean;
+  acceptPrivacy: boolean;
+}): Promise<AuthSessionDto> => {
+  const response = await fetch('/api/auth/consent', {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  return parseJsonResponse<AuthSessionDto>(response);
+};
+
 export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> => {
   const response = await fetch(`/api/wallet/${encodeURIComponent(userId)}`, {
     headers: authHeaders()

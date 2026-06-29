@@ -1556,6 +1556,25 @@ Acceptance criteria:
 - Changed same-key payment rail requests return `409`.
 - Local static/type/build quality gate passes.
 
+### T76 - Backend-Backed Settings Consent Save
+
+Summary: Wire the Settings save action to the authenticated backend consent endpoint.
+
+Implementation status: Complete. The Settings panel now calls `/api/auth/consent` through the typed API client instead of only showing a local success notification. The frontend updates the active auth session from the backend response, shows a loading state while saving, and reports backend errors through the existing notification surface. The memory API smoke verifies that consent saves return updated age, terms, and privacy timestamps.
+
+Scope:
+- Typed frontend helper for `/api/auth/consent`.
+- Settings save handler that updates `authSession` from backend response.
+- Button loading/disabled state while settings are saving.
+- Memory API smoke coverage for persisted consent timestamps.
+
+Acceptance criteria:
+- Settings Save Changes calls the backend.
+- Successful save updates the active session object.
+- Failed save shows an error notification.
+- Consent endpoint returns updated timestamps in smoke coverage.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

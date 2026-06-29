@@ -63,6 +63,15 @@ const main = async () => {
   });
   assertEqual(blockedAdmin.status, 403, 'regular user admin access');
 
+  const consentSession = await postJson(`${baseUrl}/api/auth/consent`, userSession.token, {
+    acceptAgeGate: true,
+    acceptTerms: true,
+    acceptPrivacy: true
+  });
+  if (!consentSession.user.ageGateAcceptedAt || !consentSession.user.termsAcceptedAt || !consentSession.user.privacyAcceptedAt) {
+    throw new Error('Expected settings consent save to return updated consent timestamps');
+  }
+
   const adminSession = await register({
     username: 'quality_admin',
     password: 'very-secret-pass',
