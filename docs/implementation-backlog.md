@@ -1791,6 +1791,26 @@ Acceptance criteria:
 - Password state clears after successful withdrawal.
 - Local quality gate passes.
 
+### T88 - High-Value Withdrawal Compliance Review
+
+Summary: Automatically open a security review case for very large withdrawals.
+
+Implementation status: Complete. First-time withdrawals at or above `$2,500` now open a `security` compliance case with withdrawal reference, method, amount, and idempotency evidence. The review case is created only after the ledger debit succeeds and only for non-replayed idempotent requests, so retries do not duplicate queue work. The system records the standard compliance audit/risk event and sends a mandatory risk notification to the player. The memory API smoke verifies review-case creation, replay safety, and player notification delivery.
+
+Scope:
+- Automatic high-value withdrawal review helper.
+- Security compliance case creation with withdrawal evidence.
+- Compliance audit/risk event for automatic review cases.
+- Player risk notification for review queue entry.
+- Memory API smoke coverage for case creation, replay count, and notification.
+
+Acceptance criteria:
+- Withdrawals below `$2,500` do not create review cases.
+- First-time withdrawals at or above `$2,500` create one security case.
+- Idempotent replay does not create duplicate cases.
+- Player receives a risk notification for the review.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

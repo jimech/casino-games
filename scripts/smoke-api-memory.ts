@@ -191,13 +191,32 @@ const main = async () => {
     throw new Error('Expected withdrawal step-up token to be issued');
   }
   const steppedUpWithdrawal = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
-    amount: 1500,
+    amount: 2500,
     method: 'bank_wire',
     idempotencyKey: 'quality-wallet-withdrawal-step-up'
   }, {
     'X-Step-Up-Token': withdrawalStepUp.stepUpToken
   });
-  assertEqual(steppedUpWithdrawal.wallet.available, 98550, 'step-up withdrawal debited');
+  assertEqual(steppedUpWithdrawal.wallet.available, 97550, 'step-up withdrawal debited');
+  const steppedUpWithdrawalReplay = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
+    amount: 2500,
+    method: 'bank_wire',
+    idempotencyKey: 'quality-wallet-withdrawal-step-up'
+  }, {
+    'X-Step-Up-Token': withdrawalStepUp.stepUpToken
+  });
+  assertEqual(steppedUpWithdrawalReplay.withdrawal.reference, steppedUpWithdrawal.withdrawal.reference, 'step-up withdrawal replay reference');
+  const withdrawalReviewCases = await getJson(`${baseUrl}/api/admin/compliance/cases?subjectUserId=${encodeURIComponent(depositSession.user.id)}&type=security&limit=10`, adminSession.token);
+  const highValueWithdrawalCases = withdrawalReviewCases.cases.filter((caseRecord: { evidence?: { reference?: string } }) =>
+    caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
+  );
+  assertEqual(highValueWithdrawalCases.length, 1, 'high-value withdrawal review case count');
+  const postReviewNotifications = await getJson(`${baseUrl}/api/notifications`, depositSession.token);
+  if (!postReviewNotifications.notifications.some((notification: { type: string; metadata?: { reference?: string } }) =>
+    notification.type === 'risk' && notification.metadata?.reference === steppedUpWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected high-value withdrawal review notification');
+  }
   const accountClosureRequest = await postJson(`${baseUrl}/api/notifications`, depositSession.token, {
     type: 'support',
     title: 'Account closure review requested',

@@ -349,6 +349,14 @@ app.post('/api/wallet/withdrawals', async (req, res) => {
           reference: result.withdrawal.reference
         }
       });
+      if (result.withdrawal.amount >= 2500) {
+        await openHighValueWithdrawalReview(user.id, {
+          amount: result.withdrawal.amount,
+          method,
+          reference: result.withdrawal.reference,
+          idempotencyKey
+        });
+      }
     }
 
     res.status(idempotentResult.replayed ? 200 : 201).json(result);
@@ -2354,6 +2362,48 @@ async function auditComplianceCaseAction(adminUserId: string, subjectUserId: str
       ...context
     }
   });
+}
+
+async function openHighValueWithdrawalReview(userId: string, input: {
+  amount: number;
+  method: string;
+  reference: string;
+  idempotencyKey: string;
+}) {
+  const caseRecord = await complianceCaseService.create({
+    subjectUserId: userId,
+    authorId: userId,
+    type: 'security',
+    priority: input.amount >= 4000 ? 'critical' : 'high',
+    title: 'High-value withdrawal review',
+    description: `Review ${input.method} withdrawal ${input.reference} before external payout completion.`,
+    evidence: {
+      source: 'wallet_withdrawal',
+      amount: input.amount,
+      method: input.method,
+      reference: input.reference,
+      idempotencyKey: input.idempotencyKey
+    }
+  });
+  await auditComplianceCaseAction(userId, userId, caseRecord.id, 'created', {
+    automatic: true,
+    type: caseRecord.type,
+    priority: caseRecord.priority,
+    evidence: caseRecord.evidence
+  });
+  await notificationService.create({
+    userId,
+    type: 'risk',
+    title: 'High-value withdrawal review opened',
+    message: `Withdrawal ${input.reference} is queued for private security review.`,
+    metadata: {
+      caseId: caseRecord.id,
+      amount: input.amount,
+      method: input.method,
+      reference: input.reference
+    }
+  });
+  return caseRecord;
 }
 
 async function buildAdminRoundEvidence(roundId: string, adminUserId: string) {
