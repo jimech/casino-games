@@ -36,6 +36,7 @@ import {
   exportAdminRoundEvidence,
   exportAdminTournamentEvidence,
   fetchMyComplianceCases,
+  fetchAdminWithdrawals,
   fetchAdminNotificationDeliveries,
   fetchAuthSession,
   fetchAdminRoundEvidence,
@@ -93,6 +94,7 @@ import {
   updateNotificationPreference,
   updateProfileSettings,
   VipStatusDto,
+  WithdrawalRecordDto,
   withdrawWallet
 } from './api/casinoApi';
 
@@ -181,10 +183,13 @@ export default function App() {
   const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetailDto | null>(null);
   const [adminRoundEvidence, setAdminRoundEvidence] = useState<AdminRoundEvidenceDto | null>(null);
   const [adminRewardsReview, setAdminRewardsReview] = useState<AdminRewardsReviewDto | null>(null);
+  const [adminWithdrawals, setAdminWithdrawals] = useState<WithdrawalRecordDto[]>([]);
+  const [adminWithdrawalStatusFilter, setAdminWithdrawalStatusFilter] = useState<WithdrawalRecordDto['status'] | 'all'>('pending_review');
   const [adminUserSearchLoading, setAdminUserSearchLoading] = useState(false);
   const [adminUserDetailLoading, setAdminUserDetailLoading] = useState(false);
   const [adminRoundEvidenceLoading, setAdminRoundEvidenceLoading] = useState(false);
   const [adminRewardsLoading, setAdminRewardsLoading] = useState(false);
+  const [adminWithdrawalsLoading, setAdminWithdrawalsLoading] = useState(false);
   const [adminRoundExportPreview, setAdminRoundExportPreview] = useState('');
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferenceDto[]>([]);
@@ -312,6 +317,7 @@ export default function App() {
       void loadAdminUsers();
       void loadAdminNotificationDeliveries();
       void loadAdminRewardsReview();
+      void loadAdminWithdrawals(adminWithdrawalStatusFilter);
     }
   }, [authSession?.user.id, activeCasinoTab]);
 
@@ -421,10 +427,26 @@ export default function App() {
       setAdminSummary(await fetchAdminSummary());
       void loadAdminTournamentQueue(adminTournamentQueueFilter);
       void loadAdminReconciliation();
+      void loadAdminWithdrawals(adminWithdrawalStatusFilter);
     } catch (error) {
       triggerNotification(error instanceof Error ? error.message : "Admin summary failed to load.", "error");
     } finally {
       setAdminLoading(false);
+    }
+  };
+
+  const loadAdminWithdrawals = async (status = adminWithdrawalStatusFilter) => {
+    setAdminWithdrawalsLoading(true);
+    try {
+      setAdminWithdrawalStatusFilter(status);
+      setAdminWithdrawals(await fetchAdminWithdrawals({
+        status: status === 'all' ? undefined : status,
+        limit: 12
+      }));
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Withdrawal queue failed to load.", "error");
+    } finally {
+      setAdminWithdrawalsLoading(false);
     }
   };
 
@@ -2449,6 +2471,43 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-5">
+                  <AdminPanel title="Withdrawal Queue">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {(['pending_review', 'approved', 'rejected', 'all'] as const).map(status => (
+                        <button
+                          key={status}
+                          type="button"
+                          onClick={() => void loadAdminWithdrawals(status)}
+                          className={`${adminWithdrawalStatusFilter === status ? 'bg-[#00FF88] text-neutral-950' : 'bg-neutral-950 text-neutral-300 border border-neutral-800'} font-black text-[9px] uppercase py-2 rounded-lg transition-all`}
+                        >
+                          {status.replace('_', ' ')}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void loadAdminWithdrawals(adminWithdrawalStatusFilter)}
+                      className="w-full bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-[#00FF88] font-black text-[10px] uppercase px-3 py-2 rounded-lg transition-all"
+                    >
+                      {adminWithdrawalsLoading ? 'Loading queue' : 'Refresh withdrawals'}
+                    </button>
+                    {adminWithdrawals.map(withdrawal => (
+                      <AdminRow
+                        key={withdrawal.id}
+                        left={`$${withdrawal.amount} / ${withdrawal.method}`}
+                        right={withdrawal.status.replace('_', ' ')}
+                        detail={`${withdrawal.reference} / ${safeText(withdrawal.complianceCaseId, withdrawal.userId)} / ${safeDateTime(withdrawal.resolvedAt ?? withdrawal.createdAt)}`}
+                      />
+                    ))}
+                    {adminWithdrawals.length === 0 && (
+                      <AdminRow
+                        left={adminWithdrawalsLoading ? 'Loading withdrawals' : 'No withdrawal records'}
+                        right={adminWithdrawalStatusFilter.replace('_', ' ')}
+                        detail="High-value payout records will appear here after player withdrawal requests"
+                      />
+                    )}
+                  </AdminPanel>
+
                   <AdminPanel title="Integrity Reconciliation">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <AdminRow

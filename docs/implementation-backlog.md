@@ -2018,6 +2018,24 @@ Acceptance criteria:
 - Queue rows preserve compliance-case links and player ids.
 - Local quality gate passes.
 
+### T100 - Admin Withdrawal Queue UI
+
+Summary: Surface operational withdrawal records inside the Admin Audit dashboard.
+
+Implementation status: Complete. The Admin Audit view now loads the dedicated withdrawal queue when admins open or refresh the panel. A new Withdrawal Queue card supports `pending_review`, `approved`, `rejected`, and `all` filters, and renders amount, method, status, withdrawal reference, linked compliance case or user id, and the relevant timestamp. The frontend uses the typed admin withdrawal helper added with the queue API, so admins can inspect payout operations without calling the endpoint manually.
+
+Scope:
+- Admin withdrawal queue state and loading flow.
+- Admin Audit refresh integration.
+- Status filter controls for withdrawal records.
+- Withdrawal row rendering with reference, case/user link, and timestamp.
+
+Acceptance criteria:
+- Admin Audit loads withdrawal records automatically.
+- Admins can switch between pending, approved, rejected, and all records.
+- Queue rows expose payout amount, status, reference, and review linkage.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
