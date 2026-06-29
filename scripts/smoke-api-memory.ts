@@ -211,6 +211,12 @@ const main = async () => {
     caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
   );
   assertEqual(highValueWithdrawalCases.length, 1, 'high-value withdrawal review case count');
+  const playerWithdrawalReviewCases = await getJson(`${baseUrl}/api/compliance/cases?status=open&type=security&limit=5`, depositSession.token);
+  if (!playerWithdrawalReviewCases.cases.some((caseRecord: { evidence?: { reference?: string } }) =>
+    caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected player compliance case endpoint to expose own withdrawal review');
+  }
   const postReviewNotifications = await getJson(`${baseUrl}/api/notifications`, depositSession.token);
   if (!postReviewNotifications.notifications.some((notification: { type: string; metadata?: { reference?: string } }) =>
     notification.type === 'risk' && notification.metadata?.reference === steppedUpWithdrawal.withdrawal.reference

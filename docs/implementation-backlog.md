@@ -1828,6 +1828,25 @@ Acceptance criteria:
 - Normal withdrawals keep standard success copy.
 - Local quality gate passes.
 
+### T90 - Player Compliance Case Visibility
+
+Summary: Let players view their own active security review cases from the wallet.
+
+Implementation status: Complete. A new player-safe `/api/compliance/cases` endpoint returns only the authenticated user's own compliance cases with optional status/type filters. The frontend exposes a typed helper, loads open security cases when the wallet opens and after withdrawals, and renders active review cases in the wallet panel with status, priority, and reference evidence. The memory API smoke verifies that a high-value withdrawal review case is visible through the player endpoint.
+
+Scope:
+- Player-owned compliance case API endpoint.
+- Typed frontend helper for own compliance cases.
+- Wallet loading of open security review cases.
+- Wallet UI for active review cases.
+- Memory API smoke coverage for player-visible withdrawal review case.
+
+Acceptance criteria:
+- Players can fetch only their own compliance cases.
+- Wallet shows active security review cases.
+- High-value withdrawal review cases appear without admin access.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

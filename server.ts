@@ -1477,6 +1477,18 @@ app.get('/api/notifications', async (req, res) => {
   }
 });
 
+app.get('/api/compliance/cases', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const status = isComplianceCaseStatus(req.query.status) ? req.query.status : undefined;
+    const type = isComplianceCaseType(req.query.type) ? req.query.type : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json({ cases: await complianceCaseService.list({ subjectUserId: user.id, status, type, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/notifications/preferences', async (req, res) => {
   try {
     const user = await requireAuth(req);

@@ -1470,6 +1470,23 @@ export const fetchComplianceCases = async (input: {
   return payload.cases;
 };
 
+export const fetchMyComplianceCases = async (input: {
+  status?: ComplianceCaseDto['status'];
+  type?: ComplianceCaseDto['type'];
+  limit?: number;
+} = {}): Promise<ComplianceCaseDto[]> => {
+  const params = new URLSearchParams();
+  if (input.status) params.set('status', input.status);
+  if (input.type) params.set('type', input.type);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/compliance/cases${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ cases: ComplianceCaseDto[] }>(response);
+  return payload.cases;
+};
+
 export const createComplianceCase = async (input: {
   subjectUserId: string;
   type: ComplianceCaseDto['type'];

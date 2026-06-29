@@ -35,6 +35,7 @@ import {
   enterTournament,
   exportAdminRoundEvidence,
   exportAdminTournamentEvidence,
+  fetchMyComplianceCases,
   fetchAdminNotificationDeliveries,
   fetchAuthSession,
   fetchAdminRoundEvidence,
@@ -56,6 +57,7 @@ import {
   fetchTournaments,
   fetchVipStatus,
   fetchWallet,
+  ComplianceCaseDto,
   GameRecommendationDto,
   GameMathSimulationReportDto,
   getStoredAuthToken,
@@ -193,6 +195,7 @@ export default function App() {
   const [gameMathLoading, setGameMathLoading] = useState(false);
   const [playerRounds, setPlayerRounds] = useState<RoundDto[]>([]);
   const [playerRoundsLoading, setPlayerRoundsLoading] = useState(false);
+  const [playerComplianceCases, setPlayerComplianceCases] = useState<ComplianceCaseDto[]>([]);
   const [playerProofEvidence, setPlayerProofEvidence] = useState<{
     round: RoundDto;
     provablyFair: {
@@ -314,6 +317,7 @@ export default function App() {
   useEffect(() => {
     if (authSession && activeCasinoTab === 'wallet') {
       void loadPlayerRounds();
+      void loadPlayerComplianceCases();
     }
   }, [authSession?.user.id, activeCasinoTab]);
 
@@ -543,6 +547,14 @@ export default function App() {
       console.warn('Notification load failed', error);
     } finally {
       setNotificationsLoading(false);
+    }
+  };
+
+  const loadPlayerComplianceCases = async () => {
+    try {
+      setPlayerComplianceCases(await fetchMyComplianceCases({ status: 'open', type: 'security', limit: 5 }));
+    } catch (error) {
+      console.warn('Player compliance case load failed', error);
     }
   };
 
@@ -930,6 +942,7 @@ export default function App() {
       setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
       setWalletWithdrawalStepUpPassword('');
       await loadNotifications();
+      await loadPlayerComplianceCases();
       sound.playBigWin();
       triggerNotification(
         response.withdrawal.amount >= 2500
@@ -2281,6 +2294,25 @@ export default function App() {
                   >
                     {walletWithdrawalLoading ? 'Recording withdrawal' : 'Withdraw entire reserves'}
                   </button>
+
+                  {playerComplianceCases.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] uppercase font-black tracking-widest text-yellow-400">
+                        Active review cases
+                      </div>
+                      {playerComplianceCases.map(caseRecord => (
+                        <div key={caseRecord.id} className="bg-neutral-950 border border-yellow-500/30 rounded-lg p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black uppercase text-white truncate">{caseRecord.title}</span>
+                            <span className="text-[9px] uppercase font-black text-yellow-400">{caseRecord.priority}</span>
+                          </div>
+                          <p className="text-[10px] text-neutral-400 mt-1">
+                            {caseRecord.status} / {safeText(caseRecord.evidence?.reference, caseRecord.id)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-[#10101C] border border-neutral-800 p-6 rounded-2xl space-y-4 min-w-0">
