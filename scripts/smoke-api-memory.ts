@@ -71,6 +71,12 @@ const main = async () => {
   if (!consentSession.user.ageGateAcceptedAt || !consentSession.user.termsAcceptedAt || !consentSession.user.privacyAcceptedAt) {
     throw new Error('Expected settings consent save to return updated consent timestamps');
   }
+  const profileSession = await patchJson(`${baseUrl}/api/auth/profile`, userSession.token, {
+    displayName: 'Quality Profile'
+  });
+  assertEqual(profileSession.user.displayName, 'Quality Profile', 'profile display name update');
+  const restoredProfileSession = await getJson(`${baseUrl}/api/auth/session`, userSession.token);
+  assertEqual(restoredProfileSession.user.displayName, 'Quality Profile', 'restored profile display name');
 
   const adminSession = await register({
     username: 'quality_admin',
@@ -877,6 +883,20 @@ const postJson = async (url: string, token: string, body: Record<string, unknown
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(`POST ${url} failed: ${response.status} ${JSON.stringify(payload)}`);
+  return payload;
+};
+
+const patchJson = async (url: string, token: string, body: Record<string, unknown>) => {
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(`PATCH ${url} failed: ${response.status} ${JSON.stringify(payload)}`);
   return payload;
 };
 

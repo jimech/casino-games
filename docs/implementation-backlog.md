@@ -1595,6 +1595,26 @@ Acceptance criteria:
 - Smoke coverage verifies delivered and suppressed support paths.
 - Local quality gate passes.
 
+### T78 - Backend-Backed Profile Display Name Save
+
+Summary: Wire the Personal Desk profile save action to the authenticated backend profile endpoint.
+
+Implementation status: Complete. The Personal Desk now exposes a display-name input and saves it through `/api/auth/profile` via a typed frontend helper. The active auth session and visible user name update from the backend response, the save button has a loading/disabled state, and empty display names are rejected client-side before submission. Memory API smoke coverage verifies profile display-name updates persist through `/api/auth/session`.
+
+Scope:
+- Typed frontend helper for `/api/auth/profile`.
+- Personal Desk display-name input.
+- Backend-backed profile save handler.
+- Loading/disabled state for profile save.
+- Smoke coverage for profile update and session restore.
+
+Acceptance criteria:
+- Personal Desk Save settings calls the backend.
+- Successful save updates the visible display name.
+- Empty display names are rejected before submission.
+- Restored auth session includes the updated display name.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -87,6 +87,7 @@ import {
   TournamentSettlementDto,
   updateConsentSettings,
   updateNotificationPreference,
+  updateProfileSettings,
   VipStatusDto,
   withdrawWallet
 } from './api/casinoApi';
@@ -149,6 +150,8 @@ export default function App() {
   const [supportForm, setSupportForm] = useState({ name: '', email: '', message: '' });
   const [supportSubmitted, setSupportSubmitted] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [profileDisplayNameInput, setProfileDisplayNameInput] = useState('Neon Private');
+  const [profileSaving, setProfileSaving] = useState(false);
 
   // General States
   const [pushNotification, setPushNotification] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -341,6 +344,7 @@ export default function App() {
         username: session.user.displayName ?? session.user.username,
         joinedDate: session.user.createdAt.slice(0, 10)
       }));
+      setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
     } catch (error) {
       console.warn('Session restore failed', error);
     } finally {
@@ -374,6 +378,7 @@ export default function App() {
         username: session.user.displayName ?? session.user.username,
         joinedDate: session.user.createdAt.slice(0, 10)
       }));
+      setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
       triggerNotification(authMode === 'register' ? 'Private account created. Session is active.' : 'Session restored. Welcome back.', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Authentication failed';
@@ -1209,6 +1214,34 @@ export default function App() {
     }
   };
 
+  const handleProfileSave = async () => {
+    sound.playClick();
+    const displayName = profileDisplayNameInput.trim();
+    if (!displayName) {
+      sound.playError();
+      triggerNotification("Display name is required.", "error");
+      return;
+    }
+
+    setProfileSaving(true);
+    try {
+      const session = await updateProfileSettings({ displayName });
+      setAuthSession(session);
+      setUser(prev => ({
+        ...prev,
+        username: session.user.displayName ?? session.user.username,
+        joinedDate: session.user.createdAt.slice(0, 10)
+      }));
+      setProfileDisplayNameInput(session.user.displayName ?? session.user.username);
+      triggerNotification("Profile settings saved.", "success");
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : "Profile settings could not be saved.", "error");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   // Filter components variables
   const recommendationRank = new Map<string, GameRecommendationDto>(gameRecommendations.map(item => [item.gameId, item]));
   const filteredGames = GAME_CATALOG_DATA.filter(g => {
@@ -1753,14 +1786,22 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="border-t border-neutral-850/40 pt-4 space-y-1.5">
+                  <label className="text-[10px] uppercase font-bold text-neutral-400">Display name</label>
+                  <input
+                    type="text"
+                    value={profileDisplayNameInput}
+                    onChange={(event) => setProfileDisplayNameInput(event.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-830 rounded-lg py-2 px-3 text-xs text-neutral-100 focus:outline-none focus:border-[#FF0055]"
+                  />
+                </div>
+
                 <button
-                  onClick={() => {
-                    sound.playClick();
-                    triggerNotification("Session settings preserved successfully!", "info");
-                  }}
-                  className="w-full bg-[#FF0055] hover:bg-pink-600 font-bold uppercase text-xs py-2.5 rounded-xl transition-all block"
+                  onClick={() => void handleProfileSave()}
+                  disabled={profileSaving}
+                  className="w-full bg-[#FF0055] hover:bg-pink-600 disabled:opacity-60 disabled:cursor-not-allowed font-bold uppercase text-xs py-2.5 rounded-xl transition-all block"
                 >
-                  Save settings
+                  {profileSaving ? 'Saving profile' : 'Save settings'}
                 </button>
               </div>
             )}

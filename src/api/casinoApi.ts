@@ -944,6 +944,18 @@ export const updateConsentSettings = async (input: {
   return parseJsonResponse<AuthSessionDto>(response);
 };
 
+export const updateProfileSettings = async (input: {
+  displayName?: string;
+  email?: string;
+}): Promise<AuthSessionDto> => {
+  const response = await fetch('/api/auth/profile', {
+    method: 'PATCH',
+    headers: jsonHeaders(),
+    body: JSON.stringify(input)
+  });
+  return parseJsonResponse<AuthSessionDto>(response);
+};
+
 export const fetchWallet = async (userId = CASINO_USER_ID): Promise<WalletDto> => {
   const response = await fetch(`/api/wallet/${encodeURIComponent(userId)}`, {
     headers: authHeaders()
