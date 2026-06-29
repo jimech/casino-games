@@ -178,6 +178,26 @@ const main = async () => {
   )) {
     throw new Error('Expected wallet withdrawal notification to be created');
   }
+  await postJsonExpectStatus(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
+    amount: 1500,
+    method: 'bank_wire',
+    idempotencyKey: 'quality-wallet-withdrawal-step-up-block'
+  }, 403);
+  const withdrawalStepUp = await postJson(`${baseUrl}/api/auth/step-up`, depositSession.token, {
+    password: 'very-secret-pass',
+    scope: 'wallet:withdrawal'
+  });
+  if (typeof withdrawalStepUp.stepUpToken !== 'string' || withdrawalStepUp.stepUpToken.length < 20) {
+    throw new Error('Expected withdrawal step-up token to be issued');
+  }
+  const steppedUpWithdrawal = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
+    amount: 1500,
+    method: 'bank_wire',
+    idempotencyKey: 'quality-wallet-withdrawal-step-up'
+  }, {
+    'X-Step-Up-Token': withdrawalStepUp.stepUpToken
+  });
+  assertEqual(steppedUpWithdrawal.wallet.available, 98550, 'step-up withdrawal debited');
   const accountClosureRequest = await postJson(`${baseUrl}/api/notifications`, depositSession.token, {
     type: 'support',
     title: 'Account closure review requested',

@@ -293,6 +293,7 @@ app.post('/api/wallet/withdrawals', async (req, res) => {
     const idempotencyKey = String(req.body.idempotencyKey ?? '');
     if (!Number.isFinite(amount) || amount <= 0) throw new Error('Withdrawal amount must be positive');
     if (amount > 5000) throw new Error('Withdrawal amount exceeds private rail limit');
+    if (amount >= 1000) await requireStepUp(req, user, 'wallet:withdrawal');
 
     const idempotentResult = await idempotencyService.runWithResponse({
       userId: user.id,

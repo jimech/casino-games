@@ -984,10 +984,14 @@ export const withdrawWallet = async (input: {
   amount: number;
   method: WalletWithdrawalResponseDto['withdrawal']['method'];
   idempotencyKey: string;
+  stepUpToken?: string;
 }): Promise<WalletWithdrawalResponseDto> => {
   const response = await fetch('/api/wallet/withdrawals', {
     method: 'POST',
-    headers: jsonHeaders(),
+    headers: {
+      ...jsonHeaders(),
+      ...(input.stepUpToken ? { 'X-Step-Up-Token': input.stepUpToken } : {})
+    },
     body: JSON.stringify(input)
   });
   return parseJsonResponse<WalletWithdrawalResponseDto>(response);

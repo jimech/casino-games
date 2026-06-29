@@ -1752,6 +1752,25 @@ Acceptance criteria:
 - Acknowledged interventions allow the guard to proceed.
 - Local quality gate passes.
 
+### T86 - High-Value Withdrawal Step-Up Guard
+
+Summary: Require step-up authentication before high-value wallet withdrawals.
+
+Implementation status: Complete. Wallet withdrawals at or above `$1,000` now require a valid `wallet:withdrawal` step-up token before the ledger debit is attempted. Missing or invalid step-up tokens return `403` through the existing step-up guard and record the standard `step_up_required` risk event. The typed wallet withdrawal API helper can pass `X-Step-Up-Token`, and the memory API smoke verifies both the blocked high-value withdrawal and the successful step-up-authorized withdrawal.
+
+Scope:
+- Backend high-value withdrawal step-up requirement.
+- `wallet:withdrawal` step-up scope.
+- Frontend API helper support for withdrawal step-up token headers.
+- Memory API smoke coverage for blocked and authorized high-value withdrawals.
+
+Acceptance criteria:
+- Withdrawals below `$1,000` keep the existing flow.
+- Withdrawals at or above `$1,000` require step-up authentication.
+- Missing step-up token returns `403` before debiting the wallet.
+- Valid step-up token permits the withdrawal and records the debit.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
