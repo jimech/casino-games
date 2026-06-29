@@ -1470,6 +1470,26 @@ Acceptance criteria:
 - Existing memory API smoke coverage still passes.
 - Local quality gate passes.
 
+### T72 - Trust Copy Cleanup for Private Platform Tone
+
+Summary: Remove remaining visible mock, sandbox, and demo wording from the app UI.
+
+Implementation status: Complete. Wallet funding, withdrawal, settings, and design-preview UI copy now uses private-platform language instead of mock/sandbox/demo wording. The cleanup preserves the current private test-flow behavior while avoiding player-facing text that implies the platform is fake or throwaway.
+
+Scope:
+- Wallet deposit helper copy.
+- Deposit method label.
+- Withdrawal success notification.
+- Settings save notification.
+- Design-preview banner and action label.
+- Promotion preview payment-rail copy.
+
+Acceptance criteria:
+- `src/App.tsx` has no remaining visible `mock`, `sandbox`, or `demo` wording.
+- Copy stays honest about private test rails and preview surfaces.
+- No gameplay, wallet, or API behavior changes.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -1977,7 +1977,7 @@ export default function App() {
                 <div className="bg-[#10101C] border border-neutral-800 p-6 rounded-2xl space-y-6">
                   <div>
                     <h3 className="text-md font-black text-white uppercase tracking-tight">Virtual Payment desk</h3>
-                    <p className="text-xs text-neutral-400">Mock credentials sandbox environment for platform test.</p>
+                    <p className="text-xs text-neutral-400">Private test payment rails for controlled wallet funding.</p>
                   </div>
 
                   <div className="bg-[#0b0b14] border border-neutral-850 p-4 rounded-xl text-center">
@@ -1986,7 +1986,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-2">
-                    <span className="text-[10px] text-neutral-400 font-black uppercase block">Deposit Sandbox Method:</span>
+                    <span className="text-[10px] text-neutral-400 font-black uppercase block">Deposit Method:</span>
                     <div className="grid grid-cols-3 gap-2">
                       <button
                         onClick={() => {
@@ -2032,7 +2032,7 @@ export default function App() {
                       } else {
                         handleUpdateWallet(-user.walletBalance);
                         sound.playBigWin();
-                        triggerNotification("Withdrawal requested successfully inside mock ledger!", "success");
+                        triggerNotification("Withdrawal request recorded successfully.", "success");
                       }
                     }}
                     className="w-full bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-xs py-3 rounded-xl transition-all block uppercase"
@@ -3146,7 +3146,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       sound.playClick();
-                      triggerNotification("Settings saved inside mock storage!", "success");
+                      triggerNotification("Settings saved for this private profile.", "success");
                     }}
                     className="bg-[#00FF88] hover:bg-emerald-400 text-neutral-950 font-black text-xs py-2 px-6 rounded-lg uppercase"
                   >
@@ -3492,18 +3492,18 @@ function FigmaRenderFrame({
   onRunInteractive
 }: FigmaFrameProps) {
 
-  // Global layout indicators wrapper for easy mock Inspect layout styling
+  // Global layout indicators wrapper for design preview styling
   const runNotice = (
     <div className="m-4 bg-[#FF0055]/10 border border-[#FF0055]/30 p-3 rounded-lg flex items-center justify-between gap-3 text-xs">
       <div className="flex items-center gap-1.5">
         <span className="w-2 h-2 rounded-full bg-[#FF0055] animate-ping" />
-        <span className="text-neutral-300">This is a Figma inspectable Layout. Try running the real action live!</span>
+        <span className="text-neutral-300">This is a design preview. Run the live private workflow for real interactions.</span>
       </div>
       <button
         onClick={onRunInteractive}
         className="bg-gradient-to-r from-[#FF0055] to-purple-600 text-white font-black text-[9px] uppercase px-3 py-1.5 rounded"
       >
-        Run Interactive App Demo
+        Run Live Workflow
       </button>
     </div>
   );
@@ -3519,12 +3519,12 @@ function FigmaRenderFrame({
             <span className="text-[9px] font-mono text-neutral-500 uppercase">Page 01</span>
           </div>
 
-          {/* Hero Carousel mockup */}
+          {/* Hero Carousel preview */}
           <div className="bg-gradient-to-r from-neutral-900 to-purple-950/40 p-6 rounded-xl border border-neutral-800 space-y-3 relative overflow-hidden">
             <div className="absolute -right-10 -bottom-10 opacity-5 w-44 h-44 bg-pink-500 rounded-full blur-3xl" />
             <span className="bg-[#FF0055] text-white text-[8px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">Promo carousel</span>
             <h4 className="text-lg font-black uppercase text-white leading-tight">Match welcome bonus multiplier loaded instantly: 100% up to $500</h4>
-            <p className="text-[11px] text-neutral-450">Deposit mock digital credentials sandbox to trigger instant match matching values.</p>
+            <p className="text-[11px] text-neutral-450">Use private payment test rails to trigger the instant welcome match.</p>
             <button className="bg-[#00FF88] text-neutral-950 font-black text-[10px] px-3.5 py-1.5 rounded uppercase leading-none">Claim promo credits</button>
           </div>
 
@@ -3620,7 +3620,7 @@ function FigmaRenderFrame({
 
           <div className="bg-neutral-950 p-4 rounded-xl border border-neutral-850 text-center space-y-4">
             <div className="text-[10px] font-mono text-neutral-400">Slot machine interface (5 reels, 3 rows)</div>
-            {/* Reel representation mockup */}
+            {/* Reel representation preview */}
             <div className="grid grid-cols-5 gap-1 bg-neutral-900 p-2.5 rounded-lg border border-neutral-80 font-mono text-lg text-emerald-400 font-bold">
               <span>🍒</span>
               <span>🍋</span>
@@ -3807,7 +3807,7 @@ function FigmaRenderFrame({
           <div className="bg-[#10101C] p-4 rounded-xl border border-pink-700/20 space-y-3">
             <span className="bg-[#FF0055] text-white text-[9px] px-1.5 rounded uppercase font-bold">Promotion Specced</span>
             <h4 className="text-xs font-black uppercase text-white leading-tight">Match Welcome Bonus match: 100% up to $500</h4>
-            <p className="text-[10px] text-neutral-450 leading-relaxed">Deposit mock digital credentials sandbox to trigger match multiplier rewards.</p>
+            <p className="text-[10px] text-neutral-450 leading-relaxed">Use private payment test rails to trigger match multiplier rewards.</p>
           </div>
         </div>
       );
@@ -3960,7 +3960,7 @@ function FigmaRenderFrame({
             </div>
           </div>
 
-          {/* Inputs UI mockups */}
+          {/* Inputs UI previews */}
           <div className="space-y-2">
             <span className="text-[9px] uppercase font-mono text-neutral-550 block">Pre-shaped input field:</span>
             <input
