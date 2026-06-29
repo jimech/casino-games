@@ -1713,6 +1713,26 @@ Acceptance criteria:
 - Acknowledgement emits an audit event.
 - Local quality gate passes.
 
+### T84 - Player Responsible Play Acknowledgement UI
+
+Summary: Surface required responsible-play acknowledgements in the player app and submit them to the backend.
+
+Implementation status: Complete. Game responses that include a required responsible-play warning or cooldown now store the intervention in frontend state and show a persistent acknowledgement banner above the active screen. The banner posts to the backend acknowledgement endpoint, clears only after the backend returns an acknowledgement timestamp, and reports failures through the existing notification surface.
+
+Scope:
+- Pending responsible-play intervention state.
+- Frontend acknowledgement loading state.
+- Required-intervention detection in the shared game-response notifier.
+- Persistent player acknowledgement banner.
+- Backend acknowledgement API helper usage.
+
+Acceptance criteria:
+- Required responsible-play interventions remain visible until acknowledged.
+- Acknowledgement calls the backend endpoint.
+- Successful acknowledgement clears the banner.
+- Failed acknowledgement shows an error notification.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

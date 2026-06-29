@@ -21,6 +21,7 @@ import {
   AdminTournamentEvidenceDto,
   AdminUserDetailDto,
   AdminSummaryDto,
+  acknowledgeResponsiblePlayIntervention,
   actBlackjackRound,
   actPokerRound,
   cancelTournament,
@@ -150,6 +151,8 @@ export default function App() {
   const [supportForm, setSupportForm] = useState({ name: '', email: '', message: '' });
   const [supportSubmitted, setSupportSubmitted] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [pendingResponsiblePlayIntervention, setPendingResponsiblePlayIntervention] = useState<ResponsiblePlayInterventionDto | null>(null);
+  const [responsiblePlayAcknowledging, setResponsiblePlayAcknowledging] = useState(false);
   const [profileDisplayNameInput, setProfileDisplayNameInput] = useState('Neon Private');
   const [profileEmailInput, setProfileEmailInput] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
@@ -251,6 +254,9 @@ export default function App() {
   const notifyResponsiblePlay = (intervention?: ResponsiblePlayInterventionDto) => {
     if (!intervention || intervention.level === 'none') return;
     triggerNotification(safeText(intervention.message, 'Responsible play check triggered.'), intervention.level === 'cooldown' ? 'error' : 'info');
+    if (intervention.requiresAcknowledgement && !intervention.acknowledgedAt) {
+      setPendingResponsiblePlayIntervention(intervention);
+    }
   };
 
   const setAiFallback = (key: string, message?: string) => {
@@ -1248,6 +1254,22 @@ export default function App() {
     }
   };
 
+  const handleResponsiblePlayAcknowledge = async () => {
+    if (!pendingResponsiblePlayIntervention) return;
+    sound.playClick();
+    setResponsiblePlayAcknowledging(true);
+    try {
+      const acknowledged = await acknowledgeResponsiblePlayIntervention(pendingResponsiblePlayIntervention.id);
+      setPendingResponsiblePlayIntervention(acknowledged.acknowledgedAt ? null : acknowledged);
+      triggerNotification("Responsible play check acknowledged.", "success");
+    } catch (error) {
+      sound.playError();
+      triggerNotification(error instanceof Error ? error.message : "Responsible play acknowledgement failed.", "error");
+    } finally {
+      setResponsiblePlayAcknowledging(false);
+    }
+  };
+
   const handleProfileSave = async () => {
     sound.playClick();
     const displayName = profileDisplayNameInput.trim();
@@ -1333,6 +1355,31 @@ export default function App() {
 
       {!authLoading && authSession && (
       <>
+
+      {pendingResponsiblePlayIntervention && (
+        <div className="fixed inset-x-3 top-20 z-50 mx-auto max-w-xl bg-neutral-950 border border-yellow-500/50 rounded-lg shadow-2xl p-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+            <div>
+              <div className="text-[10px] uppercase font-black tracking-widest text-yellow-400">
+                Responsible play check
+              </div>
+              <p className="text-sm font-black text-white mt-1">
+                {safeText(pendingResponsiblePlayIntervention.message, 'Please review your play pace before continuing.')}
+              </p>
+              <p className="text-[10px] uppercase font-black text-neutral-500 mt-2">
+                {pendingResponsiblePlayIntervention.level} / score {pendingResponsiblePlayIntervention.score}
+              </p>
+            </div>
+            <button
+              onClick={() => void handleResponsiblePlayAcknowledge()}
+              disabled={responsiblePlayAcknowledging}
+              className="bg-yellow-400 hover:bg-yellow-300 disabled:opacity-60 disabled:cursor-not-allowed text-neutral-950 font-black text-[10px] uppercase px-4 py-2 rounded-lg shrink-0"
+            >
+              {responsiblePlayAcknowledging ? 'Saving' : 'Acknowledge'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* DECORATIVE CONTROL HEADER */}
       <header className="bg-neutral-950 border-b border-neutral-850 px-4 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-4 z-40 relative">
