@@ -302,14 +302,27 @@ app.post('/api/wallet/withdrawals', async (req, res) => {
       payload: walletWithdrawalIdempotencyPayload(req.body),
       metadata: { route: '/api/wallet/withdrawals', method }
     }, async () => {
-      const wallet = await casinoService.debitWallet({
+      const requiresReview = amount >= 2500;
+      const reference = `wd_${createHash('sha256').update(`${user.id}:${idempotencyKey}`).digest('hex').slice(0, 16)}`;
+      const wallet = requiresReview ? await casinoService.lockWallet({
         userId: user.id,
         amount,
         idempotencyKey,
         metadata: {
           source: 'private_payment_rail',
           method,
-          direction: 'withdrawal'
+          direction: 'withdrawal_hold',
+          reference
+        }
+      }) : await casinoService.debitWallet({
+        userId: user.id,
+        amount,
+        idempotencyKey,
+        metadata: {
+          source: 'private_payment_rail',
+          method,
+          direction: 'withdrawal',
+          reference
         }
       });
       return {
@@ -318,7 +331,8 @@ app.post('/api/wallet/withdrawals', async (req, res) => {
           idempotencyKey,
           amount,
           method,
-          reference: `wd_${createHash('sha256').update(`${user.id}:${idempotencyKey}`).digest('hex').slice(0, 16)}`,
+          reference,
+          status: requiresReview ? 'pending_review' : 'recorded',
           createdAt: new Date().toISOString()
         }
       };
@@ -1230,6 +1244,7 @@ app.post('/api/admin/compliance/cases/:caseId/notes', async (req, res) => {
       outcome: caseRecord.outcome,
       evidence: caseRecord.notes[0]?.evidence
     });
+    await settleApprovedWithdrawalReview(caseRecord);
     await notifyComplianceCaseStatus(caseRecord.subjectUserId, caseRecord);
     res.status(201).json({ case: caseRecord });
   } catch (error) {
@@ -2406,6 +2421,47 @@ async function notifyComplianceCaseStatus(userId: string, caseRecord: {
       outcome: caseRecord.outcome,
       action: latestNote.action,
       evidence: latestNote.evidence
+    }
+  });
+}
+
+async function settleApprovedWithdrawalReview(caseRecord: {
+  id: string;
+  subjectUserId: string;
+  status: string;
+  outcome?: string;
+  evidence?: Record<string, unknown>;
+}) {
+  if (caseRecord.status !== 'closed' || caseRecord.outcome !== 'approved_for_private_payout') return;
+  if (!isRecord(caseRecord.evidence) || caseRecord.evidence.source !== 'wallet_withdrawal') return;
+
+  const amount = Number(caseRecord.evidence.amount);
+  const reference = String(caseRecord.evidence.reference ?? caseRecord.id);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+
+  const wallet = await casinoService.settleLockedWallet({
+    userId: caseRecord.subjectUserId,
+    amount,
+    idempotencyKey: `wallet-withdrawal-review-settle:${caseRecord.id}`,
+    metadata: {
+      source: 'wallet_withdrawal_review',
+      direction: 'withdrawal_settlement',
+      complianceCaseId: caseRecord.id,
+      reference,
+      originalIdempotencyKey: caseRecord.evidence.idempotencyKey
+    }
+  });
+  broadcastWallet(caseRecord.subjectUserId, wallet);
+  await notificationService.create({
+    userId: caseRecord.subjectUserId,
+    type: 'wallet',
+    title: 'Withdrawal payout approved',
+    message: `Withdrawal ${reference} was approved for private payout.`,
+    metadata: {
+      caseId: caseRecord.id,
+      amount,
+      reference,
+      status: 'approved_for_private_payout'
     }
   });
 }

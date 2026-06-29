@@ -70,6 +70,27 @@ export interface DebitWalletInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface LockWalletInput {
+  userId: string;
+  amount: number;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SettleLockedWalletInput {
+  userId: string;
+  amount: number;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReleaseLockedWalletInput {
+  userId: string;
+  amount: number;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface CasinoServiceSnapshot {
   wallets: Record<string, WalletState>;
   ledger: LedgerEntry[];
@@ -140,6 +161,69 @@ export class CasinoService {
       id: this.nextId('ledger'),
       idempotencyKey: input.idempotencyKey,
       type: 'debit',
+      amount,
+      metadata: {
+        ...input.metadata,
+        userId: input.userId
+      }
+    });
+
+    this.wallets.set(input.userId, commandResult.wallet);
+    if (commandResult.entry) this.ledger.push(commandResult.entry);
+    return commandResult.wallet;
+  }
+
+  lockWallet(input: LockWalletInput): WalletState {
+    this.assertText(input.userId, 'userId');
+    this.assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = asMoney(input.amount);
+    const wallet = this.requireWallet(input.userId);
+    const commandResult = applyWalletCommand(wallet, {
+      id: this.nextId('ledger'),
+      idempotencyKey: input.idempotencyKey,
+      type: 'lock',
+      amount,
+      metadata: {
+        ...input.metadata,
+        userId: input.userId
+      }
+    });
+
+    this.wallets.set(input.userId, commandResult.wallet);
+    if (commandResult.entry) this.ledger.push(commandResult.entry);
+    return commandResult.wallet;
+  }
+
+  settleLockedWallet(input: SettleLockedWalletInput): WalletState {
+    this.assertText(input.userId, 'userId');
+    this.assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = asMoney(input.amount);
+    const wallet = this.requireWallet(input.userId);
+    const commandResult = applyWalletCommand(wallet, {
+      id: this.nextId('ledger'),
+      idempotencyKey: input.idempotencyKey,
+      type: 'settleLoss',
+      amount,
+      metadata: {
+        ...input.metadata,
+        userId: input.userId
+      }
+    });
+
+    this.wallets.set(input.userId, commandResult.wallet);
+    if (commandResult.entry) this.ledger.push(commandResult.entry);
+    return commandResult.wallet;
+  }
+
+  releaseLockedWallet(input: ReleaseLockedWalletInput): WalletState {
+    this.assertText(input.userId, 'userId');
+    this.assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = asMoney(input.amount);
+    const wallet = this.requireWallet(input.userId);
+    const commandResult = applyWalletCommand(wallet, {
+      id: this.nextId('ledger'),
+      idempotencyKey: input.idempotencyKey,
+      type: 'release',
       amount,
       metadata: {
         ...input.metadata,

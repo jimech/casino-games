@@ -64,6 +64,7 @@ export interface WalletWithdrawalResponseDto {
     amount: number;
     method: WalletDepositResponseDto['deposit']['method'];
     reference: string;
+    status: 'recorded' | 'pending_review';
     createdAt: string;
   };
 }

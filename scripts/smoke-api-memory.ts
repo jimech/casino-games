@@ -198,6 +198,8 @@ const main = async () => {
     'X-Step-Up-Token': withdrawalStepUp.stepUpToken
   });
   assertEqual(steppedUpWithdrawal.wallet.available, 97550, 'step-up withdrawal debited');
+  assertEqual(steppedUpWithdrawal.wallet.locked, 2500, 'high-value withdrawal held for review');
+  assertEqual(steppedUpWithdrawal.withdrawal.status, 'pending_review', 'high-value withdrawal pending review status');
   const steppedUpWithdrawalReplay = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
     amount: 2500,
     method: 'bank_wire',
@@ -206,6 +208,7 @@ const main = async () => {
     'X-Step-Up-Token': withdrawalStepUp.stepUpToken
   });
   assertEqual(steppedUpWithdrawalReplay.withdrawal.reference, steppedUpWithdrawal.withdrawal.reference, 'step-up withdrawal replay reference');
+  assertEqual(steppedUpWithdrawalReplay.wallet.locked, 2500, 'step-up withdrawal replay keeps held funds stable');
   const withdrawalReviewCases = await getJson(`${baseUrl}/api/admin/compliance/cases?subjectUserId=${encodeURIComponent(depositSession.user.id)}&type=security&limit=10`, adminSession.token);
   const highValueWithdrawalCases = withdrawalReviewCases.cases.filter((caseRecord: { evidence?: { reference?: string } }) =>
     caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
@@ -236,6 +239,22 @@ const main = async () => {
   });
   assertEqual(closedWithdrawalReview.case.status, 'closed', 'high-value withdrawal review closed');
   assertEqual(closedWithdrawalReview.case.outcome, 'approved_for_private_payout', 'high-value withdrawal review outcome');
+  const walletAfterWithdrawalApproval = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}`, depositSession.token);
+  assertEqual(walletAfterWithdrawalApproval.available, 97550, 'approved withdrawal keeps available balance debited');
+  assertEqual(walletAfterWithdrawalApproval.locked, 0, 'approved withdrawal settles held funds');
+  const approvedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
+  if (!approvedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { reference?: string } }) =>
+    entry.type === 'lock' && entry.metadata?.reference === steppedUpWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected high-value withdrawal hold ledger entry');
+  }
+  if (!approvedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { complianceCaseId?: string; reference?: string } }) =>
+    entry.type === 'settleLoss' &&
+    entry.metadata?.complianceCaseId === withdrawalReviewCase.id &&
+    entry.metadata?.reference === steppedUpWithdrawal.withdrawal.reference
+  )) {
+    throw new Error('Expected approved withdrawal settlement ledger entry');
+  }
   const openWithdrawalReviewsAfterClose = await getJson(`${baseUrl}/api/compliance/cases?status=open&type=security&limit=5`, depositSession.token);
   if (openWithdrawalReviewsAfterClose.cases.some((caseRecord: { evidence?: { reference?: string } }) =>
     caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference

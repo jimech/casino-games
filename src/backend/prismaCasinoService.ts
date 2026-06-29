@@ -6,9 +6,12 @@ import {
   CreateUserWalletInput,
   DebitWalletInput,
   GameRoundRecord,
+  LockWalletInput,
   PlaceBetInput,
+  ReleaseLockedWalletInput,
   RefundRoundInput,
   SettleRoundInput,
+  SettleLockedWalletInput,
   UpdateRoundOutcomeInput
 } from './casinoService';
 import { LedgerEntry, WalletState } from '../domain/ledger';
@@ -147,6 +150,173 @@ export class PrismaCasinoService {
           userId,
           walletId: wallet.id,
           type: 'debit',
+          amount,
+          balanceBefore: wallet.available,
+          balanceAfter: updatedWallet.available,
+          lockedBefore: wallet.locked,
+          lockedAfter: updatedWallet.locked,
+          metadata: {
+            ...input.metadata,
+            userId
+          }
+        }
+      });
+
+      return walletToState(updatedWallet);
+    });
+  }
+
+  async lockWallet(input: LockWalletInput): Promise<WalletState> {
+    assertText(input.userId, 'userId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = BigInt(asMoney(input.amount));
+    const userId = await this.resolveUserId(input.userId);
+
+    return this.writeTransaction(async tx => {
+      const existing = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (existing) return walletToState(existing.wallet);
+
+      await lockWalletMutation(tx, userId);
+      const replayed = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (replayed) return walletToState(replayed.wallet);
+
+      const wallet = await requireWallet(tx, userId);
+      if (wallet.available < amount) {
+        throw new Error(`Insufficient funds: tried to lock ${amount.toString()} from ${wallet.available.toString()}`);
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          available: wallet.available - amount,
+          locked: wallet.locked + amount
+        }
+      });
+
+      await tx.walletLedgerEntry.create({
+        data: {
+          transactionId: randomUUID(),
+          idempotencyKey: input.idempotencyKey,
+          userId,
+          walletId: wallet.id,
+          type: 'lock',
+          amount,
+          balanceBefore: wallet.available,
+          balanceAfter: updatedWallet.available,
+          lockedBefore: wallet.locked,
+          lockedAfter: updatedWallet.locked,
+          metadata: {
+            ...input.metadata,
+            userId
+          }
+        }
+      });
+
+      return walletToState(updatedWallet);
+    });
+  }
+
+  async settleLockedWallet(input: SettleLockedWalletInput): Promise<WalletState> {
+    assertText(input.userId, 'userId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = BigInt(asMoney(input.amount));
+    const userId = await this.resolveUserId(input.userId);
+
+    return this.writeTransaction(async tx => {
+      const existing = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (existing) return walletToState(existing.wallet);
+
+      await lockWalletMutation(tx, userId);
+      const replayed = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (replayed) return walletToState(replayed.wallet);
+
+      const wallet = await requireWallet(tx, userId);
+      if (wallet.locked < amount) {
+        throw new Error(`Insufficient locked funds: tried to settle ${amount.toString()} from ${wallet.locked.toString()}`);
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          locked: wallet.locked - amount
+        }
+      });
+
+      await tx.walletLedgerEntry.create({
+        data: {
+          transactionId: randomUUID(),
+          idempotencyKey: input.idempotencyKey,
+          userId,
+          walletId: wallet.id,
+          type: 'settleLoss',
+          amount,
+          balanceBefore: wallet.available,
+          balanceAfter: updatedWallet.available,
+          lockedBefore: wallet.locked,
+          lockedAfter: updatedWallet.locked,
+          metadata: {
+            ...input.metadata,
+            userId
+          }
+        }
+      });
+
+      return walletToState(updatedWallet);
+    });
+  }
+
+  async releaseLockedWallet(input: ReleaseLockedWalletInput): Promise<WalletState> {
+    assertText(input.userId, 'userId');
+    assertText(input.idempotencyKey, 'idempotencyKey');
+    const amount = BigInt(asMoney(input.amount));
+    const userId = await this.resolveUserId(input.userId);
+
+    return this.writeTransaction(async tx => {
+      const existing = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (existing) return walletToState(existing.wallet);
+
+      await lockWalletMutation(tx, userId);
+      const replayed = await tx.walletLedgerEntry.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { wallet: true }
+      });
+      if (replayed) return walletToState(replayed.wallet);
+
+      const wallet = await requireWallet(tx, userId);
+      if (wallet.locked < amount) {
+        throw new Error(`Insufficient locked funds: tried to release ${amount.toString()} from ${wallet.locked.toString()}`);
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          available: wallet.available + amount,
+          locked: wallet.locked - amount
+        }
+      });
+
+      await tx.walletLedgerEntry.create({
+        data: {
+          transactionId: randomUUID(),
+          idempotencyKey: input.idempotencyKey,
+          userId,
+          walletId: wallet.id,
+          type: 'release',
           amount,
           balanceBefore: wallet.available,
           balanceAfter: updatedWallet.available,

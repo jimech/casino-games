@@ -1883,6 +1883,26 @@ Acceptance criteria:
 - Closed cards display status, outcome, and reference evidence.
 - Local quality gate passes.
 
+### T93 - High-Value Withdrawal Ledger Holds
+
+Summary: Reserve high-value withdrawal funds during security review and settle the hold only after approval.
+
+Implementation status: Complete. Wallet services now expose generic lock, locked-settlement, and locked-release operations in both memory and Prisma drivers. Withdrawals at or above the high-value review threshold now move funds from available to locked with a `pending_review` withdrawal status instead of final-debiting immediately. When the related compliance case is closed with the `approved_for_private_payout` outcome, the backend idempotently settles the locked funds, broadcasts the wallet update, and sends a wallet approval notification. The memory API smoke verifies the hold, replay stability, approval settlement, and reference-linked ledger entries.
+
+Scope:
+- Memory wallet lock/settle/release service methods.
+- Prisma wallet lock/settle/release service methods.
+- High-value withdrawal hold behavior and `pending_review` response status.
+- Compliance approval settlement for held withdrawal funds.
+- Smoke coverage for locked funds and settlement ledger entries.
+
+Acceptance criteria:
+- High-value withdrawal review funds are locked while review is open.
+- Idempotent withdrawal replay does not duplicate or change the hold.
+- Approved review closure settles the held amount exactly once.
+- Ledger entries preserve withdrawal reference and compliance case evidence.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
