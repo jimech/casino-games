@@ -155,6 +155,7 @@ const reconcile = (input: ReconciliationInput): ReconciliationReport => {
   const ledgerByRound = groupBy(input.ledger.filter(entry => entry.roundId), entry => entry.roundId ?? '');
   const roundById = new Map(input.rounds.map(round => [round.id, round]));
   const seedsByRound = groupBy(input.seeds.filter(seed => seed.roundId), seed => seed.roundId ?? '');
+  const unresolvedWithdrawalHoldByUser = computeUnresolvedWithdrawalHolds(input.ledger);
 
   for (const wallet of input.wallets) {
     const entries = ledgerByUser.get(wallet.userId) ?? [];
@@ -178,15 +179,19 @@ const reconcile = (input: ReconciliationInput): ReconciliationReport => {
     const openStake = input.rounds
       .filter(round => round.userId === wallet.userId && round.status === 'open')
       .reduce((sum, round) => sum + round.stake, 0);
-    if (openStake !== wallet.locked) {
+    const unresolvedWithdrawalHold = unresolvedWithdrawalHoldByUser.get(wallet.userId) ?? 0;
+    const expectedLocked = openStake + unresolvedWithdrawalHold;
+    if (expectedLocked !== wallet.locked) {
       issues.push(issue({
         severity: 'critical',
         type: 'open_round_locked_mismatch',
         userId: wallet.userId,
-        message: `Wallet ${wallet.userId} locked balance does not match open round stake`,
+        message: `Wallet ${wallet.userId} locked balance does not match open round stake and unresolved withdrawal holds`,
         details: {
           walletLocked: wallet.locked,
-          openRoundStake: openStake
+          openRoundStake: openStake,
+          unresolvedWithdrawalHold,
+          expectedLocked
         }
       }));
     }
@@ -354,6 +359,32 @@ const groupBy = <T>(items: T[], keyFor: (item: T) => string) => {
     groups.set(key, group);
   }
   return groups;
+};
+
+const computeUnresolvedWithdrawalHolds = (ledger: LedgerRecord[]) => {
+  const holdsByReference = new Map<string, LedgerRecord>();
+  const resolvedReferences = new Set<string>();
+
+  for (const entry of ledger) {
+    const reference = typeof entry.metadata?.reference === 'string' ? entry.metadata.reference : undefined;
+    if (!reference) continue;
+    if (entry.type === 'lock' && entry.metadata?.direction === 'withdrawal_hold') {
+      holdsByReference.set(reference, entry);
+    }
+    if (
+      (entry.type === 'settleLoss' && entry.metadata?.direction === 'withdrawal_settlement') ||
+      (entry.type === 'release' && entry.metadata?.direction === 'withdrawal_release')
+    ) {
+      resolvedReferences.add(reference);
+    }
+  }
+
+  const totals = new Map<string, number>();
+  for (const [reference, hold] of holdsByReference) {
+    if (resolvedReferences.has(reference)) continue;
+    totals.set(hold.userId, (totals.get(hold.userId) ?? 0) + hold.amount);
+  }
+  return totals;
 };
 
 const issue = (input: Omit<ReconciliationIssue, 'id'>): ReconciliationIssue => ({

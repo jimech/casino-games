@@ -1960,6 +1960,24 @@ Acceptance criteria:
 - Blocked review rewrites do not mutate wallet balances.
 - Local quality gate passes.
 
+### T97 - Reconciliation Support For Withdrawal Holds
+
+Summary: Treat pending high-value withdrawal holds as valid locked wallet funds in integrity reconciliation.
+
+Implementation status: Complete. Reconciliation now computes unresolved withdrawal holds from ledger entries tagged with `withdrawal_hold` and subtracts holds that were later settled or released through review resolution entries. Wallet locked-balance checks now compare locked funds against open round stake plus unresolved withdrawal holds, preventing false critical failures while payout reviews are pending. Unit coverage verifies clean pending holds pass reconciliation and resolved holds no longer count as locked funds.
+
+Scope:
+- Reconciliation unresolved withdrawal hold calculation.
+- Locked-balance expected value updated for open rounds plus pending payout holds.
+- Unit coverage for pending withdrawal holds.
+- Unit coverage for settled withdrawal holds.
+
+Acceptance criteria:
+- Pending high-value withdrawal holds do not fail reconciliation.
+- Settled or released withdrawal holds do not remain counted as locked funds.
+- Existing open-round locked-balance checks remain active.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

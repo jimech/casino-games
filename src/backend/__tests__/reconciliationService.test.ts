@@ -25,4 +25,49 @@ describe('reconciliation service', () => {
     expect(report.summary.settledRoundCount).toBe(1);
     expect(report.issues).toEqual([]);
   });
+
+  it('counts unresolved withdrawal holds as valid locked funds', () => {
+    const casino = new CasinoService({ user_1: 5000 });
+    casino.lockWallet({
+      userId: 'user_1',
+      amount: 2500,
+      idempotencyKey: 'withdrawal-hold-1',
+      metadata: {
+        direction: 'withdrawal_hold',
+        reference: 'wd_pending_1'
+      }
+    });
+
+    const report = new MemoryReconciliationService(casino).run();
+
+    expect(report.status).toBe('pass');
+    expect(report.issues).toEqual([]);
+  });
+
+  it('does not count settled withdrawal holds as locked funds', () => {
+    const casino = new CasinoService({ user_1: 5000 });
+    casino.lockWallet({
+      userId: 'user_1',
+      amount: 2500,
+      idempotencyKey: 'withdrawal-hold-1',
+      metadata: {
+        direction: 'withdrawal_hold',
+        reference: 'wd_pending_1'
+      }
+    });
+    casino.settleLockedWallet({
+      userId: 'user_1',
+      amount: 2500,
+      idempotencyKey: 'withdrawal-settle-1',
+      metadata: {
+        direction: 'withdrawal_settlement',
+        reference: 'wd_pending_1'
+      }
+    });
+
+    const report = new MemoryReconciliationService(casino).run();
+
+    expect(report.status).toBe('pass');
+    expect(report.issues).toEqual([]);
+  });
 });
