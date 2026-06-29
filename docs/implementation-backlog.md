@@ -1811,6 +1811,23 @@ Acceptance criteria:
 - Player receives a risk notification for the review.
 - Local quality gate passes.
 
+### T89 - Surface Withdrawal Review Status In Wallet
+
+Summary: Refresh player notifications and show review-aware success copy after high-value withdrawals.
+
+Implementation status: Complete. Successful wallet withdrawals now refresh the player notification inbox immediately, so the risk notification created for high-value withdrawal review appears without waiting for a manual refresh. The wallet success message now distinguishes normal withdrawals from withdrawals queued for security review at the `$2,500` threshold.
+
+Scope:
+- Refresh notifications after successful wallet withdrawals.
+- Review-aware wallet withdrawal success message.
+- Preserve existing wallet sync and error handling.
+
+Acceptance criteria:
+- Successful withdrawals refresh the notification inbox.
+- High-value review withdrawals show review-queued success copy.
+- Normal withdrawals keep standard success copy.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

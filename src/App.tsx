@@ -929,8 +929,14 @@ export default function App() {
       });
       setUser(prev => ({ ...prev, walletBalance: response.wallet.available }));
       setWalletWithdrawalStepUpPassword('');
+      await loadNotifications();
       sound.playBigWin();
-      triggerNotification(`Bank wire withdrawal recorded: -$${response.withdrawal.amount}`, 'success');
+      triggerNotification(
+        response.withdrawal.amount >= 2500
+          ? `Bank wire withdrawal recorded and queued for review: -$${response.withdrawal.amount}`
+          : `Bank wire withdrawal recorded: -$${response.withdrawal.amount}`,
+        'success'
+      );
     } catch (error) {
       sound.playError();
       triggerNotification(error instanceof Error ? error.message : 'Withdrawal could not be recorded.', 'error');
