@@ -1978,6 +1978,27 @@ Acceptance criteria:
 - Existing open-round locked-balance checks remain active.
 - Local quality gate passes.
 
+### T98 - Dedicated Withdrawal Records
+
+Summary: Add first-class withdrawal records separate from the wallet ledger.
+
+Implementation status: Complete. The platform now stores operational withdrawal records in memory and Prisma modes while keeping wallet ledger entries as the source of money truth. A new withdrawal service creates idempotent withdrawal records, links high-value withdrawal records to their compliance review case, and resolves them as `approved` or `rejected` when review closure settles or releases held funds. Prisma schema and migration support persistent `withdrawal_records`, and a player-safe `/api/wallet/withdrawals` endpoint lists the authenticated user's withdrawal records with optional status filtering. Memory API smoke verifies pending, approved, and rejected withdrawal records, compliance-case links, and resolution timestamps.
+
+Scope:
+- `withdrawal_records` Prisma model and migration.
+- Memory and Prisma withdrawal service implementations.
+- Wallet withdrawal route creates operational records.
+- Review case linkage and approval/rejection status updates.
+- Player-safe withdrawal record list endpoint and typed API helper.
+- Smoke coverage for pending, approved, and rejected withdrawal records.
+
+Acceptance criteria:
+- Every withdrawal creates a first-class withdrawal record.
+- High-value pending withdrawals link to their compliance case.
+- Approved and rejected review closures update withdrawal status.
+- Players can list only their own withdrawal records.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

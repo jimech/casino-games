@@ -200,6 +200,9 @@ const main = async () => {
   assertEqual(steppedUpWithdrawal.wallet.available, 97550, 'step-up withdrawal debited');
   assertEqual(steppedUpWithdrawal.wallet.locked, 2500, 'high-value withdrawal held for review');
   assertEqual(steppedUpWithdrawal.withdrawal.status, 'pending_review', 'high-value withdrawal pending review status');
+  if (typeof steppedUpWithdrawal.withdrawal.id !== 'string' || steppedUpWithdrawal.withdrawal.userId !== depositSession.user.id) {
+    throw new Error('Expected high-value withdrawal response to include operational withdrawal record');
+  }
   const steppedUpWithdrawalReplay = await postJson(`${baseUrl}/api/wallet/withdrawals`, depositSession.token, {
     amount: 2500,
     method: 'bank_wire',
@@ -215,6 +218,13 @@ const main = async () => {
   );
   assertEqual(highValueWithdrawalCases.length, 1, 'high-value withdrawal review case count');
   const withdrawalReviewCase = highValueWithdrawalCases[0];
+  const pendingWithdrawalRecords = await getJson(`${baseUrl}/api/wallet/withdrawals?status=pending_review&limit=10`, depositSession.token);
+  if (!pendingWithdrawalRecords.withdrawals.some((withdrawal: { reference?: string; complianceCaseId?: string }) =>
+    withdrawal.reference === steppedUpWithdrawal.withdrawal.reference &&
+    withdrawal.complianceCaseId === withdrawalReviewCase.id
+  )) {
+    throw new Error('Expected pending withdrawal record to link review case');
+  }
   const playerWithdrawalReviewCases = await getJson(`${baseUrl}/api/compliance/cases?status=open&type=security&limit=5`, depositSession.token);
   if (!playerWithdrawalReviewCases.cases.some((caseRecord: { evidence?: { reference?: string } }) =>
     caseRecord.evidence?.reference === steppedUpWithdrawal.withdrawal.reference
@@ -261,6 +271,14 @@ const main = async () => {
   });
   assertEqual(closedCaseFollowUpNote.case.status, 'closed', 'closed case follow-up note keeps status');
   assertEqual(closedCaseFollowUpNote.case.outcome, 'approved_for_private_payout', 'closed case follow-up note keeps outcome');
+  const approvedWithdrawalRecords = await getJson(`${baseUrl}/api/wallet/withdrawals?status=approved&limit=10`, depositSession.token);
+  if (!approvedWithdrawalRecords.withdrawals.some((withdrawal: { reference?: string; complianceCaseId?: string; resolvedAt?: string }) =>
+    withdrawal.reference === steppedUpWithdrawal.withdrawal.reference &&
+    withdrawal.complianceCaseId === withdrawalReviewCase.id &&
+    typeof withdrawal.resolvedAt === 'string'
+  )) {
+    throw new Error('Expected approved withdrawal record to resolve with review case');
+  }
   const approvedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
   if (!approvedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { reference?: string } }) =>
     entry.type === 'lock' && entry.metadata?.reference === steppedUpWithdrawal.withdrawal.reference
@@ -327,6 +345,14 @@ const main = async () => {
   const walletAfterWithdrawalRejection = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}`, depositSession.token);
   assertEqual(walletAfterWithdrawalRejection.available, 97550, 'rejected withdrawal returns held funds');
   assertEqual(walletAfterWithdrawalRejection.locked, 0, 'rejected withdrawal clears held funds');
+  const rejectedWithdrawalRecords = await getJson(`${baseUrl}/api/wallet/withdrawals?status=rejected&limit=10`, depositSession.token);
+  if (!rejectedWithdrawalRecords.withdrawals.some((withdrawal: { reference?: string; complianceCaseId?: string; resolvedAt?: string }) =>
+    withdrawal.reference === rejectedWithdrawal.withdrawal.reference &&
+    withdrawal.complianceCaseId === rejectedReviewCase.id &&
+    typeof withdrawal.resolvedAt === 'string'
+  )) {
+    throw new Error('Expected rejected withdrawal record to resolve with review case');
+  }
   const rejectedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
   if (!rejectedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { complianceCaseId?: string; reference?: string } }) =>
     entry.type === 'release' &&

@@ -19,6 +19,7 @@ import { actBlackjackRound, startBlackjackRound } from './src/backend/games/blac
 import { actPokerRound, startPokerRound } from './src/backend/games/pokerEngine';
 import { ProvablyFairCommitment, ProvablyFairProof, verifyProvablyFairProof } from './src/domain/provablyFair';
 import { ProvablyFairSeedRecord, seedLifecycle } from './src/backend/provablyFairSeedService';
+import { isWithdrawalStatus } from './src/backend/withdrawalService';
 
 dotenv.config();
 
@@ -27,7 +28,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
-const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService, idempotencyService, reconciliationService } = createServices();
+const { casinoService, authService, riskService, bonusService, complianceCaseService, notificationService, aiEventService, aiDecisionExplanationService, aiModelMonitoringService, aiFeatureService, gameRecommendationService, bonusTargetingService, churnService, fraudService, responsiblePlayService, vipService, tournamentService, provablyFairSeedService, idempotencyService, reconciliationService, withdrawalService } = createServices();
 const walletEventClients = new Map<string, Set<express.Response>>();
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const stepUpSessions = new Map<string, { userId: string; expiresAt: number; scope: string }>();
@@ -196,6 +197,17 @@ app.post('/api/auth/step-up', async (req, res) => {
   }
 });
 
+app.get('/api/wallet/withdrawals', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const status = isWithdrawalStatus(req.query.status) ? req.query.status : undefined;
+    const limit = Number(req.query.limit ?? 25);
+    res.json({ withdrawals: await withdrawalService.list({ userId: user.id, status, limit }) });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.get('/api/wallet/:userId', async (req, res) => {
   try {
     await requireOwnUser(req, req.params.userId);
@@ -325,16 +337,17 @@ app.post('/api/wallet/withdrawals', async (req, res) => {
           reference
         }
       });
+      const withdrawal = await withdrawalService.create({
+        userId: user.id,
+        amount,
+        method,
+        reference,
+        status: requiresReview ? 'pending_review' : 'recorded',
+        idempotencyKey
+      });
       return {
         wallet,
-        withdrawal: {
-          idempotencyKey,
-          amount,
-          method,
-          reference,
-          status: requiresReview ? 'pending_review' : 'recorded',
-          createdAt: new Date().toISOString()
-        }
+        withdrawal
       };
     });
 
@@ -364,12 +377,17 @@ app.post('/api/wallet/withdrawals', async (req, res) => {
         }
       });
       if (result.withdrawal.amount >= 2500) {
-        await openHighValueWithdrawalReview(user.id, {
+        const caseRecord = await openHighValueWithdrawalReview(user.id, {
           amount: result.withdrawal.amount,
           method,
           reference: result.withdrawal.reference,
           idempotencyKey
         });
+        const updatedWithdrawal = await withdrawalService.attachComplianceCase({
+          reference: result.withdrawal.reference,
+          complianceCaseId: caseRecord.id
+        });
+        if (updatedWithdrawal) result.withdrawal = updatedWithdrawal;
       }
     }
 
@@ -2468,8 +2486,13 @@ async function resolveReviewedWithdrawalHold(caseRecord: {
       : undefined;
   if (!wallet) return;
 
-  broadcastWallet(caseRecord.subjectUserId, wallet);
   const approved = caseRecord.outcome === 'approved_for_private_payout';
+  await withdrawalService.resolveByReference({
+    reference,
+    status: approved ? 'approved' : 'rejected',
+    complianceCaseId: caseRecord.id
+  });
+  broadcastWallet(caseRecord.subjectUserId, wallet);
   await notificationService.create({
     userId: caseRecord.subjectUserId,
     type: 'wallet',

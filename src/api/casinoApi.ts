@@ -59,14 +59,21 @@ export interface WalletDepositResponseDto {
 
 export interface WalletWithdrawalResponseDto {
   wallet: WalletDto;
-  withdrawal: {
-    idempotencyKey: string;
-    amount: number;
-    method: WalletDepositResponseDto['deposit']['method'];
-    reference: string;
-    status: 'recorded' | 'pending_review';
-    createdAt: string;
-  };
+  withdrawal: WithdrawalRecordDto;
+}
+
+export interface WithdrawalRecordDto {
+  id: string;
+  userId: string;
+  idempotencyKey: string;
+  amount: number;
+  method: WalletDepositResponseDto['deposit']['method'];
+  reference: string;
+  status: 'recorded' | 'pending_review' | 'approved' | 'rejected';
+  complianceCaseId?: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
 }
 
 interface RouletteBetSlipDto {
@@ -996,6 +1003,21 @@ export const withdrawWallet = async (input: {
     body: JSON.stringify(input)
   });
   return parseJsonResponse<WalletWithdrawalResponseDto>(response);
+};
+
+export const fetchWalletWithdrawals = async (input: {
+  status?: WithdrawalRecordDto['status'];
+  limit?: number;
+} = {}): Promise<WithdrawalRecordDto[]> => {
+  const params = new URLSearchParams();
+  if (input.status) params.set('status', input.status);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/wallet/withdrawals${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  const payload = await parseJsonResponse<{ withdrawals: WithdrawalRecordDto[] }>(response);
+  return payload.withdrawals;
 };
 
 export const fetchRounds = async (): Promise<RoundDto[]> => {

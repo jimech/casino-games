@@ -127,6 +127,7 @@ model User {
   subjectComplianceCases ComplianceCase[] @relation("ComplianceCaseSubject")
   assignedComplianceCases ComplianceCase[] @relation("ComplianceCaseAssignee")
   complianceCaseNotes ComplianceCaseNote[] @relation("ComplianceCaseNoteAuthor")
+  withdrawals   WithdrawalRecord[]
 
   @@map("users")
 }
@@ -149,6 +150,7 @@ model ComplianceCase {
   subject    User @relation("ComplianceCaseSubject", fields: [subjectUserId], references: [id], onDelete: Cascade)
   assignedTo User? @relation("ComplianceCaseAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
   notes      ComplianceCaseNote[]
+  withdrawalRecords WithdrawalRecord[]
 
   @@index([subjectUserId, createdAt])
   @@index([status, priority, createdAt])
@@ -173,6 +175,28 @@ model ComplianceCaseNote {
   @@index([caseId, createdAt])
   @@index([authorId, createdAt])
   @@map("compliance_case_notes")
+}
+
+model WithdrawalRecord {
+  id               String   @id @default(cuid())
+  userId           String
+  amount           BigInt
+  method           String
+  reference        String   @unique
+  status           String
+  idempotencyKey   String   @unique
+  complianceCaseId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  resolvedAt       DateTime?
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  complianceCase ComplianceCase? @relation(fields: [complianceCaseId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([complianceCaseId])
+  @@map("withdrawal_records")
 }
 
 model AiModelControl {
