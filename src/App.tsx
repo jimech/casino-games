@@ -58,6 +58,7 @@ import {
   fetchTournaments,
   fetchVipStatus,
   fetchWallet,
+  fetchWalletWithdrawals,
   ComplianceCaseDto,
   GameRecommendationDto,
   GameMathSimulationReportDto,
@@ -202,6 +203,8 @@ export default function App() {
   const [playerRoundsLoading, setPlayerRoundsLoading] = useState(false);
   const [playerComplianceCases, setPlayerComplianceCases] = useState<ComplianceCaseDto[]>([]);
   const [playerClosedComplianceCases, setPlayerClosedComplianceCases] = useState<ComplianceCaseDto[]>([]);
+  const [playerWithdrawals, setPlayerWithdrawals] = useState<WithdrawalRecordDto[]>([]);
+  const [playerWithdrawalsLoading, setPlayerWithdrawalsLoading] = useState(false);
   const [playerProofEvidence, setPlayerProofEvidence] = useState<{
     round: RoundDto;
     provablyFair: {
@@ -325,6 +328,7 @@ export default function App() {
     if (authSession && activeCasinoTab === 'wallet') {
       void loadPlayerRounds();
       void loadPlayerComplianceCases();
+      void loadPlayerWithdrawals();
     }
   }, [authSession?.user.id, activeCasinoTab]);
 
@@ -660,6 +664,18 @@ export default function App() {
     }
   };
 
+  const loadPlayerWithdrawals = async () => {
+    setPlayerWithdrawalsLoading(true);
+    try {
+      setPlayerWithdrawals(await fetchWalletWithdrawals({ limit: 8 }));
+    } catch (error) {
+      console.warn('Player withdrawals failed to load', error);
+      triggerNotification(error instanceof Error ? error.message : "Withdrawal history failed to load.", "error");
+    } finally {
+      setPlayerWithdrawalsLoading(false);
+    }
+  };
+
   const inspectPlayerProof = async (roundId: string) => {
     setPlayerProofLoading(true);
     try {
@@ -971,6 +987,7 @@ export default function App() {
       setWalletWithdrawalStepUpPassword('');
       await loadNotifications();
       await loadPlayerComplianceCases();
+      await loadPlayerWithdrawals();
       sound.playBigWin();
       triggerNotification(
         response.withdrawal.amount >= 2500
@@ -2360,6 +2377,47 @@ export default function App() {
                       ))}
                     </div>
                   )}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] uppercase font-black tracking-widest text-neutral-400">
+                        Withdrawal history
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void loadPlayerWithdrawals()}
+                        className="shrink-0 bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-[#00FF88] font-black text-[9px] uppercase px-2.5 py-1.5 rounded-lg transition-all"
+                      >
+                        {playerWithdrawalsLoading ? 'Loading' : 'Refresh'}
+                      </button>
+                    </div>
+                    {playerWithdrawals.slice(0, 6).map(withdrawal => (
+                      <div key={withdrawal.id} className="bg-neutral-950 border border-neutral-850 rounded-lg p-3 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-black uppercase text-white truncate">
+                            ${withdrawal.amount} / {withdrawal.method.replace('_', ' ')}
+                          </span>
+                          <span className={`text-[9px] uppercase font-black ${
+                            withdrawal.status === 'pending_review'
+                              ? 'text-yellow-400'
+                              : withdrawal.status === 'rejected'
+                                ? 'text-red-300'
+                                : 'text-emerald-300'
+                          }`}>
+                            {withdrawal.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-neutral-400 mt-1 truncate">
+                          {withdrawal.reference} / {safeText(withdrawal.complianceCaseId, 'direct rail')} / {safeDateTime(withdrawal.resolvedAt ?? withdrawal.createdAt)}
+                        </p>
+                      </div>
+                    ))}
+                    {!playerWithdrawals.length && (
+                      <div className="bg-neutral-950 border border-neutral-850 rounded-lg p-3 text-[10px] text-neutral-500 uppercase font-black">
+                        No withdrawal records yet.
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="bg-[#10101C] border border-neutral-800 p-6 rounded-2xl space-y-4 min-w-0">

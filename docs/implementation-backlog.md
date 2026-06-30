@@ -2036,6 +2036,24 @@ Acceptance criteria:
 - Queue rows expose payout amount, status, reference, and review linkage.
 - Local quality gate passes.
 
+### T101 - Player Withdrawal History UI
+
+Summary: Surface player-owned withdrawal records inside the Wallet dashboard.
+
+Implementation status: Complete. The Wallet view now loads the authenticated player's withdrawal records from the dedicated player-safe withdrawal endpoint and refreshes that history after a withdrawal request succeeds. Players can inspect recent withdrawal amounts, methods, statuses, references, review links, and created or resolved timestamps without needing admin access or raw API calls.
+
+Scope:
+- Player withdrawal history state and loading flow.
+- Wallet tab automatic withdrawal history refresh.
+- Post-withdrawal history refresh.
+- Compact wallet history rendering with status, method, reference, review link, and timestamp.
+
+Acceptance criteria:
+- Players can see their own recent withdrawal records in the Wallet tab.
+- Withdrawal history refreshes after submitting a withdrawal.
+- Status labels distinguish pending review, approved/recorded, and rejected records.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:
