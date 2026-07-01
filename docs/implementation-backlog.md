@@ -2054,6 +2054,26 @@ Acceptance criteria:
 - Status labels distinguish pending review, approved/recorded, and rejected records.
 - Local quality gate passes.
 
+### T102 - Admin Withdrawal Queue Review Actions
+
+Summary: Let admins approve or reject linked payout review cases directly from the withdrawal queue.
+
+Implementation status: Complete. Pending withdrawal rows with linked compliance cases now expose approve and reject actions in the Admin Audit withdrawal queue. Each action posts an audited compliance-case note with the final closed status, payout outcome, and withdrawal evidence, reusing the existing backend resolution flow that settles or releases held wallet funds and updates the withdrawal record.
+
+Scope:
+- Admin withdrawal queue per-row action loading state.
+- Approve action for high-value private payout reviews.
+- Reject action for high-value private payout reviews.
+- Queue and admin summary refresh after resolution.
+- Backlog documentation for the payout-ops action path.
+
+Acceptance criteria:
+- Pending withdrawal rows with review cases show approve and reject controls.
+- Approving a row closes the linked case with the approved payout outcome.
+- Rejecting a row closes the linked case with the rejected payout outcome.
+- Existing audited compliance-case resolution remains the single backend mutation path.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

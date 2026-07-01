@@ -21,6 +21,7 @@ import {
   AdminTournamentEvidenceDto,
   AdminUserDetailDto,
   AdminSummaryDto,
+  addComplianceCaseNote,
   acknowledgeResponsiblePlayIntervention,
   actBlackjackRound,
   actPokerRound,
@@ -186,6 +187,7 @@ export default function App() {
   const [adminRewardsReview, setAdminRewardsReview] = useState<AdminRewardsReviewDto | null>(null);
   const [adminWithdrawals, setAdminWithdrawals] = useState<WithdrawalRecordDto[]>([]);
   const [adminWithdrawalStatusFilter, setAdminWithdrawalStatusFilter] = useState<WithdrawalRecordDto['status'] | 'all'>('pending_review');
+  const [adminWithdrawalActionId, setAdminWithdrawalActionId] = useState('');
   const [adminUserSearchLoading, setAdminUserSearchLoading] = useState(false);
   const [adminUserDetailLoading, setAdminUserDetailLoading] = useState(false);
   const [adminRoundEvidenceLoading, setAdminRoundEvidenceLoading] = useState(false);
@@ -451,6 +453,46 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Withdrawal queue failed to load.", "error");
     } finally {
       setAdminWithdrawalsLoading(false);
+    }
+  };
+
+  const resolveAdminWithdrawalReview = async (
+    withdrawal: WithdrawalRecordDto,
+    resolution: 'approved_for_private_payout' | 'rejected_private_payout'
+  ) => {
+    if (!withdrawal.complianceCaseId) {
+      triggerNotification('Withdrawal has no linked review case.', 'error');
+      return;
+    }
+
+    setAdminWithdrawalActionId(`${withdrawal.id}:${resolution}`);
+    try {
+      await addComplianceCaseNote({
+        caseId: withdrawal.complianceCaseId,
+        note: resolution === 'approved_for_private_payout'
+          ? `Approved private payout for withdrawal ${withdrawal.reference}.`
+          : `Rejected private payout for withdrawal ${withdrawal.reference}.`,
+        action: resolution === 'approved_for_private_payout' ? 'withdrawal_payout_approved' : 'withdrawal_payout_rejected',
+        status: 'closed',
+        outcome: resolution,
+        evidence: {
+          source: 'admin_withdrawal_queue',
+          withdrawalRecordId: withdrawal.id,
+          reference: withdrawal.reference,
+          amount: withdrawal.amount,
+          method: withdrawal.method
+        }
+      });
+      triggerNotification(
+        resolution === 'approved_for_private_payout' ? 'Withdrawal review approved.' : 'Withdrawal review rejected.',
+        'success'
+      );
+      await loadAdminWithdrawals(adminWithdrawalStatusFilter);
+      await loadAdminSummary();
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : 'Withdrawal review could not be resolved.', 'error');
+    } finally {
+      setAdminWithdrawalActionId('');
     }
   };
 
@@ -2549,14 +2591,48 @@ export default function App() {
                     >
                       {adminWithdrawalsLoading ? 'Loading queue' : 'Refresh withdrawals'}
                     </button>
-                    {adminWithdrawals.map(withdrawal => (
-                      <AdminRow
-                        key={withdrawal.id}
-                        left={`$${withdrawal.amount} / ${withdrawal.method}`}
-                        right={withdrawal.status.replace('_', ' ')}
-                        detail={`${withdrawal.reference} / ${safeText(withdrawal.complianceCaseId, withdrawal.userId)} / ${safeDateTime(withdrawal.resolvedAt ?? withdrawal.createdAt)}`}
-                      />
-                    ))}
+                    {adminWithdrawals.map(withdrawal => {
+                      const canResolve = withdrawal.status === 'pending_review' && Boolean(withdrawal.complianceCaseId);
+                      const approveActionId = `${withdrawal.id}:approved_for_private_payout`;
+                      const rejectActionId = `${withdrawal.id}:rejected_private_payout`;
+                      return (
+                        <div key={withdrawal.id} className="bg-neutral-950 border border-neutral-850 rounded-md px-3 py-2 space-y-2 min-w-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="block text-xs font-bold text-neutral-200 truncate">
+                                ${withdrawal.amount} / {withdrawal.method.replace('_', ' ')}
+                              </span>
+                              <span className="block text-[10px] text-neutral-500 font-mono truncate">
+                                {withdrawal.reference} / {safeText(withdrawal.complianceCaseId, withdrawal.userId)} / {safeDateTime(withdrawal.resolvedAt ?? withdrawal.createdAt)}
+                              </span>
+                            </div>
+                            <span className="text-xs font-black text-[#00FF88] font-mono uppercase shrink-0">
+                              {withdrawal.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          {canResolve && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void resolveAdminWithdrawalReview(withdrawal, 'approved_for_private_payout')}
+                                disabled={adminWithdrawalActionId !== ''}
+                                className="bg-[#00FF88] hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-neutral-950 font-black text-[9px] uppercase px-2 py-2 rounded-lg transition-all"
+                              >
+                                {adminWithdrawalActionId === approveActionId ? 'Approving' : 'Approve'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void resolveAdminWithdrawalReview(withdrawal, 'rejected_private_payout')}
+                                disabled={adminWithdrawalActionId !== ''}
+                                className="bg-red-500/15 hover:bg-red-500/25 disabled:opacity-60 disabled:cursor-not-allowed border border-red-400/30 text-red-200 font-black text-[9px] uppercase px-2 py-2 rounded-lg transition-all"
+                              >
+                                {adminWithdrawalActionId === rejectActionId ? 'Rejecting' : 'Reject'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                     {adminWithdrawals.length === 0 && (
                       <AdminRow
                         left={adminWithdrawalsLoading ? 'Loading withdrawals' : 'No withdrawal records'}
