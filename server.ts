@@ -1221,6 +1221,72 @@ app.get('/api/admin/withdrawals', async (req, res) => {
   }
 });
 
+app.get('/api/admin/withdrawals/decisions-export', async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+    const status = isWithdrawalStatus(req.query.status) ? req.query.status : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const decisionStatus = status === 'approved' || status === 'rejected' ? status : undefined;
+    const withdrawals = await withdrawalService.list({ userId, status: decisionStatus, limit });
+    const decisionWithdrawals = withdrawals.filter(withdrawal => withdrawal.status === 'approved' || withdrawal.status === 'rejected');
+    const decisions = await Promise.all(decisionWithdrawals.map(async withdrawal => {
+      const caseRecord = withdrawal.complianceCaseId
+        ? await complianceCaseService.get({ caseId: withdrawal.complianceCaseId })
+        : undefined;
+      const decisionNote = caseRecord?.notes.find(note =>
+        note.outcome === 'approved_for_private_payout' ||
+        note.outcome === 'rejected_private_payout' ||
+        note.action === 'withdrawal_payout_approved' ||
+        note.action === 'withdrawal_payout_rejected'
+      );
+      return {
+        withdrawal,
+        decision: {
+          status: withdrawal.status,
+          resolvedAt: withdrawal.resolvedAt,
+          complianceCaseId: withdrawal.complianceCaseId,
+          outcome: caseRecord?.outcome,
+          decisionNote
+        },
+        complianceCase: caseRecord ? {
+          id: caseRecord.id,
+          subjectUserId: caseRecord.subjectUserId,
+          type: caseRecord.type,
+          status: caseRecord.status,
+          priority: caseRecord.priority,
+          title: caseRecord.title,
+          outcome: caseRecord.outcome,
+          createdAt: caseRecord.createdAt,
+          updatedAt: caseRecord.updatedAt,
+          closedAt: caseRecord.closedAt,
+          noteCount: caseRecord.notes.length
+        } : undefined
+      };
+    }));
+    const packet = {
+      exportedAt: new Date().toISOString(),
+      exportVersion: 'withdrawal-decisions-v1',
+      filters: {
+        userId,
+        status: decisionStatus ?? 'approved_or_rejected',
+        limit: limit ?? 50
+      },
+      summary: {
+        withdrawalCount: decisions.length,
+        approvedCount: decisions.filter(item => item.withdrawal.status === 'approved').length,
+        rejectedCount: decisions.filter(item => item.withdrawal.status === 'rejected').length
+      },
+      decisions
+    };
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="withdrawal-decisions.json"');
+    res.send(JSON.stringify(packet, null, 2));
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/admin/compliance/cases', async (req, res) => {
   try {
     const admin = await requireAdmin(req);

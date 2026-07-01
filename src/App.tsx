@@ -34,6 +34,7 @@ import {
   createWalletEventSource,
   depositWallet,
   enterTournament,
+  exportAdminWithdrawalDecisions,
   exportAdminRoundEvidence,
   exportAdminTournamentEvidence,
   fetchMyComplianceCases,
@@ -194,6 +195,7 @@ export default function App() {
   const [adminRewardsLoading, setAdminRewardsLoading] = useState(false);
   const [adminWithdrawalsLoading, setAdminWithdrawalsLoading] = useState(false);
   const [adminRoundExportPreview, setAdminRoundExportPreview] = useState('');
+  const [adminWithdrawalDecisionExportPreview, setAdminWithdrawalDecisionExportPreview] = useState('');
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferenceDto[]>([]);
   const [adminNotificationDeliveries, setAdminNotificationDeliveries] = useState<NotificationDeliveryDto[]>([]);
@@ -445,6 +447,7 @@ export default function App() {
     setAdminWithdrawalsLoading(true);
     try {
       setAdminWithdrawalStatusFilter(status);
+      setAdminWithdrawalDecisionExportPreview('');
       setAdminWithdrawals(await fetchAdminWithdrawals({
         status: status === 'all' ? undefined : status,
         limit: 12
@@ -453,6 +456,21 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : "Withdrawal queue failed to load.", "error");
     } finally {
       setAdminWithdrawalsLoading(false);
+    }
+  };
+
+  const previewAdminWithdrawalDecisionExport = async () => {
+    try {
+      const exported = await exportAdminWithdrawalDecisions({
+        status: adminWithdrawalStatusFilter === 'approved' || adminWithdrawalStatusFilter === 'rejected'
+          ? adminWithdrawalStatusFilter
+          : undefined,
+        limit: 25
+      });
+      setAdminWithdrawalDecisionExportPreview(exported.slice(0, 520));
+      triggerNotification('Withdrawal decision export generated.', 'success');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : "Withdrawal decision export failed.", "error");
     }
   };
 
@@ -2591,6 +2609,18 @@ export default function App() {
                     >
                       {adminWithdrawalsLoading ? 'Loading queue' : 'Refresh withdrawals'}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => void previewAdminWithdrawalDecisionExport()}
+                      className="w-full bg-neutral-950 hover:bg-neutral-900 border border-neutral-800 text-neutral-200 font-black text-[10px] uppercase px-3 py-2 rounded-lg transition-all"
+                    >
+                      Preview decision export
+                    </button>
+                    {adminWithdrawalDecisionExportPreview && (
+                      <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words bg-neutral-950 border border-neutral-850 rounded-md p-3 text-[10px] text-neutral-400">
+                        {adminWithdrawalDecisionExportPreview}
+                      </pre>
+                    )}
                     {adminWithdrawals.map(withdrawal => {
                       const canResolve = withdrawal.status === 'pending_review' && Boolean(withdrawal.complianceCaseId);
                       const approveActionId = `${withdrawal.id}:approved_for_private_payout`;

@@ -1037,6 +1037,23 @@ export const fetchAdminWithdrawals = async (input: {
   return payload.withdrawals;
 };
 
+export const exportAdminWithdrawalDecisions = async (input: {
+  userId?: string;
+  status?: WithdrawalRecordDto['status'];
+  limit?: number;
+} = {}): Promise<string> => {
+  const params = new URLSearchParams();
+  if (input.userId) params.set('userId', input.userId);
+  if (input.status) params.set('status', input.status);
+  if (input.limit) params.set('limit', String(input.limit));
+  const query = params.toString();
+  const response = await fetch(`/api/admin/withdrawals/decisions-export${query ? `?${query}` : ''}`, {
+    headers: authHeaders()
+  });
+  if (!response.ok) await parseJsonResponse(response);
+  return response.text();
+};
+
 export const fetchRounds = async (): Promise<RoundDto[]> => {
   const response = await fetch('/api/rounds', {
     headers: authHeaders()

@@ -2074,6 +2074,24 @@ Acceptance criteria:
 - Existing audited compliance-case resolution remains the single backend mutation path.
 - Local quality gate passes.
 
+### T103 - Withdrawal Decision Audit Export
+
+Summary: Provide an admin export packet for approved and rejected withdrawal review decisions.
+
+Implementation status: Complete. Admins can now generate a JSON withdrawal decision export that packages resolved withdrawal records with linked compliance-case summaries and the note that approved or rejected the payout. The Admin Audit withdrawal queue includes a preview action for the export, and the memory API smoke verifies the export contains both approved and rejected payout review decisions.
+
+Scope:
+- Admin-only withdrawal decision export endpoint.
+- Typed frontend export helper.
+- Admin Audit preview action for withdrawal decision exports.
+- Smoke coverage for approved and rejected withdrawal decision export rows.
+
+Acceptance criteria:
+- Export packets include version, filters, summary counts, and decision rows.
+- Decision rows include withdrawal data, linked compliance case summary, and decision note.
+- Pending review filters do not pollute the decision audit packet.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

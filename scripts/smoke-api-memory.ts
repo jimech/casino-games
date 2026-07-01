@@ -381,6 +381,21 @@ const main = async () => {
   )) {
     throw new Error('Expected admin withdrawal queue to include rejected withdrawal');
   }
+  const withdrawalDecisionExport = await fetch(`${baseUrl}/api/admin/withdrawals/decisions-export?limit=25`, {
+    headers: { Authorization: `Bearer ${adminSession.token}` }
+  });
+  const withdrawalDecisionExportText = await withdrawalDecisionExport.text();
+  const withdrawalDecisionExportBody = JSON.parse(withdrawalDecisionExportText);
+  if (
+    !withdrawalDecisionExport.ok ||
+    withdrawalDecisionExportBody.exportVersion !== 'withdrawal-decisions-v1' ||
+    withdrawalDecisionExportBody.summary.approvedCount < 1 ||
+    withdrawalDecisionExportBody.summary.rejectedCount < 1 ||
+    !withdrawalDecisionExportText.includes(steppedUpWithdrawal.withdrawal.reference) ||
+    !withdrawalDecisionExportText.includes(rejectedWithdrawal.withdrawal.reference)
+  ) {
+    throw new Error('Expected withdrawal decision export to include approved and rejected reviews');
+  }
   const rejectedWithdrawalLedger = await getJson(`${baseUrl}/api/wallet/${depositSession.user.id}/ledger`, depositSession.token);
   if (!rejectedWithdrawalLedger.entries.some((entry: { type: string; metadata?: { complianceCaseId?: string; reference?: string } }) =>
     entry.type === 'release' &&
