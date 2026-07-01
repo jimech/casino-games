@@ -62,6 +62,10 @@ export interface WalletWithdrawalResponseDto {
   withdrawal: WithdrawalRecordDto;
 }
 
+export interface AdminWalletHoldResponseDto {
+  wallet: WalletDto;
+}
+
 export interface WithdrawalRecordDto {
   id: string;
   userId: string;
@@ -1052,6 +1056,50 @@ export const exportAdminWithdrawalDecisions = async (input: {
   });
   if (!response.ok) await parseJsonResponse(response);
   return response.text();
+};
+
+export const createAdminWalletHold = async (input: {
+  userId: string;
+  amount: number;
+  reason: string;
+  stepUpToken: string;
+  requestId: string;
+}): Promise<AdminWalletHoldResponseDto> => {
+  const response = await fetch(`/api/admin/wallets/${encodeURIComponent(input.userId)}/holds`, {
+    method: 'POST',
+    headers: {
+      ...jsonHeaders(),
+      'X-Step-Up-Token': input.stepUpToken,
+      'X-Request-Id': input.requestId
+    },
+    body: JSON.stringify({
+      amount: input.amount,
+      reason: input.reason
+    })
+  });
+  return parseJsonResponse<AdminWalletHoldResponseDto>(response);
+};
+
+export const releaseAdminWalletHold = async (input: {
+  userId: string;
+  amount: number;
+  reason: string;
+  stepUpToken: string;
+  requestId: string;
+}): Promise<AdminWalletHoldResponseDto> => {
+  const response = await fetch(`/api/admin/wallets/${encodeURIComponent(input.userId)}/releases`, {
+    method: 'POST',
+    headers: {
+      ...jsonHeaders(),
+      'X-Step-Up-Token': input.stepUpToken,
+      'X-Request-Id': input.requestId
+    },
+    body: JSON.stringify({
+      amount: input.amount,
+      reason: input.reason
+    })
+  });
+  return parseJsonResponse<AdminWalletHoldResponseDto>(response);
 };
 
 export const fetchRounds = async (): Promise<RoundDto[]> => {

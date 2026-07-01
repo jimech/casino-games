@@ -1287,6 +1287,80 @@ app.get('/api/admin/withdrawals/decisions-export', async (req, res) => {
   }
 });
 
+app.post('/api/admin/wallets/:userId/holds', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    await requireRequestId(req, admin.id, 'admin_wallet_hold');
+    await requireStepUp(req, admin, 'admin:sensitive');
+    const amount = Number(req.body.amount);
+    const reason = String(req.body.reason ?? '').trim();
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Hold amount must be positive');
+    if (reason.length < 8) throw new Error('Manual hold reason is required');
+    const wallet = await casinoService.lockWallet({
+      userId: req.params.userId,
+      amount,
+      idempotencyKey: `admin-wallet-hold:${req.get('x-request-id')}`,
+      metadata: {
+        source: 'admin_wallet_hold',
+        direction: 'manual_hold',
+        reason,
+        adminUserId: admin.id
+      }
+    });
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'manual_wallet_hold_created',
+      context: {
+        subjectUserId: req.params.userId,
+        amount,
+        reason
+      }
+    });
+    broadcastWallet(req.params.userId, wallet);
+    res.status(201).json({ wallet });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
+app.post('/api/admin/wallets/:userId/releases', async (req, res) => {
+  try {
+    const admin = await requireAdmin(req);
+    await requireRequestId(req, admin.id, 'admin_wallet_release');
+    await requireStepUp(req, admin, 'admin:sensitive');
+    const amount = Number(req.body.amount);
+    const reason = String(req.body.reason ?? '').trim();
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Release amount must be positive');
+    if (reason.length < 8) throw new Error('Manual release reason is required');
+    const wallet = await casinoService.releaseLockedWallet({
+      userId: req.params.userId,
+      amount,
+      idempotencyKey: `admin-wallet-release:${req.get('x-request-id')}`,
+      metadata: {
+        source: 'admin_wallet_release',
+        direction: 'manual_release',
+        reason,
+        adminUserId: admin.id
+      }
+    });
+    await trackAiEventSafely({
+      userId: admin.id,
+      category: 'admin',
+      name: 'manual_wallet_hold_released',
+      context: {
+        subjectUserId: req.params.userId,
+        amount,
+        reason
+      }
+    });
+    broadcastWallet(req.params.userId, wallet);
+    res.status(201).json({ wallet });
+  } catch (error) {
+    sendApiError(res, error);
+  }
+});
+
 app.post('/api/admin/compliance/cases', async (req, res) => {
   try {
     const admin = await requireAdmin(req);

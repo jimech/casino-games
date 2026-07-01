@@ -31,6 +31,7 @@ import {
   claimBonus,
   createNotification,
   createStepUpAuth,
+  createAdminWalletHold,
   createWalletEventSource,
   depositWallet,
   enterTournament,
@@ -79,6 +80,7 @@ import {
   RoundDto,
   runIntegrityReconciliation,
   runTournamentSettlementJob,
+  releaseAdminWalletHold,
   searchAdminUsers,
   settleRound,
   settleTournament,
@@ -196,6 +198,10 @@ export default function App() {
   const [adminWithdrawalsLoading, setAdminWithdrawalsLoading] = useState(false);
   const [adminRoundExportPreview, setAdminRoundExportPreview] = useState('');
   const [adminWithdrawalDecisionExportPreview, setAdminWithdrawalDecisionExportPreview] = useState('');
+  const [adminWalletHoldAmount, setAdminWalletHoldAmount] = useState('');
+  const [adminWalletHoldReason, setAdminWalletHoldReason] = useState('');
+  const [adminWalletHoldPassword, setAdminWalletHoldPassword] = useState('');
+  const [adminWalletHoldLoading, setAdminWalletHoldLoading] = useState<'hold' | 'release' | null>(null);
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferenceDto[]>([]);
   const [adminNotificationDeliveries, setAdminNotificationDeliveries] = useState<NotificationDeliveryDto[]>([]);
@@ -511,6 +517,51 @@ export default function App() {
       triggerNotification(error instanceof Error ? error.message : 'Withdrawal review could not be resolved.', 'error');
     } finally {
       setAdminWithdrawalActionId('');
+    }
+  };
+
+  const submitAdminWalletHoldAction = async (action: 'hold' | 'release') => {
+    if (!adminUserDetail) return;
+    const amount = Number(adminWalletHoldAmount);
+    const reason = adminWalletHoldReason.trim();
+    const password = adminWalletHoldPassword.trim();
+    if (!Number.isFinite(amount) || amount <= 0) {
+      triggerNotification('Enter a positive wallet hold amount.', 'error');
+      return;
+    }
+    if (reason.length < 8) {
+      triggerNotification('Enter a specific reason for the manual wallet action.', 'error');
+      return;
+    }
+    if (!password) {
+      triggerNotification('Enter your admin password for step-up authorization.', 'error');
+      return;
+    }
+
+    setAdminWalletHoldLoading(action);
+    try {
+      const stepUp = await createStepUpAuth({
+        password,
+        scope: 'admin:sensitive'
+      });
+      const requestId = `admin-wallet-${action}-${crypto.randomUUID()}`;
+      await (action === 'hold' ? createAdminWalletHold : releaseAdminWalletHold)({
+        userId: adminUserDetail.user.id,
+        amount,
+        reason,
+        stepUpToken: stepUp.stepUpToken,
+        requestId
+      });
+      setAdminWalletHoldPassword('');
+      setAdminWalletHoldAmount('');
+      setAdminWalletHoldReason('');
+      await loadAdminUserDetail(adminUserDetail.user.id);
+      await loadAdminSummary();
+      triggerNotification(action === 'hold' ? 'Manual wallet hold created.' : 'Manual wallet hold released.', 'success');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : 'Manual wallet action failed.', 'error');
+    } finally {
+      setAdminWalletHoldLoading(null);
     }
   };
 
@@ -2778,6 +2829,50 @@ export default function App() {
                           right={`$${adminUserDetail.wallet.available}`}
                           detail={`${adminUserDetail.user.id} / locked $${adminUserDetail.wallet.locked}`}
                         />
+                        <div className="bg-neutral-950 border border-neutral-850 rounded-md p-3 space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={adminWalletHoldAmount}
+                              onChange={(event) => setAdminWalletHoldAmount(event.target.value)}
+                              placeholder="Amount"
+                              className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white placeholder:text-neutral-600"
+                            />
+                            <input
+                              type="text"
+                              value={adminWalletHoldReason}
+                              onChange={(event) => setAdminWalletHoldReason(event.target.value)}
+                              placeholder="Audit reason"
+                              className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white placeholder:text-neutral-600"
+                            />
+                            <input
+                              type="password"
+                              value={adminWalletHoldPassword}
+                              onChange={(event) => setAdminWalletHoldPassword(event.target.value)}
+                              placeholder="Admin password"
+                              className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white placeholder:text-neutral-600"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void submitAdminWalletHoldAction('hold')}
+                              disabled={adminWalletHoldLoading !== null}
+                              className="bg-yellow-400/15 hover:bg-yellow-400/25 disabled:opacity-60 disabled:cursor-not-allowed border border-yellow-300/30 text-yellow-100 font-black text-[9px] uppercase px-2 py-2 rounded-lg transition-all"
+                            >
+                              {adminWalletHoldLoading === 'hold' ? 'Holding' : 'Create hold'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void submitAdminWalletHoldAction('release')}
+                              disabled={adminWalletHoldLoading !== null}
+                              className="bg-[#00FF88] hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-neutral-950 font-black text-[9px] uppercase px-2 py-2 rounded-lg transition-all"
+                            >
+                              {adminWalletHoldLoading === 'release' ? 'Releasing' : 'Release hold'}
+                            </button>
+                          </div>
+                        </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           {[
                             ['Ledger', adminUserDetail.ledger.length],

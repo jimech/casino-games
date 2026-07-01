@@ -2092,6 +2092,28 @@ Acceptance criteria:
 - Pending review filters do not pollute the decision audit packet.
 - Local quality gate passes.
 
+### T104 - Manual Admin Wallet Hold Controls
+
+Summary: Give admins a step-up protected operational path for exceptional wallet holds and releases.
+
+Implementation status: Complete. Admins can now create and release manual wallet holds for a selected user from the Admin Audit User Detail panel. The backend exposes request-id protected, step-up gated admin endpoints that reuse the wallet ledger lock and release commands, tag entries with manual ops metadata, broadcast wallet updates, and emit admin AI audit events. Memory API smoke verifies regular-user blocking, step-up enforcement, hold/release wallet balances, and ledger metadata.
+
+Scope:
+- Admin-only manual wallet hold endpoint.
+- Admin-only manual wallet release endpoint.
+- Step-up and request-id protection for both endpoints.
+- Typed frontend helpers for hold and release actions.
+- User Detail controls for amount, reason, password, hold, and release.
+- Smoke coverage for access control, wallet state, and ledger metadata.
+
+Acceptance criteria:
+- Regular users cannot create manual wallet holds.
+- Admins must provide valid step-up authorization and request ids.
+- Manual holds move funds from available to locked through the ledger.
+- Manual releases move funds from locked back to available through the ledger.
+- Ledger metadata records source, direction, reason, and admin user id.
+- Local quality gate passes.
+
 ## First Working Sequence
 
 Start here:

@@ -486,6 +486,55 @@ const main = async () => {
   assertEqual(adminUserDetail.user.id, userSession.user.id, 'admin user detail id');
   assertArray(adminUserDetail.ledger, 'admin user detail ledger array');
   assertArray(adminUserDetail.riskEvents, 'admin user detail risk array');
+  await postJsonExpectStatus(`${baseUrl}/api/admin/wallets/${userSession.user.id}/holds`, userSession.token, {
+    amount: 25,
+    reason: 'regular user forbidden'
+  }, 403, {
+    'X-Request-Id': 'smoke-manual-hold-forbidden'
+  });
+  await postJsonExpectStatus(`${baseUrl}/api/admin/wallets/${userSession.user.id}/holds`, adminSession.token, {
+    amount: 25,
+    reason: 'missing step-up token'
+  }, 403, {
+    'X-Request-Id': 'smoke-manual-hold-step-up-required'
+  });
+  const walletOpsStepUp = await postJson(`${baseUrl}/api/auth/step-up`, adminSession.token, {
+    password: 'very-secret-pass',
+    scope: 'admin:sensitive'
+  });
+  const manualHold = await postJson(`${baseUrl}/api/admin/wallets/${userSession.user.id}/holds`, adminSession.token, {
+    amount: 25,
+    reason: 'manual smoke audit hold'
+  }, {
+    'X-Step-Up-Token': walletOpsStepUp.stepUpToken,
+    'X-Request-Id': 'smoke-manual-wallet-hold'
+  });
+  assertEqual(manualHold.wallet.available, 99975, 'manual hold debits available wallet');
+  assertEqual(manualHold.wallet.locked, 25, 'manual hold locks wallet funds');
+  const manualRelease = await postJson(`${baseUrl}/api/admin/wallets/${userSession.user.id}/releases`, adminSession.token, {
+    amount: 25,
+    reason: 'manual smoke audit release'
+  }, {
+    'X-Step-Up-Token': walletOpsStepUp.stepUpToken,
+    'X-Request-Id': 'smoke-manual-wallet-release'
+  });
+  assertEqual(manualRelease.wallet.available, 100000, 'manual release returns available wallet');
+  assertEqual(manualRelease.wallet.locked, 0, 'manual release clears locked wallet funds');
+  const manualHoldLedger = await getJson(`${baseUrl}/api/wallet/${userSession.user.id}/ledger`, userSession.token);
+  if (!manualHoldLedger.entries.some((entry: { type: string; metadata?: { source?: string; reason?: string } }) =>
+    entry.type === 'lock' &&
+    entry.metadata?.source === 'admin_wallet_hold' &&
+    entry.metadata?.reason === 'manual smoke audit hold'
+  )) {
+    throw new Error('Expected manual wallet hold ledger entry');
+  }
+  if (!manualHoldLedger.entries.some((entry: { type: string; metadata?: { source?: string; reason?: string } }) =>
+    entry.type === 'release' &&
+    entry.metadata?.source === 'admin_wallet_release' &&
+    entry.metadata?.reason === 'manual smoke audit release'
+  )) {
+    throw new Error('Expected manual wallet release ledger entry');
+  }
 
   const bonus = await postJson(`${baseUrl}/api/bonuses/welcome-match-500/claim`, adminSession.token, {
     idempotencyKey: 'quality-bonus-welcome'
